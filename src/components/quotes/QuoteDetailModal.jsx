@@ -10,7 +10,7 @@ import {
   fmtDate,
   fmtMoney,
   getQty,
-  SIZES,
+  activeSizeNames,
   getDisplayName,
   getTier,
   BROKER_MARKUP,
@@ -944,9 +944,7 @@ export default function QuoteDetailModal({
                   const qty = getQty(li);
                   const pricing = getLinePrice(li, quote);
                   const twoXL = pricing?.twoXL || 0;
-                  const activeSizes = SIZES.filter(
-                    (sz) => (parseInt((li.sizes || {})[sz], 10) || 0) > 0
-                  );
+                  const activeSizes = activeSizeNames(li.sizes);
 
                   return (
                     <div

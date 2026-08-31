@@ -58,15 +58,36 @@ export const EXTRA_RATES = {
 export const SIZES = ["OS", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
 export const BIG_SIZES = ["2XL", "3XL", "4XL", "5XL"];
 
+// Full display ordering across size families. SIZES stays the adult editor
+// grid; this list exists so infant/toddler garments (NB…24M, 2T…6T) sort
+// age-ascending instead of alphabetically ("12M" before "6M"). Sizes not
+// listed here still display — they sort after, alphabetically.
+const SIZE_SORT_ORDER = [
+  "NB", "3M", "6M", "9M", "12M", "18M", "24M",
+  "2T", "3T", "4T", "5T", "5/6T", "6T",
+  ...SIZES, "6XL",
+];
+
 export function sortSizeEntries(entries) {
   return [...entries].sort(([a], [b]) => {
-    const ia = SIZES.indexOf(a);
-    const ib = SIZES.indexOf(b);
+    const ia = SIZE_SORT_ORDER.indexOf(a);
+    const ib = SIZE_SORT_ORDER.indexOf(b);
     if (ia !== -1 && ib !== -1) return ia - ib;
     if (ia !== -1) return -1;
     if (ib !== -1) return 1;
     return a.localeCompare(b);
   });
+}
+
+// Ordered size names with a positive quantity, from the line's OWN size map.
+// Display paths must use this instead of filtering the adult SIZES constant —
+// that pattern silently hid infant/toddler quantities on quote/invoice/PDF/
+// production-ticket views (TGC bodysuits, 2026-08-31) while totals counted
+// them, so a printer reading the ticket saw blank size rows on a 48-pc job.
+export function activeSizeNames(sizes) {
+  return sortSizeEntries(Object.entries(sizes || {}))
+    .filter(([, v]) => (parseInt(v, 10) || 0) > 0)
+    .map(([sz]) => sz);
 }
 export const LOCATIONS = ["Front", "Back", "Left Chest", "Right Chest", "Left Sleeve", "Right Sleeve", "Pocket", "Hood", "Other"];
 export const ALL_TECHNIQUES = ["Screen Print", "DTG", "Embroidery", "DTF", "Heat Transfer", "Sublimation"];

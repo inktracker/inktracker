@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import ReactivateLink from "../shared/ReactivateLink";
-import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload, getDisplayName, getShopPricingConfig } from "../shared/pricing";
+import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, activeSizeNames, buildQBInvoicePayload, getDisplayName, getShopPricingConfig } from "../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
@@ -572,7 +572,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                 : hasDirectTotal
                   ? { ppp: qty > 0 ? directLineTotal / qty : directLineTotal, lineTotal: directLineTotal, rushFee: 0 }
                   : calcLinkedLinePrice(li, invoice.rush_rate || 0, getLineExtras(li, invoice), undefined, linkedQtyMap);
-            const activeSizes = SIZES.filter(sz => (parseInt((li.sizes||{})[sz]) || 0) > 0);
+            const activeSizes = activeSizeNames(li.sizes);
             const garmentCostNum = Number(li.garmentCost);
             const hasGarmentCost = Number.isFinite(garmentCostNum) && garmentCostNum > 0;
             return (

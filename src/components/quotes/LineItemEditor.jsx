@@ -9,6 +9,7 @@ import {
   GARMENT_CATEGORIES,
   mapSSCategoryToGarment,
   getQty,
+  activeSizeNames,
   uid,
   STANDARD_MARKUP,
   getLineExtras,
@@ -705,6 +706,15 @@ export default function LineItemEditor({
 
   const qty = getQty(li);
 
+  // Size-grid columns: the standard adult grid plus any non-standard sizes
+  // already on the line (infant NB/6M…, toddler 2T…). Imported and
+  // API-sourced lines carry these; without the extra columns their
+  // quantities were invisible in the editor (though preserved on save).
+  const gridSizes = [
+    ...SIZES,
+    ...activeSizeNames(li.sizes).filter((sz) => !SIZES.includes(sz)),
+  ];
+
   const previewLineItems = (allLineItems || []).map((item) =>
     item.id === li.id ? li : item
   );
@@ -1320,7 +1330,7 @@ export default function LineItemEditor({
                   <thead>
                     <tr className="border-b border-slate-100">
                       <td className="pb-2 text-slate-500 font-semibold">Size</td>
-                      {SIZES.map((sz) => (
+                      {gridSizes.map((sz) => (
                         <td key={sz} className="pb-2 text-center font-semibold text-slate-500 w-10">
                           {sz}
                         </td>
@@ -1331,7 +1341,7 @@ export default function LineItemEditor({
                   <tbody>
                     <tr>
                       <td className="py-1 text-slate-500 font-medium pr-2">Qty</td>
-                      {SIZES.map((sz) => (
+                      {gridSizes.map((sz) => (
                         <td key={sz} className="py-1 px-0.5">
                           <input
                             type="number"
@@ -1361,7 +1371,7 @@ export default function LineItemEditor({
                     {Object.keys(currentInventory).length > 0 && (
                       <tr>
                         <td className="py-1 text-teal-400 font-medium pr-2 text-xs">Avail</td>
-                        {SIZES.map((sz) => {
+                        {gridSizes.map((sz) => {
                           const avail = currentInventory[sz];
                           return (
                             <td key={sz} className="py-1 px-0.5 text-center">

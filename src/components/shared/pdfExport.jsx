@@ -4,7 +4,7 @@
 // PDFs reuse the cached promise.
 import {
   getQty,
-  SIZES,
+  activeSizeNames,
   calcLinkedLinePrice,
   buildLinkedQtyMap,
   fmtMoney,
@@ -537,9 +537,7 @@ function renderLineItems(
     // li.extras is absent (old quotes pre-2026-06-04).
     const lineExtras = getLineExtras(li, { extras });
     const r = getGroupPriceForPdf(li, rushRate, lineExtras, isBroker, lineItems);
-    const activeSizes = SIZES.filter(
-      (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
-    );
+    const activeSizes = activeSizeNames(li.sizes);
 
     const headerLine = getItemHeaderLine(li);
     const metaLine = getItemMetaLine(li);
