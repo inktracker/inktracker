@@ -12,7 +12,7 @@ import {
   nextGoodsStatusOnTap,
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
-import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 , Printer } from "lucide-react";
+import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2, Printer, FileImage } from "lucide-react";
 import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
 import TimeClockButton from "../components/team/TimeClockButton";
@@ -69,6 +69,20 @@ function getShopFloorArtwork(order) {
     });
   });
   return Array.from(map.values());
+}
+
+// Proof for ONE garment line: the artwork linked to that line's imprints
+// first, else the order-level proof. Tapping a garment on the floor should
+// show the operator the print that goes ON that garment.
+function getLineProof(order, li) {
+  const all = getShopFloorArtwork(order);
+  for (const imp of li?.imprints || []) {
+    const id = imp.artwork_id || imp.artwork_url || imp.artwork_name;
+    if (!id) continue;
+    const hit = all.find((a) => a.id === id && (a.url || a.path));
+    if (hit) return hit;
+  }
+  return all.find((a) => a.url || a.path) || null;
 }
 
 // ShopFloor STEPS used to be its own copy of the order pipeline.
@@ -980,12 +994,29 @@ export default function ShopFloor() {
                         const qty = Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
                         const imprints = (li.imprints || []).filter(imp => (imp.colors || 0) > 0);
 
+                        const lineProof = getLineProof(selected, li);
                         return (
                           <div key={idx} className="bg-slate-50 rounded-xl p-4">
                             <div className="flex items-center justify-between mb-2">
-                              <div className="font-bold text-slate-800">
-                                {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
-                              </div>
+                              {/* Tap the garment to open its proof (falls back
+                                  to the order-level proof). Plain text when no
+                                  artwork is attached — no dead buttons on the
+                                  floor. */}
+                              {lineProof ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewArt(lineProof)}
+                                  className="font-bold text-slate-800 text-left flex items-center gap-2 hover:text-teal-700 transition"
+                                  title={`View proof: ${lineProof.name}`}
+                                >
+                                  <span>{li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}</span>
+                                  <FileImage className="w-4 h-4 text-teal-600 shrink-0" />
+                                </button>
+                              ) : (
+                                <div className="font-bold text-slate-800">
+                                  {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
+                                </div>
+                              )}
                               <span className="text-lg font-bold text-teal-600">{qty}</span>
                             </div>
 
