@@ -49,7 +49,17 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
     zip = "",
     website = "",
     taxRate = "",
+    heardAbout = "",
   } = input || {};
+
+  // Optional "How did you hear about us?" — merged into signup_source so the
+  // silent first-touch capture (written by handle_new_user at INSERT, read
+  // back off `user`) is preserved, not clobbered. Omitted entirely when
+  // skipped: an absent key means the profile update doesn't touch the column.
+  const selfReported = trimStr(heardAbout).slice(0, 200);
+  const signupSource = selfReported
+    ? { ...(user.signup_source && typeof user.signup_source === "object" ? user.signup_source : {}), self_reported: selfReported }
+    : null;
 
   // NOTE: subscription_tier / subscription_status / trial_ends_at are NOT set
   // here. They're governance columns owned by the server — `handle_new_user`
@@ -68,6 +78,7 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
     zip:                 trimStr(zip),
     website:             trimStr(website) || null,
     default_tax_rate:    parseTaxRate(taxRate),
+    ...(signupSource ? { signup_source: signupSource } : {}),
   };
 }
 

@@ -54,6 +54,10 @@ window.addEventListener('vite:preloadError', (e) => {
   window.location.reload()
 })
 
+// First-touch attribution (referrer/utm/landing) — must run before any
+// client-side routing rewrites the URL. Read back at signup (LoginModal).
+import('@/lib/attribution').then((m) => m.captureAttribution()).catch(() => {})
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <RootErrorBoundary>
     <App />

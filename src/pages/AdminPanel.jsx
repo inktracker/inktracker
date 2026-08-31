@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { MANAGER_SECTIONS, ROLE_TEMPLATES, hasOwnerAccess } from "@/lib/managerPermissions";
 import { supabase } from "@/api/supabaseClient";
+import { describeSignupSource } from "@/lib/attribution";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { useAuth } from "@/lib/AuthContext";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
@@ -354,6 +355,9 @@ export default function AdminPanel() {
                   <div className="text-xs text-slate-500 truncate">{u.email || u.auth_id}</div>
                   <div className="text-xs text-slate-300 mt-0.5">
                     Joined {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
+                    {describeSignupSource(u.signup_source) && (
+                      <span className="text-slate-400"> · {describeSignupSource(u.signup_source)}</span>
+                    )}
                   </div>
                 </div>
 
