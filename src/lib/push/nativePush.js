@@ -129,3 +129,31 @@ export async function refreshNativePushIfGranted(user) {
     console.error("[nativePush] refresh failed:", err?.message ?? err);
   }
 }
+
+/** Is THIS user's iOS device registered (any live ios row of theirs)? */
+export async function isNativeSubscribed() {
+  if (!isNative()) return false;
+  try {
+    const { data } = await supabase
+      .from("push_subscriptions")
+      .select("id")
+      .eq("platform", "ios")
+      .is("disabled_at", null)
+      .limit(1);
+    return !!(data && data.length);
+  } catch {
+    return false;
+  }
+}
+
+/** Turn off push for this user's iOS devices (RLS scopes to their own rows). */
+export async function disableNativePush() {
+  if (!isNative()) return { ok: false, reason: "not-native" };
+  const { error } = await supabase
+    .from("push_subscriptions")
+    .update({ disabled_at: new Date().toISOString() })
+    .eq("platform", "ios")
+    .is("disabled_at", null);
+  if (error) return { ok: false, reason: "save-failed" };
+  return { ok: true };
+}

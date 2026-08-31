@@ -9,7 +9,7 @@ import {
 } from "@/lib/push/webPush";
 import { notify } from "@/lib/notify";
 import { isNative } from "@/lib/mobile/native";
-import { enableNativePush } from "@/lib/push/nativePush";
+import { enableNativePush, disableNativePush, isNativeSubscribed } from "@/lib/push/nativePush";
 
 // Browser push for the events already collected in the notifications table.
 //
@@ -31,7 +31,7 @@ export default function PushNotificationsSection({ user }) {
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    setOn(await isSubscribed());
+    setOn(isNative() ? await isNativeSubscribed() : await isSubscribed());
     setPermission(getPermissionState());
     setLoading(false);
   }, []);
@@ -39,7 +39,7 @@ export default function PushNotificationsSection({ user }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const subscribed = await isSubscribed();
+      const subscribed = isNative() ? await isNativeSubscribed() : await isSubscribed();
       if (!alive) return;
       setOn(subscribed);
       setLoading(false);
@@ -52,10 +52,11 @@ export default function PushNotificationsSection({ user }) {
     setBusy(true);
     try {
       if (on) {
-        const res = await disablePush();
+        const res = isNative() ? await disableNativePush() : await disablePush();
         if (!res.ok) notify.error("Couldn't turn notifications off");
       } else {
         const res = isNative() ? await enableNativePush(user) : await enablePush(user);
+        if (res.ok) notify.success("Notifications are on — this device will get pushes");
         if (!res.ok) {
           const msg = {
             denied: "Your browser is blocking notifications for InkTracker. You'll need to allow them in your browser's site settings for this page.",
