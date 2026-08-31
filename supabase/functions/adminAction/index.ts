@@ -92,7 +92,7 @@ serve(async (req) => {
       // Query only profiles belonging to this admin's shop — scoped at DB level
       const { data: profiles, error } = await adminClient
         .from("profiles")
-        .select("id, auth_id, role, shop_name, logo_url, created_at, email, shop_owner, assigned_shops, full_name, manager_permissions")
+        .select("id, auth_id, role, shop_name, logo_url, created_at, email, shop_owner, assigned_shops, full_name, manager_permissions, signup_source")
         .or(`auth_id.eq.${user.id},email.eq.${adminEmail},shop_owner.eq.${adminEmail},assigned_shops.cs.["${adminEmail}"]`)
         .order("created_at", { ascending: false })
         .limit(200);

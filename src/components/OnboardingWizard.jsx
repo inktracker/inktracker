@@ -40,6 +40,7 @@ export default function OnboardingWizard({ user, onComplete }) {
   const [stateVal, setStateVal] = useState(user?.state || "");
   const [zip, setZip] = useState(user?.zip || "");
   const [website, setWebsite] = useState(user?.website || "");
+  const [heardAbout, setHeardAbout] = useState(user?.signup_source?.self_reported || "");
   const [taxRate, setTaxRate] = useState(user?.default_tax_rate || "");
   // Pre-select the user's browser timezone if it's one of our curated
   // options — saves 95% of US shops a click. Falls back to "" (browser
@@ -145,7 +146,7 @@ export default function OnboardingWizard({ user, onComplete }) {
   // and Stripe checkout); throws on the primary profile save so callers can
   // keep the user on the wizard to retry.
   async function persistOnboarding() {
-    const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, website, taxRate, timezone, offersEmbroidery };
+    const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, website, taxRate, timezone, offersEmbroidery, heardAbout };
     const profileData = buildOnboardingProfile(wizardInput);
     await base44.auth.updateMe(profileData);
 
@@ -392,6 +393,24 @@ export default function OnboardingWizard({ user, onComplete }) {
                     <input type="text" value={zip} onChange={e => setZip(e.target.value)} placeholder=""
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900" />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">How did you hear about us? <span className="normal-case font-normal text-slate-400">(optional)</span></label>
+                  <select
+                    value={heardAbout}
+                    onChange={(e) => setHeardAbout(e.target.value)}
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900 bg-white"
+                  >
+                    <option value="">Prefer not to say</option>
+                    <option value="Facebook group">A Facebook group</option>
+                    <option value="Reddit">Reddit</option>
+                    <option value="Google search">Google search</option>
+                    <option value="QuickBooks App Store">QuickBooks App Store</option>
+                    <option value="App Store">Apple App Store</option>
+                    <option value="Another print shop">Another print shop / word of mouth</option>
+                    <option value="Other">Other</option>
+                  </select>
                 </div>
 
                 <div>

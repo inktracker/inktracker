@@ -17,6 +17,7 @@ import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 import { escapeHtml } from "../_shared/emailSanitize.js";
 import { buildWelcomeEmail } from "../_shared/welcomeEmail.ts";
+import { describeSignupSource } from "../_shared/signupSource.ts";
 
 const SEND_FROM = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
 // Where signup notifications land. Env-overridable so a future teammate
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await admin
       .from("profiles")
-      .select("id, email, role, subscription_tier, subscription_status, shop_name, company_name, shop_owner, created_at")
+      .select("id, email, role, subscription_tier, subscription_status, shop_name, company_name, shop_owner, created_at, signup_source")
       .eq("id", profileId)
       .maybeSingle();
     if (!profile?.email) {
@@ -91,6 +92,7 @@ Deno.serve(async (req) => {
           ${line("Tier", profile.subscription_tier)}
           ${line("Status", profile.subscription_status)}
           ${line("Invited by", isSelfSignup ? "" : profile.shop_owner)}
+          ${line("Source", describeSignupSource(profile.signup_source))}
           ${line("Signed up", new Date(profile.created_at).toUTCString())}
         </table>
       </div>`;

@@ -7,6 +7,7 @@
     "npm:@capacitor/cli@^8.5.0": "8.5.0",
     "npm:@capacitor/core@^8.5.0": "8.5.0",
     "npm:@capacitor/ios@^8.5.0": "8.5.0_@capacitor+core@8.5.0",
+    "npm:@capacitor/push-notifications@^8.1.2": "8.1.2_@capacitor+core@8.5.0",
     "npm:@capacitor/status-bar@^8.0.3": "8.0.3_@capacitor+core@8.5.0",
     "npm:@eslint/js@^9.19.0": "9.39.5",
     "npm:@playwright/test@^1.62.1": "1.62.1",
@@ -48,6 +49,7 @@
     "npm:react-router-dom@^6.26.0": "6.30.4_react@18.3.1_react-dom@18.3.1__react@18.3.1",
     "npm:react@^18.2.0": "18.3.1",
     "npm:recharts@^2.15.4": "2.15.4_react@18.3.1_react-dom@18.3.1__react@18.3.1",
+    "npm:stripe@14.25.0": "14.25.0",
     "npm:stripe@^14.25.0": "14.25.0",
     "npm:tailwind-merge@^3.6.0": "3.6.0",
     "npm:tailwindcss-animate@^1.0.7": "1.0.7_tailwindcss@3.4.19",
@@ -321,6 +323,12 @@
     },
     "@capacitor/ios@8.5.0_@capacitor+core@8.5.0": {
       "integrity": "sha512-7k1TfohJu5BzRXc1F3g04Q8QQ0fyQgms6h1AvhnHb04VaNr9EdHOx03hL8O+OigEKMQnyJd1ZOjTPPNHCqL5Yw==",
+      "dependencies": [
+        "@capacitor/core"
+      ]
+    },
+    "@capacitor/push-notifications@8.1.2_@capacitor+core@8.5.0": {
+      "integrity": "sha512-TQl4XxqJfNF+KbSYBFMXYYT5WXUaleVKXlByhh/8+KySMVNjp+l5OqAUoGe/sY1IAnGXEuUeCjA/WLZEVvGwrA==",
       "dependencies": [
         "@capacitor/core"
       ]
@@ -6374,6 +6382,7 @@
         "npm:@capacitor/cli@^8.5.0",
         "npm:@capacitor/core@^8.5.0",
         "npm:@capacitor/ios@^8.5.0",
+        "npm:@capacitor/push-notifications@^8.1.2",
         "npm:@capacitor/status-bar@^8.0.3",
         "npm:@eslint/js@^9.19.0",
         "npm:@playwright/test@^1.62.1",

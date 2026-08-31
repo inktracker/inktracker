@@ -293,3 +293,38 @@ describe("buildShopUpsertPayload", () => {
     expect(c).not.toHaveProperty("timezone");
   });
 });
+
+describe("buildOnboardingProfile — signup_source self-report", () => {
+  it("omits signup_source entirely when the question was skipped (never touches the column)", () => {
+    const p = buildOnboardingProfile({ user: NEW_USER }, { now: NOW });
+    expect(p).not.toHaveProperty("signup_source");
+    const q = buildOnboardingProfile({ user: NEW_USER, heardAbout: "   " }, { now: NOW });
+    expect(q).not.toHaveProperty("signup_source");
+  });
+
+  it("merges self_reported ON TOP of the silent first-touch capture — never clobbers it", () => {
+    const user = { ...NEW_USER, signup_source: { utm_source: "facebook", landing: "/pricing" } };
+    const p = buildOnboardingProfile({ user, heardAbout: "Reddit" }, { now: NOW });
+    expect(p.signup_source).toEqual({
+      utm_source: "facebook",
+      landing: "/pricing",
+      self_reported: "Reddit",
+    });
+  });
+
+  it("emits self_reported alone when no first-touch capture exists, trimmed and capped", () => {
+    const p = buildOnboardingProfile(
+      { user: NEW_USER, heardAbout: "  A friend's shop  " },
+      { now: NOW }
+    );
+    expect(p.signup_source).toEqual({ self_reported: "A friend's shop" });
+    const long = buildOnboardingProfile({ user: NEW_USER, heardAbout: "x".repeat(300) }, { now: NOW });
+    expect(long.signup_source.self_reported).toHaveLength(200);
+  });
+
+  it("survives a garbage signup_source on the profile", () => {
+    const user = { ...NEW_USER, signup_source: "corrupt-string" };
+    const p = buildOnboardingProfile({ user, heardAbout: "Google" }, { now: NOW });
+    expect(p.signup_source).toEqual({ self_reported: "Google" });
+  });
+});

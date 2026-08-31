@@ -3,6 +3,7 @@ import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import { useModalA11y } from "@/lib/useModalA11y";
 import { track } from "@/lib/analytics";
+import { getStoredAttribution } from "@/lib/attribution";
 import { authRedirectUrl, isNative } from "@/lib/mobile/native";
 import { parseAuthLinkError } from "@/lib/auth/authLinkError";
 
@@ -177,10 +178,17 @@ export default function LoginModal({ isOpen, onClose, defaultMode, embedded = fa
         // user somewhere that doesn't establish a session and they
         // appear "signed up but not signed in". Mirrors the redirect
         // the magic-link path already uses below.
+        // First-touch attribution rides signUp metadata → handle_new_user
+        // writes it into profiles.signup_source at INSERT (allowlisted +
+        // length-capped server-side). Null when nothing was captured.
+        const attribution = getStoredAttribution();
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: authRedirectUrl("/") },
+          options: {
+            emailRedirectTo: authRedirectUrl("/"),
+            ...(attribution ? { data: { attribution } } : {}),
+          },
         });
         if (signUpError) throw signUpError;
         // Funnel step 3: the account was created (distinct from opening the
