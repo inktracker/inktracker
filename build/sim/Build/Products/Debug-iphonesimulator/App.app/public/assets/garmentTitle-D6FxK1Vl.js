@@ -1,0 +1,1 @@
+const r=t=>typeof t=="string"?t.trim():"";function s(t){return r(t==null?void 0:t.customTitle)}function u(t,o){const n=s(t);if(!n)return null;const e=r(o);return e&&n.toLowerCase()===e.toLowerCase()?e:e?`${e} - ${n}`:n}export{u as c,s as g};

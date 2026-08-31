@@ -4,16 +4,24 @@
 // PushNotifications plugin and stores an APNs device token instead of a
 // web-push endpoint. sendPush routes on push_subscriptions.platform.
 //
-// Import is dynamic everywhere so the web bundle never pulls the plugin.
+// Static import on purpose: the plugin's web side is an inert registerPlugin
+// proxy (no browser APIs touched at load), and the dynamic-import version
+// HUNG inside WKWebView — Vite's chunk-preload helper never settled in the
+// Capacitor webview (reproduced in the simulator 2026-08-31: "step 1" logged,
+// import never resolved, no error). Folding it into the main bundle removes
+// the failure mode entirely.
 
+import { PushNotifications } from "@capacitor/push-notifications";
 import { supabase } from "@/api/supabaseClient";
+
 import { isNative } from "@/lib/mobile/native";
 import { shopScope } from "@/lib/shopScope";
 
-async function plugin() {
-  const mod = await import("@capacitor/push-notifications");
-  return mod.PushNotifications;
-}
+// NEVER `await` the plugin object: registerPlugin returns a Proxy that
+// traps every property get — including `.then` — so awaiting it makes JS
+// treat it as a thenable and call a nonexistent native method "then",
+// which never replies. That was the infinite "Working…" spinner
+// (reproduced + diagnosed in the simulator, 2026-08-31).
 
 // One registration listener per app session — Capacitor listeners stack.
 let listenersArmed = false;
@@ -22,7 +30,7 @@ let pendingResolve = null;
 async function armListeners(user) {
   if (listenersArmed) return;
   listenersArmed = true;
-  const Push = await plugin();
+  const Push = PushNotifications;
 
   await Push.addListener("registration", async ({ value: token }) => {
     try {
@@ -83,7 +91,7 @@ function withHangGuard(promise, ms = 30000) {
 /** Explicit enable from a button tap — prompts if needed. */
 export async function enableNativePush(user) {
   if (!isNative()) return { ok: false, reason: "not-native" };
-  const Push = await plugin();
+  const Push = PushNotifications;
   let perm;
   try {
     perm = await withHangGuard(Push.requestPermissions());
@@ -112,7 +120,7 @@ export async function enableNativePush(user) {
 export async function refreshNativePushIfGranted(user) {
   if (!isNative() || !user?.auth_id) return;
   try {
-    const Push = await plugin();
+    const Push = PushNotifications;
     const perm = await Push.checkPermissions();
     if (perm.receive !== "granted") return;
     await armListeners(user);

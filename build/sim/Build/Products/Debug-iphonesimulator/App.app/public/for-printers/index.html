@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>InkTracker — Print Shop Software for Screen Printers &amp; Embroiderers</title>
+  <meta name="description" content="Print shop software built by a working printer: quoting with live blank pricing, a shared production board, and two-way QuickBooks sync — all in one place. Start a 14-day free trial." />
+  <link rel="canonical" href="https://www.inktracker.app/for-printers" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="InkTracker — Print Shop Software for Screen Printers &amp; Embroiderers" />
+  <meta property="og:description" content="Print shop software built by a working printer: quoting with live blank pricing, a shared production board, and two-way QuickBooks sync — all in one place. Start a 14-day free trial." />
+  <meta property="og:url" content="https://www.inktracker.app/for-printers" />
+  <meta property="og:image" content="https://www.inktracker.app/icon-512.png" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" />
+  <style>:root{--ink:#0e0e0e;--muted:#6b6b6b;--hair:#e5e5e5;--forest:#2c5840;--forest-dark:#1a3a28}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);background:#fff;font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--forest)}
+.wrap{max-width:820px;margin:0 auto;padding:0 20px}
+header.site{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:2px solid var(--ink)}
+header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px}
+.brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.brand span{color:var(--forest)}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;padding:14px 28px;border-radius:0;white-space:nowrap}
+.nav{display:flex;align-items:center;gap:18px}
+.nav a:not(.cta){font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.nav a:not(.cta):hover{color:var(--forest)}
+.cta:hover{background:var(--forest-dark)}
+nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
+nav.crumbs a{color:var(--muted)}
+h1{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.01em;line-height:1.02;font-size:clamp(2.2rem,6vw,3.6rem);margin:.4em 0 .2em}
+h2{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.02em;font-size:clamp(1.4rem,3.5vw,2rem);margin:1.8em 0 .5em}
+h3{font-size:1.05rem;margin:0 0 .25em}
+.lede{font-size:1.12rem;color:#262626}
+.reviewed{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:6px}
+footer.site{border-top:2px solid var(--ink);margin-top:2em;padding:24px 0;font-size:13px;color:var(--muted)}
+footer.site a{color:var(--muted);margin-right:16px}
+.disclaimer{font-size:12px;color:var(--muted);border-top:1px solid var(--hair);margin-top:3em;padding:18px 0}
+/* blog */
+.cat-tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--forest);border-radius:8px;padding:4px 10px}
+.cat-filter{display:flex;flex-wrap:wrap;gap:8px;margin:1.4em 0 0}
+.cat-filter .chip{font:inherit;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);background:#f2f2f2;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;transition:background .15s,color .15s}
+.cat-filter .chip:hover{background:#e6e6e6}
+.cat-filter .chip.is-active{background:var(--forest);color:#fff}
+.cat-filter .chip:focus-visible{outline:2px solid var(--forest);outline-offset:2px}
+.post-meta{font-size:13px;color:var(--muted);margin-top:10px}
+.post-list{list-style:none;padding:0;margin:1.6em 0;display:grid;gap:16px}
+.post-list li{border:1px solid var(--hair);border-radius:12px;padding:20px 22px;transition:border-color .15s}
+.post-list li:hover{border-color:var(--forest)}
+.post-list h2{font-size:1.35rem;margin:.5em 0 .3em}
+.post-list h2 a{color:var(--ink);text-decoration:none}
+.post-list h2 a:hover{color:var(--forest)}
+.post-list p{margin:.3em 0;color:#333}
+.post-body p{margin:1.05em 0}
+.post-body code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:.92em}
+ul.body-list{margin:1em 0;padding-left:1.25em}
+ul.body-list li{margin:.55em 0}
+.callout{border-left:3px solid var(--forest);background:#f6faf7;border-radius:0 10px 10px 0;padding:14px 18px;margin:1.5em 0}
+.callout h4{margin:0 0 4px;font-size:1rem}
+.callout p{margin:0;color:#333}
+.faq dt{font-weight:700;margin-top:1em}
+.faq dd{margin:.2em 0 0;color:#333}
+.blog-cta{background:var(--ink);color:#fff;border-radius:14px;padding:30px 26px;margin:2.6em 0;text-align:center}
+.blog-cta h3{font-family:"Anton",sans-serif;color:#fff;text-transform:uppercase;font-size:1.6rem;margin:0 0 .45em}
+.blog-cta p{color:#d8d8d8;margin:0 auto 1.3em;max-width:580px}
+.blog-cta .related{margin-top:1.1em;font-size:13px;color:#bdbdbd}
+.blog-cta .related a{color:#eaeaea}
+/* calculator — shared block imported from content/calc.mjs (CALC_CSS) */
+.calc{border:1px solid var(--hair);border-radius:14px;padding:20px;margin:1.6em 0;background:#fafafa}
+.calc-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--hair);flex-wrap:wrap}
+.calc-row:last-of-type{border-bottom:0}
+.calc-label{flex:1 1 210px;min-width:190px}
+.calc-label b{display:block;font-size:14px}
+.calc-label span{font-size:12px;color:var(--muted)}
+.calc-slider{flex:2 1 170px;accent-color:var(--forest);height:22px}
+.calc-val{min-width:64px;text-align:right;font-weight:700;color:var(--forest);font-variant-numeric:tabular-nums}
+.calc-out{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 6px}
+.calc-stat{border:1px solid var(--hair);border-radius:10px;padding:12px;text-align:center;background:#fff}
+.calc-stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.calc-stat .v{font-family:"Anton",sans-serif;font-size:1.55rem;color:var(--forest)}
+.calc-note{font-size:13px;color:#444;margin-top:8px;line-height:1.55}
+.calc-digit{font-size:13px;color:var(--forest);font-weight:600;margin-top:8px}
+.calc-table{width:100%;border-collapse:collapse;margin:14px 0 4px;font-variant-numeric:tabular-nums;font-size:14px}
+.calc-table th{background:var(--forest);color:#fff;padding:8px 10px;text-align:right;font-weight:700}
+.calc-table th:first-child{text-align:left}
+.calc-table td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--hair)}
+.calc-table td.rl{text-align:left;font-weight:700}
+.calc-table tbody tr:nth-child(even){background:#f6faf7}
+.proof{list-style:none;padding:0;margin:1.4em 0;display:grid;gap:12px}
+.proof li{padding:14px 18px 14px 42px;position:relative;border:1px solid var(--hair);border-radius:10px}
+.proof li:before{content:"\2713";position:absolute;left:16px;top:14px;color:var(--forest);font-weight:800}
+@media(min-width:640px){}
+/* Mobile header: at desktop sizes the 26px brand + nav link + CTA fit in
+   72px; on phones they collided (brand jammed against the nav link, CTA
+   wrapping to two lines). Shrink everything and keep the CTA one line. */
+@media(max-width:600px){
+header.site .wrap{height:60px}
+.brand{font-size:19px}
+.nav{gap:10px}
+.nav a:not(.cta){font-size:11px;letter-spacing:.12em}
+.cta{font-size:11px;letter-spacing:.06em;padding:10px 12px}
+}
+@media(max-width:344px){.nav a:not(.cta){display:none}}</style>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="https://www.inktracker.app/">Ink<span>Tracker</span></a>
+  <nav class="nav">
+    <a href="https://www.inktracker.app/resources">Resources</a>
+    <a class="cta" href="https://www.inktracker.app/#pricing">Start free trial</a>
+  </nav>
+</div></header>
+<main class="wrap">
+  <nav class="crumbs"><a href="https://www.inktracker.app/">Home</a> › For printers</nav>
+  <h1>Print shop software, built by a printer.</h1>
+  <p class="lede">InkTracker runs quoting, production, and invoicing in one place — for screen print and embroidery shops that are done wrangling spreadsheets and sticky notes. Built in a working shop and used on the floor every day.</p>
+  <ul class="proof">
+    <li><b>Quote in minutes, not a spreadsheet.</b> Live blank pricing, color and quantity breaks, and setup fees — priced right before it hits the press.</li>
+    <li><b>A production board your whole shop can see.</b> From art approval to shipping, everyone works off the same pipeline.</li>
+    <li><b>Invoices + QuickBooks, no double entry.</b> A two-way sync keeps invoices, payments, and customers matched.</li>
+  </ul>
+  <div class="blog-cta">
+    <h3>Run your whole shop in one place.</h3>
+    <p>Made by a working print shop. We use it every day.</p>
+    <a class="cta" href="https://www.inktracker.app/?ref=for-printers">Start your 14-day free trial</a>
+    <div class="related">Or read <a href="https://www.inktracker.app/compare">the honest software buyer's guide</a>.</div>
+  </div>
+</main>
+<footer class="site"><div class="wrap">
+  <a href="https://www.inktracker.app/">InkTracker home</a><a href="https://www.inktracker.app/tools">Free Tools</a><a href="https://www.inktracker.app/blog">Blog</a><a href="https://www.inktracker.app/compare">Software guide</a><a href="https://www.inktracker.app/support">Support</a>
+  <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
+</div></footer>
+</body>
+</html>

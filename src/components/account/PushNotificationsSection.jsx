@@ -47,6 +47,7 @@ export default function PushNotificationsSection({ user }) {
     return () => { alive = false; };
   }, []);
 
+
   async function toggle() {
     setBusy(true);
     try {

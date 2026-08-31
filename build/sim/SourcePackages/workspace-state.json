@@ -1,0 +1,139 @@
+{
+  "object" : {
+    "artifacts" : [
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "capacitor-swift-pm",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/ionic-team/capacitor-swift-pm.git",
+          "name" : "capacitor-swift-pm"
+        },
+        "path" : "/Users/joeygrennan/inktracker/build/sim/SourcePackages/artifacts/capacitor-swift-pm/Cordova/Cordova.xcframework",
+        "source" : {
+          "checksum" : "a3dc72b5a559948d548f0ee2926b989492acc1023a0c86a1bf85477587f83a10",
+          "type" : "remote",
+          "url" : "https://github.com/ionic-team/capacitor-swift-pm/releases/download/8.5.0/Cordova.xcframework.zip"
+        },
+        "targetName" : "Cordova"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "capacitor-swift-pm",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/ionic-team/capacitor-swift-pm.git",
+          "name" : "capacitor-swift-pm"
+        },
+        "path" : "/Users/joeygrennan/inktracker/build/sim/SourcePackages/artifacts/capacitor-swift-pm/Capacitor/Capacitor.xcframework",
+        "source" : {
+          "checksum" : "357220fe6dad73cb78bc1dc83e16e89d59c3d7dac8f9b17545a5be64bba25130",
+          "type" : "remote",
+          "url" : "https://github.com/ionic-team/capacitor-swift-pm/releases/download/8.5.0/Capacitor.xcframework.zip"
+        },
+        "targetName" : "Capacitor"
+      }
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "app",
+          "kind" : "fileSystem",
+          "location" : "/Users/joeygrennan/inktracker/node_modules/@capacitor/app",
+          "name" : "app"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/joeygrennan/inktracker/node_modules/@capacitor/app"
+        },
+        "subpath" : "app"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "browser",
+          "kind" : "fileSystem",
+          "location" : "/Users/joeygrennan/inktracker/node_modules/@capacitor/browser",
+          "name" : "browser"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/joeygrennan/inktracker/node_modules/@capacitor/browser"
+        },
+        "subpath" : "browser"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "capacitor-swift-pm",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/ionic-team/capacitor-swift-pm.git",
+          "name" : "capacitor-swift-pm"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "4f71d0b979f2f957326f04353eca7604ee937e1e",
+            "version" : "8.5.0"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "capacitor-swift-pm"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "capapp-spm",
+          "kind" : "fileSystem",
+          "location" : "/Users/joeygrennan/inktracker/ios/App/CapApp-SPM",
+          "name" : "CapApp-SPM"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/joeygrennan/inktracker/ios/App/CapApp-SPM"
+        },
+        "subpath" : "capapp-spm"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "push-notifications",
+          "kind" : "fileSystem",
+          "location" : "/Users/joeygrennan/inktracker/node_modules/.deno/@capacitor+push-notifications@8.1.2/node_modules/@capacitor/push-notifications",
+          "name" : "push-notifications"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/joeygrennan/inktracker/node_modules/.deno/@capacitor+push-notifications@8.1.2/node_modules/@capacitor/push-notifications"
+        },
+        "subpath" : "push-notifications"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "status-bar",
+          "kind" : "fileSystem",
+          "location" : "/Users/joeygrennan/inktracker/node_modules/@capacitor/status-bar",
+          "name" : "status-bar"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/joeygrennan/inktracker/node_modules/@capacitor/status-bar"
+        },
+        "subpath" : "status-bar"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}
