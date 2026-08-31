@@ -1,0 +1,4 @@
+module PushNotificationsPlugin {
+header "PushNotificationsPlugin-Swift.h"
+export *
+}

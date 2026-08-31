@@ -1,0 +1,4 @@
+module BrowserPlugin {
+header "BrowserPlugin-Swift.h"
+export *
+}

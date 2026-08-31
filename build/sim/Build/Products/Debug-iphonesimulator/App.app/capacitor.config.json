@@ -1,0 +1,24 @@
+{
+	"appId": "app.inktracker.mobile",
+	"appName": "InkTracker",
+	"webDir": "dist",
+	"server": {
+		"url": "https://www.inktracker.app"
+	},
+	"ios": {
+		"contentInset": "never",
+		"backgroundColor": "#ffffff"
+	},
+	"plugins": {
+		"SplashScreen": {
+			"launchShowDuration": 600,
+			"backgroundColor": "#ffffff"
+		}
+	},
+	"packageClassList": [
+		"AppPlugin",
+		"CAPBrowserPlugin",
+		"PushNotificationsPlugin",
+		"StatusBarPlugin"
+	]
+}

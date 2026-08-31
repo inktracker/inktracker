@@ -112,7 +112,8 @@ function routeDeepLink(url) {
       return;
     }
     // Non-auth deep link: navigate to an in-app route if one is present.
-    if (u.pathname && u.pathname !== "/") window.location.assign(u.pathname);
+    // Query string rides along (e.g. ?id= focus params, debug flags).
+    if (u.pathname && u.pathname !== "/") window.location.assign(u.pathname + (u.search || ""));
   } catch {
     /* malformed deep link — ignore */
   }
