@@ -643,14 +643,13 @@ export default function Account() {
           </Section>
         )}
 
-        {/* Native app uses APNs via the Capacitor shell, not Web Push —
-            the browser APIs this section drives don't exist in a WKWebView,
-            so it would render a permanently dead toggle. */}
-        {!isNative() && (
-          <Section icon={BellRing} title="Notifications">
-            <PushNotificationsSection user={user} />
-          </Section>
-        )}
+        {/* Shown on web AND native since v1.1: the section routes native
+            enablement through APNs (lib/push/nativePush via the Capacitor
+            plugin) and web through Web Push. The old !isNative() hide
+            predates native push existing at all. */}
+        <Section icon={BellRing} title="Notifications">
+          <PushNotificationsSection user={user} />
+        </Section>
 
         <Section icon={User} title="Account">
           <div className="space-y-5">
