@@ -19,6 +19,7 @@ import TimeClockButton from "../components/team/TimeClockButton";
 import NotificationBell from "../components/NotificationBell";
 import EnablePushButton from "../components/team/EnablePushButton";
 import OrderComments from "../components/orders/OrderComments";
+import MyTasksCard from "../components/team/MyTasksCard";
 import { getStageTasks } from "@/lib/productionTasks";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
@@ -688,6 +689,14 @@ export default function ShopFloor() {
           </button>
         ))}
       </div>
+
+      <MyTasksCard
+        user={user}
+        onSelectOrder={(oid) => {
+          const hit = orders.find((o) => o.order_id === oid);
+          if (hit) setSelected(hit);
+        }}
+      />
 
       <div className="flex-1 flex flex-col md:flex-row">
         {/* Order list */}
