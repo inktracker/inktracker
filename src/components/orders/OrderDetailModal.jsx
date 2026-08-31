@@ -17,6 +17,7 @@ import { notify } from "@/lib/notify";
 import { useAuth } from "@/lib/AuthContext";
 import ChangeHistory from "../shared/ChangeHistory";
 import OrderComments from "./OrderComments";
+import OrderTasks from "../team/OrderTasks";
 import ProductionTicket from "./ProductionTicket";
 import OrderEditorModal from "./OrderEditorModal";
 import { getOrderEditTier, EDIT_TIERS } from "@/lib/orders/editOrderEngine";
@@ -705,6 +706,10 @@ export default function OrderDetailModal({
                 reactivateHref={reactivateHref}
                 showMoney={showMoney}
               />
+
+              {/* Delegation — tasks on this job with assignee + due date.
+                  Assignment pings ride the notification rails. */}
+              <OrderTasks order={liveOrder || order} user={authUser} />
 
               {/* Team thread — order-anchored notes with @mention
                   notifications (bell + push). Internal only. */}
