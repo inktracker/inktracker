@@ -20,6 +20,11 @@ paths = [
   '''supabase/functions/hello-world/.*''',
   # Lockfiles: integrity hashes look like secrets but aren't.
   '''package-lock\.json''',
+  # Simulator build artifacts accidentally committed (removed same day,
+  # 2026-08-31) — the flagged "JWT" is the Supabase ANON key baked into the
+  # built bundle, public by design. History still contains the blobs, so the
+  # path stays allowlisted.
+  '''build/sim/.*''',
 ]
 
 regexes = [
