@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
 
     const { data: note, error: noteErr } = await admin
       .from("notifications")
-      .select("id, shop_owner, event_type, severity, title, body, related_entity, related_id, created_at")
+      .select("id, shop_owner, recipient_email, event_type, severity, title, body, related_entity, related_id, created_at")
       .eq("id", notificationId)
       .maybeSingle();
 
@@ -69,12 +69,29 @@ Deno.serve(async (req) => {
       return Response.json({ ok: true, skipped: "notification too old" });
     }
 
-    const { data: subs, error: subErr } = await admin
+    let subsQuery = admin
       .from("push_subscriptions")
       .select("id, platform, endpoint, p256dh, auth_secret")
       .eq("shop_owner", note.shop_owner)
       .eq("platform", "web")
       .is("disabled_at", null);
+
+    // Addressed notifications (recipient_email set — e.g. an @mention)
+    // deliver ONLY to that person's devices. A shop-level row (null)
+    // keeps the original whole-shop fan-out.
+    if (note.recipient_email) {
+      const { data: recipient } = await admin
+        .from("profiles")
+        .select("auth_id")
+        .eq("email", note.recipient_email)
+        .maybeSingle();
+      if (!recipient?.auth_id) {
+        return Response.json({ ok: true, sent: 0, reason: "recipient has no profile" });
+      }
+      subsQuery = subsQuery.eq("auth_id", recipient.auth_id);
+    }
+
+    const { data: subs, error: subErr } = await subsQuery;
 
     if (subErr) throw subErr;
     if (!subs?.length) {

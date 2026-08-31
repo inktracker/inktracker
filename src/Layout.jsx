@@ -318,7 +318,7 @@ export default function Layout({ children, currentPageName }) {
           <div className="flex-1 min-w-0">
             <GlobalSearch />
           </div>
-          <NotificationBell />
+          <NotificationBell userEmail={user?.email} />
         </div>
         <div className="px-4 py-3 border-t border-slate-100">
           <div className="text-xs text-slate-300">v1.0</div>
@@ -348,7 +348,7 @@ export default function Layout({ children, currentPageName }) {
           <div className="flex-1 min-w-0">
             <div className="font-display uppercase text-base text-slate-900 truncate leading-none">{shopName}</div>
           </div>
-          <NotificationBell />
+          <NotificationBell userEmail={user?.email} />
           <GlobalSearch />
         </div>
 

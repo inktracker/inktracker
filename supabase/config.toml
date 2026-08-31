@@ -114,3 +114,5 @@ verify_jwt = false
 
 [functions.sendPush]
 verify_jwt = false
+[functions.orderComments]
+verify_jwt = false

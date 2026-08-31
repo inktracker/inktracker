@@ -8,13 +8,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Bell, AlertTriangle, Info } from "lucide-react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import { createPageUrl } from "@/utils";
 
 const POLL_INTERVAL_MS = 30_000;
 const FETCH_LIMIT = 10;
 
-export default function NotificationBell() {
+export default function NotificationBell({ userEmail = null, variant = "nav" }) {
   const [open, setOpen] = useState(false);
   const [notifs, setNotifs] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -22,14 +22,28 @@ export default function NotificationBell() {
 
   const load = useCallback(async () => {
     try {
-      const list = await base44.entities.Notification.list("-created_at", FETCH_LIMIT);
+      // Shop-level rows (recipient_email null — owner/manager bell) plus
+      // rows addressed to ME (@mentions, comment pings). Without the
+      // filter an owner's bell would also fill with pings addressed to
+      // teammates. RLS stays the access boundary; this is display scope.
+      let q = supabase
+        .from("notifications")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(FETCH_LIMIT);
+      if (userEmail) {
+        q = q.or(`recipient_email.is.null,recipient_email.eq.${userEmail}`);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      const list = data || [];
       setNotifs(list);
       setUnreadCount(list.filter((n) => !n.read_at).length);
     } catch (err) {
       // RLS denies / table missing / network blip — keep silent UI, log only.
       console.error("[NotificationBell] load failed:", err?.message ?? err);
     }
-  }, []);
+  }, [userEmail]);
 
   // Initial load + 30s poll.
   useEffect(() => {
@@ -84,7 +98,9 @@ export default function NotificationBell() {
     <div className="relative" ref={popRef}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="relative flex items-center px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition text-slate-500"
+        className={variant === "floor"
+          ? "relative flex items-center p-2 rounded-lg hover:bg-teal-500 transition text-white"
+          : "relative flex items-center px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition text-slate-500"}
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
       >
         <Bell className="w-4 h-4" />
@@ -96,7 +112,9 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="fixed top-16 left-3 right-3 w-auto max-w-96 mx-auto md:absolute md:top-auto md:bottom-full md:left-0 md:right-auto md:mb-2 md:w-96 md:max-w-none md:mx-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
+        <div className={(variant === "floor"
+          ? "fixed top-16 left-3 right-3 w-auto max-w-96 mx-auto md:absolute md:top-full md:bottom-auto md:right-0 md:left-auto md:mt-2 md:w-96 md:max-w-none md:mx-0"
+          : "fixed top-16 left-3 right-3 w-auto max-w-96 mx-auto md:absolute md:top-auto md:bottom-full md:left-0 md:right-auto md:mb-2 md:w-96 md:max-w-none md:mx-0") + " bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden"}>
           <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Notifications</div>
             {unreadCount > 0 && (
