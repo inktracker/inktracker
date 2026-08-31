@@ -16,6 +16,8 @@ import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, Che
 import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
 import TimeClockButton from "../components/team/TimeClockButton";
+import NotificationBell from "../components/NotificationBell";
+import OrderComments from "../components/orders/OrderComments";
 import { getStageTasks } from "@/lib/productionTasks";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
@@ -628,6 +630,7 @@ export default function ShopFloor() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <NotificationBell userEmail={user?.email} variant="floor" />
           <TimeClockButton user={user} />
           <button onClick={handleRefresh} className="p-2 hover:bg-teal-500 rounded-lg transition">
             <RefreshCw className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} />
@@ -1108,6 +1111,9 @@ export default function ShopFloor() {
                   <p className="text-sm text-amber-800 leading-relaxed">{selected.notes}</p>
                 </div>
               )}
+
+              {/* Team thread — @mentions ping teammates' bells + phones. */}
+              <OrderComments order={selected} user={user} />
 
               {/* Updates */}
               {(() => {
