@@ -1,6 +1,0 @@
-import{f as n}from"./index-BEVDEnTo.js";/**
- * @license lucide-react v0.475.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */const o=[["path",{d:"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2",key:"975kel"}],["circle",{cx:"12",cy:"7",r:"4",key:"17ys0d"}]],s=n("User",o),t={state_mismatch:"Connection failed — the request couldn't be matched to your account. Please click Connect QuickBooks again.",state_expired:"Your connection request took too long. Please click Connect QuickBooks again — the consent flow needs to finish within 30 minutes.",missing_params:"QuickBooks did not return the expected data. Please try connecting again.",invalid_realm_id:"QuickBooks returned an unexpected company ID. Please try connecting again — if it keeps happening, contact support.",token_exchange_failed:"Could not connect to QuickBooks. Please try again — if the issue persists, contact support.",malformed_token_response:"QuickBooks returned an unexpected response. Please try again — if the issue persists, contact support.",storage_failed:"Connected to QuickBooks but could not save the connection. Please try again.",server_error:"Something went wrong. Please try again."};function i(e){return e?Object.prototype.hasOwnProperty.call(t,e)?t[e]:`Connection failed: ${e}`:""}export{s as U,i as q};

@@ -1,1 +1,0 @@
-function n(t){if(!t||t.qb_total==null)return!1;const a=Number(t.total),r=Number(t.qb_total);if(!Number.isFinite(a)||!Number.isFinite(r))return!1;const e=a-(Number(t.tax)||0),b=r-(Number(t.qb_tax_amount)||0);return Math.abs(e-b)>.01}export{n as i};

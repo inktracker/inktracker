@@ -1,1 +1,0 @@
-function i(t){const n=Number(t);return Number.isFinite(n)?n:0}function a(t){const n=Array.isArray(t)?t:[];let r=0,u=0;for(const o of n){if(!o||o.paid)continue;const e=i(o.total);e<=0||(r+=e,u+=1)}return{total:Math.round(r*100)/100,count:u}}export{a as c};
