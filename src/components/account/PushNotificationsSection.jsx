@@ -62,6 +62,8 @@ export default function PushNotificationsSection({ user }) {
             "not-configured": "Notifications aren't set up on this install yet.",
             "no-keys": "Your browser didn't return the keys we need. Try again, or use a different browser.",
             "save-failed": "We couldn't save this device. Check your connection and try again.",
+            "app-update-required": "This version of the app doesn't support notifications yet — update InkTracker to 1.1 (via TestFlight or the App Store), then try again.",
+            timeout: "Apple didn't confirm the registration in time. Check your connection and try again.",
           }[res.reason] || "Couldn't turn notifications on.";
           notify.error(msg);
         }
