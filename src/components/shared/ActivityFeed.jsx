@@ -22,6 +22,13 @@ const SOURCE_META = {
 
 const PAGE_FOR_ENTITY = { invoice: "Invoices", quote: "Quotes", order: "Orders" };
 
+// Live-testing sessions create documents under the reserved TEST/DEMO code
+// namespace (e.g. ORD-TEST-PREFS, ORD-DEMO-E2E) and clean them up after.
+// Real codes are always ORD-<year>-<base36> (generateOrderId), so this can
+// never hide a customer document. Keep the feed telling the shop's story,
+// not the test bench's.
+export const isTestArtifact = (e) => /^[A-Z]+-(TEST|DEMO)\b/i.test(String(e?.entity_ref || ""));
+
 const INITIAL = 8;
 const EXPANDED = 30;
 
@@ -35,7 +42,7 @@ export default function ActivityFeed() {
     (async () => {
       try {
         const rows = await base44.entities.ChangeLog.list("-created_at", EXPANDED);
-        if (!cancelled) setEntries(Array.isArray(rows) ? rows : []);
+        if (!cancelled) setEntries((Array.isArray(rows) ? rows : []).filter((e) => !isTestArtifact(e)));
       } catch (err) {
         // No read access (broker/employee) or table missing — stay invisible.
         console.error("[ActivityFeed] load failed:", err?.message ?? err);
