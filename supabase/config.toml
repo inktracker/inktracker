@@ -119,3 +119,6 @@ verify_jwt = false
 
 [functions.teamTasks]
 verify_jwt = false
+
+[functions.statusCustomerEmail]
+verify_jwt = false

@@ -24,6 +24,8 @@ const SHOP_COLUMNS = new Set([
   "decoration_types", "addons", "presses", "production_tasks",
   "quote_email_subject", "quote_email_body", "timezone", "id", "created_at",
   "qb_income_account_id", "qb_income_account_name",
+  // 20260901150000: per-status customer email opt-in (statusCustomerEmail fn).
+  "customer_status_notify",
 ]);
 
 const FUNCTIONS_DIR = fileURLToPath(new URL("../../", import.meta.url));

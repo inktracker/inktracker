@@ -8,6 +8,7 @@ import { normalizeBrandColor } from "@/lib/branding";
 import { User, LogOut, Package, Link2, Mail, ChevronDown, Wand2, CreditCard, CheckSquare, Shield, Handshake, BellRing } from "lucide-react";
 import PartnersSection from "../components/account/PartnersSection";
 import PushNotificationsSection from "../components/account/PushNotificationsSection";
+import CustomerUpdatesSection from "../components/account/CustomerUpdatesSection";
 import { loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 import SecuritySection from "../components/account/SecuritySection";
@@ -649,6 +650,12 @@ export default function Account() {
             predates native push existing at all. */}
         <Section icon={BellRing} title="Notifications">
           <PushNotificationsSection user={user} />
+        </Section>
+
+        {/* Customer-facing status emails — opt-in per stage, default OFF.
+            Sent by the statusCustomerEmail edge function. */}
+        <Section icon={Mail} title="Customer Updates">
+          <CustomerUpdatesSection user={user} />
         </Section>
 
         <Section icon={User} title="Account">
