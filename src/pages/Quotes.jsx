@@ -21,6 +21,7 @@ import QuoteEditorModal from "../components/quotes/QuoteEditorModal";
 import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { validateQuoteForSave } from "../lib/quotes/validation";
+import { sentAge } from "../lib/quotes/sentAge";
 import { detectPostSendEditRisk } from "../lib/quotes/editPolicy";
 import { isConvertedToOrder } from "../lib/quotes/approvalState";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
@@ -729,6 +730,14 @@ export default function Quotes() {
                   <td className="px-3 py-3.5">
                     <div className="flex flex-col gap-1">
                       <Badge s={q.status} />
+                      {q.status === "Sent" && (() => {
+                        const age = sentAge(q.sent_date);
+                        return age ? (
+                          <span className={`text-[10px] whitespace-nowrap ${age.stale ? "font-semibold text-amber-600" : "text-slate-400"}`}>
+                            {age.label}
+                          </span>
+                        ) : null;
+                      })()}
                       {q.expires_date && new Date(q.expires_date) < new Date() && q.status === "Pending" && (
                         <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-full w-fit whitespace-nowrap">
                           Expired
@@ -792,6 +801,14 @@ export default function Quotes() {
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <Badge s={q.status} />
+                    {q.status === "Sent" && (() => {
+                      const age = sentAge(q.sent_date);
+                      return age ? (
+                        <span className={`text-[10px] whitespace-nowrap ${age.stale ? "font-semibold text-amber-600" : "text-slate-400"}`}>
+                          {age.label}
+                        </span>
+                      ) : null;
+                    })()}
                     {q.qb_invoice_id && (
                       <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
                         In QuickBooks
