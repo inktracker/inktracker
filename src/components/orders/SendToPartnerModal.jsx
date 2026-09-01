@@ -6,6 +6,7 @@ import { notify } from "@/lib/notify";
 import { fmtMoney } from "../shared/pricing";
 import { listPartnerships, activePartners, offerHandoff, listHandoffs } from "@/lib/partners";
 import { getPartnerTradeSheet, computeTradeTotal } from "@/lib/partnerTradeSheet";
+import { computeHandoffComparison } from "@/lib/partnerHandoffMath";
 import { Handshake, Loader2, X } from "lucide-react";
 
 const LIVE_HANDOFF = new Set(["offered", "accepted", "in_production"]);
@@ -94,6 +95,14 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
   useEffect(() => {
     if (suggested > 0 && !userEditedPrice) setTradeTotal(String(suggested));
   }, [suggested, userEditedPrice]);
+
+  // Keep-vs-send economics for the selected lines at the current price.
+  const comparison = useMemo(
+    () => computeHandoffComparison(selectedLineObjs, parseFloat(tradeTotal), {
+      receiverSuppliesGarments: !!partnerSheet?.receiver_supplies_garments,
+    }),
+    [selectedLineObjs, tradeTotal, partnerSheet],
+  );
 
   const toggleLine = (id) => {
     setSelectedLines((prev) => {
@@ -200,8 +209,13 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Trade price ($)</label>
               <input type="number" step="0.01" min="0" value={tradeTotal}
                 onChange={(e) => { setUserEditedPrice(true); setTradeTotal(e.target.value); }}
-                placeholder="what you'll pay them"
+                placeholder={partnerShop ? "enter agreed price" : "auto-fills from the partner's rates"}
                 className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900" />
+              {partnerShop && !suggested && (
+                <p className="text-[11px] text-amber-600 mt-1">
+                  {partnerShop} hasn&rsquo;t published trade rates for you — enter the price you agreed on.
+                </p>
+              )}
               {suggested > 0 && (
                 <p className="text-[11px] text-slate-400 mt-1">
                   {userEditedPrice && String(suggested) !== tradeTotal ? (
@@ -221,6 +235,43 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
                 className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900" />
             </div>
           </div>
+
+          {/* Keep-vs-send economics — the number that actually decides this.
+              Revenue comes from the order's own lines; the send side knows
+              whether the partner supplies blanks. Gross is labeled gross:
+              press time isn't priced here and we don't pretend it is. */}
+          {comparison.revenue > 0 && (
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-3 text-sm space-y-1.5">
+              <div className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Keep vs send</div>
+              <div className="flex justify-between text-slate-600 dark:text-slate-300">
+                <span>Your revenue on these lines</span>
+                <span className="font-semibold">{fmtMoney(comparison.revenue)}</span>
+              </div>
+              <div className="flex justify-between text-slate-600 dark:text-slate-300">
+                <span>Keep in house{comparison.blanks > 0 ? ` (blanks ${fmtMoney(comparison.blanks)})` : ""}</span>
+                <span className="font-semibold">{fmtMoney(comparison.keepGross)} gross + your press time</span>
+              </div>
+              {comparison.valid ? (
+                <>
+                  <div className="flex justify-between text-slate-600 dark:text-slate-300">
+                    <span>Send to {partnerShop || "partner"}{partnerSheet?.receiver_supplies_garments ? " (they supply blanks)" : ""}</span>
+                    <span className={`font-semibold ${comparison.sendMargin < 0 ? "text-red-600" : ""}`}>
+                      {fmtMoney(comparison.sendMargin)}, no press time
+                    </span>
+                  </div>
+                  <div className={`text-[11px] pt-1 border-t border-slate-200 dark:border-slate-700 ${comparison.sendMargin < 0 ? "text-red-600 font-semibold" : "text-slate-500"}`}>
+                    {comparison.sendMargin < 0
+                      ? "At this price you'd LOSE money sending these lines — raise your customer price or renegotiate."
+                      : comparison.delta < 0
+                        ? `Sending gives up ${fmtMoney(Math.abs(comparison.delta))} of gross in exchange for freeing your schedule.`
+                        : "Sending nets you at least as much as keeping it — clear win."}
+                  </div>
+                </>
+              ) : (
+                <div className="text-[11px] text-slate-400 pt-1">Pick a partner (or enter a trade price) to see the send side.</div>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Note to partner</label>
