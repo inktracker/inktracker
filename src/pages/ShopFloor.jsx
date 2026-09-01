@@ -628,13 +628,17 @@ export default function ShopFloor() {
   };
   const myActive = orders.filter(o => isMine(o) && o.status !== "Completed" && o.status !== "Shipped");
 
+  // Work queues surface the most urgent job first; orders arrive from the API
+  // newest-created-first, which is the wrong order for a press operator.
+  const byDueSoonest = (a, b) =>
+    String(a.scheduled_date || a.due_date || "9999").localeCompare(String(b.scheduled_date || b.due_date || "9999"));
+
   const filtered = filter === "Active"
-    ? orders.filter(o => o.status !== "Completed" && o.status !== "Shipped")
+    ? orders.filter(o => o.status !== "Completed" && o.status !== "Shipped").sort(byDueSoonest)
     : filter === "Completed"
       ? orders.filter(o => o.status === "Completed" || o.status === "Shipped")
       : filter === "Mine"
-        ? [...myActive].sort((a, b) =>
-            String(a.scheduled_date || a.due_date || "9999").localeCompare(String(b.scheduled_date || b.due_date || "9999")))
+        ? [...myActive].sort(byDueSoonest)
         : orders;
 
   const currentStepIdx = selected ? STEPS.indexOf(selected.status || "Pre-Press") : -1;
