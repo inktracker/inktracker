@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Link2, Eye, Trash2, CheckCircle2, Truck } from "lucide-react";
+import { Link2, Eye, Trash2, CheckCircle2, Truck, Handshake } from "lucide-react";
 import { exportOrderToPDF } from "../../shared/pdfExport";
 import ReactivateLink from "../../shared/ReactivateLink";
 
@@ -21,6 +21,10 @@ export default function OrderUtilityActions({
   saving,
   onDelete,
   callAction,
+  // Offer this order to a partner shop. Undefined unless the caller is a
+  // shop/admin/manager on a writable order (parent gates it the same way it
+  // gates onEditOrder), so this component doesn't need the role/readOnly logic.
+  onSendToPartner,
   // Read-only (lapsed subscription): disable the write actions (create AS
   // Colour PO, delete order). Share-link / Preview PDF are reads and stay on.
   readOnly = false,
@@ -59,6 +63,15 @@ export default function OrderUtilityActions({
       >
         <Eye className="w-3.5 h-3.5" /> Preview
       </button>
+      {onSendToPartner && (
+        <button
+          onClick={onSendToPartner}
+          title="Offer this order — or specific lines — to a partner shop"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-700 border border-teal-300 bg-teal-50 rounded-lg hover:bg-teal-100 transition"
+        >
+          <Handshake className="w-3.5 h-3.5" /> Send to Partner
+        </button>
+      )}
       {/* The Create PO button only makes sense while the order is
           actively at the Order Goods stage — once blanks are in,
           placing a new PO from the same order is noise. Limits
