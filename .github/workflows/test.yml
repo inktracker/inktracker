@@ -74,6 +74,13 @@ jobs:
       - name: Verify edge deps are locked (frozen)
         run: npm run check:functions:lock
 
+      # Edge HANDLER tests — the real handler bodies run under Deno against
+      # a fake supabase client (supabase/functions/**/*.deno.test.ts). This
+      # is the wiring layer vitest can't reach; the approveArtwork-class
+      # leak lived exactly there.
+      - name: Edge handler tests (deno)
+        run: npm run test:edge
+
       # Production build — catches things vitest can't, like orphan
       # imports from pages that aren't unit-tested. Vercel runs the
       # same command at deploy time, so a green check here matches
