@@ -69,23 +69,41 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action ?? "");
 
-    // Roster: everyone who can appear in an @mention. Owner first.
+    // Roster: everyone who can appear in an @mention. Owner + staff first,
+    // then the shop's assigned brokers (Joe, 2026-08-31: shops with no
+    // employees still need to mention their brokers). Each entry carries its
+    // role so the picker can label brokers distinctly from staff.
     async function loadRoster() {
-      const { data: members } = await admin
-        .from("profiles")
-        .select("email, full_name, first_name, last_name, role")
-        .or(`email.eq.${shopOwner},shop_owner.eq.${shopOwner}`)
-        .in("role", ["shop", "admin", "employee", "manager"]);
+      const cols = "email, full_name, first_name, last_name, role, shop_owner, assigned_shops";
       const display = (m: any) =>
         (m.full_name || [m.first_name, m.last_name].filter(Boolean).join(" ") || m.email || "").trim();
       const seen = new Set<string>();
-      const roster: { email: string; name: string }[] = [];
-      for (const m of members ?? []) {
+      const roster: { email: string; name: string; role: string }[] = [];
+      const add = (m: any) => {
         const email = String(m.email || "").toLowerCase();
-        if (!email || seen.has(email)) continue;
+        if (!email || seen.has(email)) return;
         seen.add(email);
-        roster.push({ email, name: display(m) });
-      }
+        roster.push({ email, name: display(m), role: String(m.role || "") });
+      };
+
+      // Owner + employees/managers of this shop.
+      const { data: staff } = await admin
+        .from("profiles")
+        .select(cols)
+        .or(`email.eq.${shopOwner},shop_owner.eq.${shopOwner}`)
+        .in("role", ["shop", "admin", "employee", "manager"]);
+      (staff ?? []).forEach(add);
+
+      // Brokers assigned to this shop — linked by shop_owner OR by an
+      // assigned_shops entry (both are used in practice). Two scoped queries
+      // beat a jsonb-in-.or() filter that's brittle to email punctuation.
+      const [{ data: brokersByOwner }, { data: brokersByAssigned }] = await Promise.all([
+        admin.from("profiles").select(cols).eq("role", "broker").eq("shop_owner", shopOwner),
+        admin.from("profiles").select(cols).eq("role", "broker").contains("assigned_shops", [shopOwner]),
+      ]);
+      (brokersByOwner ?? []).forEach(add);
+      (brokersByAssigned ?? []).forEach(add);
+
       return roster;
     }
 

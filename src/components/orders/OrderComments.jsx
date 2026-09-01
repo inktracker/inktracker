@@ -20,6 +20,19 @@ function timeAgo(ts) {
   return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+// Short role tag shown beside a name in the @mention picker so you can tell
+// a broker from staff before you pick. Owner/admin read as "Owner".
+function mentionRoleLabel(role) {
+  switch (role) {
+    case "broker": return "Broker";
+    case "manager": return "Manager";
+    case "employee": return "Staff";
+    case "shop":
+    case "admin": return "Owner";
+    default: return "";
+  }
+}
+
 // Bold the @Name tokens for every roster member actually mentioned.
 function renderBody(body, mentionNames) {
   if (!mentionNames.length) return body;
@@ -176,17 +189,28 @@ export default function OrderComments({ order, user }) {
 
       <div className="relative">
         {picker && matches.length > 0 && (
-          <div className="absolute bottom-full left-0 mb-1 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-20 overflow-hidden">
+          <div className="absolute bottom-full left-0 mb-1 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-20 overflow-hidden">
             {matches.map((m) => (
               <button
                 key={m.email}
                 type="button"
                 onClick={() => pickMention(m)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-teal-50 dark:hover:bg-slate-700"
+                className="w-full flex flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-teal-50 dark:hover:bg-slate-700"
               >
-                <AtSign className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                <span className="font-medium text-slate-800 dark:text-slate-200 truncate">{m.name}</span>
-                <span className="text-[10px] text-slate-400 truncate">{m.email}</span>
+                <span className="flex items-center gap-2 w-full">
+                  <AtSign className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  <span className="font-medium text-slate-800 dark:text-slate-200 text-sm truncate">{m.name}</span>
+                  {mentionRoleLabel(m.role) && (
+                    <span className={`ml-auto text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full shrink-0 ${
+                      m.role === "broker"
+                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                        : "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300"
+                    }`}>
+                      {mentionRoleLabel(m.role)}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[10px] text-slate-400 truncate pl-[22px] w-full">{m.email}</span>
               </button>
             ))}
           </div>
