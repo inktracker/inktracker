@@ -860,9 +860,9 @@ export default function OrderDetailModal({
                 <button
                   type="button"
                   onClick={() => setShowSendToPartner(true)}
-                  className="text-xs font-semibold text-teal-600 hover:text-teal-800 flex items-center gap-1.5"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-teal-700 border border-teal-300 bg-teal-50 hover:bg-teal-100 rounded-xl transition"
                 >
-                  <Handshake className="w-3.5 h-3.5" /> Send to Partner
+                  <Handshake className="w-4 h-4" /> Send to Partner
                 </button>
                 {liveOrder?.partner_status && (
                   <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
