@@ -6,7 +6,6 @@ import SendInvoiceModal from "../invoices/SendInvoiceModal";
 import SendToPartnerModal from "./SendToPartnerModal";
 import PartnerHandoffsSummary from "./PartnerHandoffsSummary";
 import { PARTNER_STATUS_LABELS } from "@/lib/partners";
-import { Handshake } from "lucide-react";
 import PackingSlipModal from "./PackingSlipModal";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
@@ -846,25 +845,20 @@ export default function OrderDetailModal({
             saving={saving}
             onDelete={onDelete}
             callAction={callAction}
+            onSendToPartner={["shop", "admin", "manager"].includes(authUser?.role) && !readOnly ? () => setShowSendToPartner(true) : undefined}
             readOnly={readOnly}
             reactivateHref={reactivateHref}
           />
 
-          {/* Shop partnerships (docs/shop-partnerships-design.md): offer
-              this job — or specific lines of it — to one or more partner
-              shops. An order can be split across partners; each hand-off's
-              progress and the aggregate chip mirror here. */}
-          {["shop", "admin", "manager"].includes(authUser?.role) && !readOnly && (
-            <div className="pt-1">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowSendToPartner(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-teal-700 border border-teal-300 bg-teal-50 hover:bg-teal-100 rounded-xl transition"
-                >
-                  <Handshake className="w-4 h-4" /> Send to Partner
-                </button>
-                {liveOrder?.partner_status && (
+          {/* Shop partnerships (docs/shop-partnerships-design.md): the
+              "Send to Partner" action now lives inline in the utility row
+              above. This block carries only the status readout — the aggregate
+              partner chip and the per-hand-off progress summary (which
+              self-hides when the order has no hand-offs). */}
+          {["shop", "admin", "manager"].includes(authUser?.role) && (
+            <>
+              {liveOrder?.partner_status && (
+                <div className="pt-1">
                   <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
                     liveOrder.partner_status === "completed"
                       ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
@@ -872,10 +866,10 @@ export default function OrderDetailModal({
                   }`}>
                     {PARTNER_STATUS_LABELS[liveOrder.partner_status] || `Partner: ${liveOrder.partner_status}`}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
               <PartnerHandoffsSummary order={liveOrder} />
-            </div>
+            </>
           )}
         </div>
       </div>
