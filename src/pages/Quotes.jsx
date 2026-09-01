@@ -16,7 +16,7 @@ import {
   getDisplayName,
   BROKER_MARKUP,
 } from "../components/shared/pricing";
-import Badge from "../components/shared/Badge";
+import { StatusChip, MetaTag } from "../components/shared/chips";
 import QuoteEditorModal from "../components/quotes/QuoteEditorModal";
 import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
@@ -633,7 +633,6 @@ export default function Quotes() {
                 { label: "In-Hands", key: "due_date" },
                 { label: "Qty", key: "qty" },
                 { label: "Total", key: "total" },
-                { label: "Tier", key: null },
                 { label: "Status", key: "status" },
                 { label: "", key: null },
               ].map((h, idx) => (
@@ -646,7 +645,7 @@ export default function Quotes() {
           </thead>
 
           <tbody>
-            {loading && <TableRowsSkeleton rows={8} cols={9} />}
+            {loading && <TableRowsSkeleton rows={8} cols={8} />}
 
             {!loading && quotes.length === 0 && (
               <tr>
@@ -717,49 +716,44 @@ export default function Quotes() {
 
                   <td className="px-3 py-3.5 text-slate-600">{qty} pcs</td>
 
-                  <td className="px-3 py-3.5 font-bold text-slate-800 dark:text-slate-200">
-                    {fmtMoney(t.total)}
-                  </td>
-
                   <td className="px-3 py-3.5">
-                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full whitespace-nowrap">
-                      {qty > 0 ? getTier(qty) : "—"}+
-                    </span>
-                  </td>
-
-                  <td className="px-3 py-3.5">
-                    <div className="flex flex-col gap-1">
-                      <Badge s={q.status} />
-                      {q.status === "Sent" && (() => {
-                        const age = sentAge(q.sent_date);
-                        return age ? (
-                          <span className={`text-[10px] whitespace-nowrap ${age.stale ? "font-semibold text-amber-600" : "text-slate-400"}`}>
-                            {age.label}
-                          </span>
-                        ) : null;
-                      })()}
-                      {q.expires_date && new Date(q.expires_date) < new Date() && q.status === "Pending" && (
-                        <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-full w-fit whitespace-nowrap">
-                          Expired
-                        </span>
-                      )}
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(t.total)}</span>
+                      {qty > 0 && <MetaTag>{getTier(qty)}+</MetaTag>}
                       {/* Tester 2026-07-18 "does it make a duplicate":
                           a QB-sent quote also appears on Invoices once
                           pullInvoices imports it. Labeling the quote
                           explains the second artifact instead of
                           letting it read as a dup. */}
                       {q.qb_invoice_id && (
-                        <span
-                          title="This quote has an invoice in QuickBooks — it also appears on your Invoices page. Same job, not a duplicate."
-                          className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full w-fit whitespace-nowrap"
-                        >
-                          In QuickBooks
-                        </span>
+                        <MetaTag title="This quote has an invoice in QuickBooks — it also appears on your Invoices page. Same job, not a duplicate.">
+                          QB
+                        </MetaTag>
                       )}
                     </div>
                   </td>
 
-                  <td className="px-3 py-3.5 text-right text-teal-400 text-xs font-semibold">
+                  <td className="px-3 py-3.5">
+                    <div className="flex flex-col gap-0.5 items-start">
+                      <StatusChip s={q.status} />
+                      {q.status === "Draft" && (
+                        <span className="text-[11px] text-slate-400 whitespace-nowrap">Not sent yet</span>
+                      )}
+                      {q.status === "Sent" && (() => {
+                        const age = sentAge(q.sent_date);
+                        return age ? (
+                          <span className={`text-[11px] whitespace-nowrap ${age.stale ? "font-semibold text-amber-700" : "text-slate-400"}`}>
+                            {age.label}
+                          </span>
+                        ) : null;
+                      })()}
+                      {q.expires_date && new Date(q.expires_date) < new Date() && q.status === "Pending" && (
+                        <span className="text-[11px] font-semibold text-red-600 whitespace-nowrap">Expired</span>
+                      )}
+                    </div>
+                  </td>
+
+                  <td className="px-3 py-3.5 text-right text-teal-600 text-xs font-semibold">
                     View →
                   </td>
                 </tr>
@@ -799,21 +793,17 @@ export default function Quotes() {
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge s={q.status} />
+                  <div className="flex flex-col items-end gap-0.5">
+                    <StatusChip s={q.status} />
                     {q.status === "Sent" && (() => {
                       const age = sentAge(q.sent_date);
                       return age ? (
-                        <span className={`text-[10px] whitespace-nowrap ${age.stale ? "font-semibold text-amber-600" : "text-slate-400"}`}>
+                        <span className={`text-[11px] whitespace-nowrap ${age.stale ? "font-semibold text-amber-700" : "text-slate-400"}`}>
                           {age.label}
                         </span>
                       ) : null;
                     })()}
-                    {q.qb_invoice_id && (
-                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
-                        In QuickBooks
-                      </span>
-                    )}
+                    {q.qb_invoice_id && <MetaTag>QB</MetaTag>}
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
