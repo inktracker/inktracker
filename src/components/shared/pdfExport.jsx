@@ -2,6 +2,7 @@
 // export function below. Keeps it out of the main bundle until a user actually
 // generates a PDF. The first PDF in a session triggers the chunk fetch; later
 // PDFs reuse the cached promise.
+import { isNative } from "@/lib/mobile/native";
 import {
   getQty,
   activeSizeNames,
@@ -876,7 +877,48 @@ function renderTotals(doc, totals, discount, taxRate, depositInfo, pageWidth, ma
  * @param {Promise<string|null|undefined>} buildPromise
  * @returns {Promise<void>}
  */
+function showNativePdfOverlay(blobUrl) {
+  const host = document.createElement("div");
+  host.style.cssText =
+    "position:fixed;inset:0;z-index:2147483000;background:#0f172a;display:flex;flex-direction:column;";
+  const bar = document.createElement("div");
+  bar.style.cssText =
+    "display:flex;align-items:center;justify-content:space-between;" +
+    "padding:calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;background:#1e293b;";
+  const title = document.createElement("span");
+  title.textContent = "PDF preview";
+  title.style.cssText = "color:#e2e8f0;font:600 14px -apple-system,'Segoe UI',sans-serif;";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "Done";
+  close.style.cssText =
+    "background:#0d9488;color:#fff;border:0;border-radius:8px;padding:8px 18px;" +
+    "font:600 14px -apple-system,'Segoe UI',sans-serif;";
+  close.onclick = () => {
+    host.remove();
+    // The blob backs the iframe; release it only after teardown.
+    try { URL.revokeObjectURL(blobUrl); } catch { /* already gone */ }
+  };
+  bar.append(title, close);
+  const frame = document.createElement("iframe");
+  frame.src = blobUrl;
+  frame.title = "PDF preview";
+  frame.style.cssText = "flex:1;border:0;width:100%;background:#fff;";
+  host.append(bar, frame);
+  document.body.appendChild(host);
+}
+
 export async function previewPdf(buildPromise) {
+  // Native shell (Capacitor/WKWebView): there are no tabs, so window.open of
+  // a blob URL is a silent no-op — the Preview button "did nothing" on the
+  // iOS app (Joe, 2026-09-01). Render the PDF in a full-screen in-app
+  // overlay instead. One branch here fixes every preview surface at once
+  // (order / quote / invoice / broker modals all route through previewPdf).
+  if (isNative()) {
+    const blobUrl = await buildPromise;
+    if (blobUrl) showNativePdfOverlay(blobUrl);
+    return;
+  }
   const win = window.open("", "_blank");
   try {
     const blobUrl = await buildPromise;

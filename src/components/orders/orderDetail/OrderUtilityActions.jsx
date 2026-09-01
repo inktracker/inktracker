@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Link2, Eye, Trash2, CheckCircle2, Truck, Handshake } from "lucide-react";
-import { exportOrderToPDF } from "../../shared/pdfExport";
+import { exportOrderToPDF, previewPdf } from "../../shared/pdfExport";
 import ReactivateLink from "../../shared/ReactivateLink";
 
 // Row 2 of the Order Detail footer: utility actions (share art/status
@@ -54,10 +54,12 @@ export default function OrderUtilityActions({
           render a separate "Download PDF" pill here (matches
           Quote + Invoice modals). */}
       <button
-        onClick={async () => {
-          const url = await exportOrderToPDF(order, shopName, logoUrl, "blob", customer?.company);
-          if (url) window.open(url, "_blank");
-        }}
+        onClick={() =>
+          // previewPdf keeps the popup tied to the click gesture (mobile
+          // Safari) and renders in-app on the native shell, where
+          // window.open of a blob is a silent no-op.
+          previewPdf(exportOrderToPDF(order, shopName, logoUrl, "blob", customer?.company))
+        }
         title="Preview PDF"
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
       >
