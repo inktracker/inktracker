@@ -258,15 +258,21 @@ export default function TimesheetsSection({ user }) {
                   {e.status === "approved" || e.qb_time_activity_id ? (
                     <span className="w-20 font-semibold text-slate-700 dark:text-slate-300">{fmtDuration(entryMinutes(e))}</span>
                   ) : (
-                    <input
-                      type="number"
-                      min="0"
-                      max="1440"
-                      defaultValue={entryMinutes(e)}
-                      onBlur={(ev) => setMinutes(e, ev.target.value)}
-                      className="w-20 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm bg-white dark:bg-slate-800"
-                      aria-label="Minutes worked"
-                    />
+                    <span className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        max="1440"
+                        defaultValue={entryMinutes(e)}
+                        onBlur={(ev) => setMinutes(e, ev.target.value)}
+                        className="w-20 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm bg-white dark:bg-slate-800"
+                        aria-label="Minutes worked"
+                      />
+                      <span className="text-xs text-slate-400">min</span>
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 w-16">
+                        = {fmtDuration(entryMinutes(e))}
+                      </span>
+                    </span>
                   )}
                   <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${STATUS_BADGE[e.status] || STATUS_BADGE.open}`}>
                     {e.qb_time_activity_id ? "in QuickBooks" : e.status}
