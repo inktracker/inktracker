@@ -23,6 +23,7 @@ export default function TimesheetsSection({ user }) {
   const [week, setWeek] = useState(() => weekRange(new Date()));
   const [entries, setEntries] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [approvingAll, setApprovingAll] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [pushResult, setPushResult] = useState(null);
 
@@ -65,6 +66,74 @@ export default function TimesheetsSection({ user }) {
       await load();
     } catch (err) {
       notify.error(err?.message || "Couldn't approve entry");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Approve every submitted entry in the visible week at once. Entries whose
+  // minutes were already fixed at clock-out (the normal case) go in one
+  // batched update; the rare minutes-less rows get individual updates so the
+  // authoritative duration is stamped per-row, same as single approve.
+  async function approveAll() {
+    const targets = (entries || []).filter((e) => e.status === "submitted");
+    if (targets.length === 0) return;
+    const people = new Set(targets.map((e) => e.member_name || e.member_email)).size;
+    const ok = window.confirm(
+      `Approve ${targets.length} ${targets.length === 1 ? "entry" : "entries"} for ${people} ${people === 1 ? "person" : "people"} this week?`
+    );
+    if (!ok) return;
+    setApprovingAll(true);
+    try {
+      const withMinutes = targets.filter((e) => Number.isFinite(Number(e.minutes)) && e.minutes !== null);
+      const withoutMinutes = targets.filter((e) => !withMinutes.includes(e));
+      if (withMinutes.length > 0) {
+        const { error } = await supabase
+          .from("time_entries")
+          .update({ status: "approved" })
+          .in("id", withMinutes.map((e) => e.id));
+        if (error) throw error;
+      }
+      for (const e of withoutMinutes) {
+        await base44.entities.TimeEntry.update(e.id, { status: "approved", minutes: entryMinutes(e) });
+      }
+      await load();
+      notify.success(`Approved ${targets.length} ${targets.length === 1 ? "entry" : "entries"}`);
+    } catch (err) {
+      notify.error(err?.message || "Couldn't approve entries");
+    } finally {
+      setApprovingAll(false);
+    }
+  }
+
+  // Owner-side close-out for a clock someone forgot to stop. Uses the entry's
+  // current minutes (owner-editable in the box on the row) as the real
+  // duration and back-computes clock_out from clock_in, so the runaway
+  // elapsed time never becomes the paid time by accident.
+  async function closeOut(entry) {
+    // Cap at the DB's 1440 check — a multi-day runaway clock would otherwise
+    // be rejected outright when the owner closes it without editing first.
+    const mins = Math.min(1440, entryMinutes(entry));
+    const name = entry.member_name || entry.member_email;
+    const ok = window.confirm(
+      `Close ${name}'s open entry at ${fmtDuration(mins)}? ` +
+      `If that isn't the real time worked, cancel and fix the minutes box first.`
+    );
+    if (!ok) return;
+    setBusyId(entry.id);
+    try {
+      const clockOut = entry.clock_in
+        ? new Date(new Date(entry.clock_in).getTime() + mins * 60000).toISOString()
+        : null;
+      await base44.entities.TimeEntry.update(entry.id, {
+        status: "submitted",
+        minutes: mins,
+        clock_out: clockOut,
+      });
+      await load();
+      notify.success(`Closed ${name}'s entry at ${fmtDuration(mins)}`);
+    } catch (err) {
+      notify.error(err?.message || "Couldn't close the entry");
     } finally {
       setBusyId(null);
     }
@@ -114,6 +183,8 @@ export default function TimesheetsSection({ user }) {
   const approvedUnsynced = (entries || []).filter(
     (e) => e.status === "approved" && !e.qb_time_activity_id && entryMinutes(e) > 0
   ).length;
+  const submittedCount = (entries || []).filter((e) => e.status === "submitted").length;
+  const crewTotal = sumMinutes(entries || []);
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
@@ -131,14 +202,26 @@ export default function TimesheetsSection({ user }) {
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
-        <button
-          onClick={pushToQb}
-          disabled={pushing || approvedUnsynced === 0}
-          className="flex items-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40"
-        >
-          {pushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          Send approved to QuickBooks{approvedUnsynced > 0 ? ` (${approvedUnsynced})` : ""}
-        </button>
+        <div className="flex items-center gap-2">
+          {submittedCount > 0 && (
+            <button
+              onClick={approveAll}
+              disabled={approvingAll}
+              className="flex items-center gap-2 text-sm font-semibold text-green-700 bg-green-50 border border-green-200 px-4 py-2 rounded-lg hover:bg-green-100 disabled:opacity-50"
+            >
+              {approvingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Approve all ({submittedCount})
+            </button>
+          )}
+          <button
+            onClick={pushToQb}
+            disabled={pushing || approvedUnsynced === 0}
+            className="flex items-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40"
+          >
+            {pushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Send approved to QuickBooks{approvedUnsynced > 0 ? ` (${approvedUnsynced})` : ""}
+          </button>
+        </div>
       </div>
 
       {pushResult?.unmatched?.length > 0 && (
@@ -160,7 +243,8 @@ export default function TimesheetsSection({ user }) {
           No time entries this week. Employees clock in and out from the Shop Floor header.
         </p>
       ) : (
-        Object.entries(byMember).map(([member, rows]) => (
+        <>
+        {Object.entries(byMember).map(([member, rows]) => (
           <div key={member} className="mb-5 last:mb-0">
             <div className="flex items-center justify-between mb-1.5">
               <span className="font-semibold text-sm text-slate-800 dark:text-slate-200">{member}</span>
@@ -187,7 +271,22 @@ export default function TimesheetsSection({ user }) {
                   <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${STATUS_BADGE[e.status] || STATUS_BADGE.open}`}>
                     {e.qb_time_activity_id ? "in QuickBooks" : e.status}
                   </span>
+                  {e.notes && (
+                    <span className="text-xs italic text-slate-500 dark:text-slate-400 min-w-0 truncate" title={e.notes}>
+                      “{e.notes}”
+                    </span>
+                  )}
                   <span className="flex-1" />
+                  {e.status === "open" && (
+                    <button
+                      onClick={() => closeOut(e)}
+                      disabled={busyId === e.id}
+                      className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+                    >
+                      {busyId === e.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
+                      Close out
+                    </button>
+                  )}
                   {e.status === "submitted" && (
                     <button
                       onClick={() => approve(e)}
@@ -202,7 +301,12 @@ export default function TimesheetsSection({ user }) {
               ))}
             </div>
           </div>
-        ))
+        ))}
+        <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Crew total</span>
+          <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{fmtDuration(crewTotal)}</span>
+        </div>
+        </>
       )}
 
       <p className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500">
