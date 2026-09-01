@@ -323,10 +323,10 @@ export async function sendApprovalNotification({ to, subject, html, reply_to }, 
 /**
  * @typedef {Object} NotificationLogContext
  * @property {string} shop_owner       Required. Tenant scope.
- * @property {'quote_approval'|'artwork_approval'|'quote_payment'|'quote_send'|'reply'|'payment_confirmation'|'trial_reminder'|'signup_notify'|'welcome_email'|'drip_day2'} event_type
+ * @property {'quote_approval'|'artwork_approval'|'quote_payment'|'quote_send'|'reply'|'payment_confirmation'|'trial_reminder'|'signup_notify'|'welcome_email'|'drip_day2'|'status_update'} event_type
  *   Mirror of the notification_log_event_type_check constraint
- *   (20260825000000, extended by 20260905000000 and 20260909000000) —
- *   keep the two lists in lockstep.
+ *   (20260825000000, extended by 20260905000000, 20260909000000, and
+ *   20260901150000 status_update) — keep the two lists in lockstep.
  * @property {string} recipient_email
  * @property {string|null} [recipient_role]  'shop_owner' | 'broker' | 'customer'
  * @property {string|null} [quote_id]       quotes.id UUID (NOT the human "Q-####")
