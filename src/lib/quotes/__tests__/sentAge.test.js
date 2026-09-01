@@ -15,17 +15,16 @@ describe("sentAge", () => {
     expect(sentAge(new Date(NOW + DAY).toISOString(), NOW)).toBeNull();
   });
 
-  it("labels today / yesterday / N days", () => {
-    expect(sentAge(new Date(NOW - 2 * 3600000).toISOString(), NOW)).toEqual({ label: "Sent today", stale: false });
-    expect(sentAge(new Date(NOW - DAY).toISOString(), NOW)).toEqual({ label: "Sent yesterday", stale: false });
-    expect(sentAge(new Date(NOW - 3 * DAY).toISOString(), NOW)).toEqual({ label: "Sent 3 days ago", stale: false });
+  it("labels today / yesterday / N days while waiting", () => {
+    expect(sentAge(new Date(NOW - 2 * 3600000).toISOString(), NOW)).toEqual({ label: "Today · waiting", stale: false });
+    expect(sentAge(new Date(NOW - DAY).toISOString(), NOW)).toEqual({ label: "Yesterday · waiting", stale: false });
+    expect(sentAge(new Date(NOW - 3 * DAY).toISOString(), NOW)).toEqual({ label: "3 days · waiting", stale: false });
   });
 
-  it("flips stale at the threshold", () => {
+  it("switches to 'no reply' and stale at the threshold", () => {
     const just = sentAge(new Date(NOW - (STALE_AFTER_DAYS - 1) * DAY).toISOString(), NOW);
     const at = sentAge(new Date(NOW - STALE_AFTER_DAYS * DAY).toISOString(), NOW);
-    expect(just.stale).toBe(false);
-    expect(at.stale).toBe(true);
-    expect(at.label).toBe(`Sent ${STALE_AFTER_DAYS} days ago`);
+    expect(just).toEqual({ label: `${STALE_AFTER_DAYS - 1} days · waiting`, stale: false });
+    expect(at).toEqual({ label: `${STALE_AFTER_DAYS} days · no reply`, stale: true });
   });
 });
