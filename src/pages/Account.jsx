@@ -9,6 +9,7 @@ import { User, LogOut, Package, Link2, Mail, ChevronDown, Wand2, CreditCard, Che
 import PartnersSection from "../components/account/PartnersSection";
 import PushNotificationsSection from "../components/account/PushNotificationsSection";
 import CustomerUpdatesSection from "../components/account/CustomerUpdatesSection";
+import TeamNotificationPrefs from "../components/account/TeamNotificationPrefs";
 import { loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 import SecuritySection from "../components/account/SecuritySection";
@@ -650,6 +651,7 @@ export default function Account() {
             predates native push existing at all. */}
         <Section icon={BellRing} title="Notifications">
           <PushNotificationsSection user={user} />
+          <TeamNotificationPrefs user={user} />
         </Section>
 
         {/* Customer-facing status emails — opt-in per stage, default OFF.

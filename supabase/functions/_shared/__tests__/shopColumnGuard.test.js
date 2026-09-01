@@ -26,6 +26,8 @@ const SHOP_COLUMNS = new Set([
   "qb_income_account_id", "qb_income_account_name",
   // 20260901150000: per-status customer email opt-in (statusCustomerEmail fn).
   "customer_status_notify",
+  // 20260901180000: team-notification category toggles.
+  "notification_prefs",
 ]);
 
 const FUNCTIONS_DIR = fileURLToPath(new URL("../../", import.meta.url));

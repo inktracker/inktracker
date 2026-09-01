@@ -20,6 +20,7 @@ import {
   buildAssignmentNotification,
   buildCompletionNotification,
 } from "../_shared/teamTasks.js";
+import { notifyPrefEnabled } from "../_shared/notificationPrefs.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -110,6 +111,10 @@ Deno.serve(async (req) => {
 
     async function notify(row: Record<string, unknown> | null) {
       if (!row) return;
+      // Shop pref: task pings can be turned off wholesale.
+      const { data: shopRow } = await admin
+        .from("shops").select("notification_prefs").eq("owner_email", shopOwner).maybeSingle();
+      if (!notifyPrefEnabled(shopRow?.notification_prefs, "task_pings")) return;
       const { error } = await admin.from("notifications").insert(row);
       if (error) console.error("[teamTasks] notification insert failed:", error.message);
     }

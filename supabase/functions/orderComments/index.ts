@@ -19,6 +19,7 @@ import {
   validateMentions,
   buildCommentNotificationRows,
 } from "../_shared/orderComments.js";
+import { notifyPrefEnabled } from "../_shared/notificationPrefs.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -128,7 +129,7 @@ Deno.serve(async (req) => {
         .single();
       if (insErr) throw insErr;
 
-      const rows = buildCommentNotificationRows({
+      let rows = buildCommentNotificationRows({
         shopOwner,
         orderId,
         orderRowId: order.id,
@@ -137,6 +138,13 @@ Deno.serve(async (req) => {
         body: text,
         validMentions,
       });
+      // Shop pref: the owner's automatic copy of every comment is optional.
+      // Rows born from an explicit @mention always survive the filter.
+      const { data: shopRow } = await admin
+        .from("shops").select("notification_prefs").eq("owner_email", shopOwner).maybeSingle();
+      if (!notifyPrefEnabled(shopRow?.notification_prefs, "comment_copies")) {
+        rows = rows.filter((r) => r.metadata?.mentioned === true);
+      }
       if (rows.length > 0) {
         // Notification failure must not eat the comment — it's saved; log loud.
         const { error: notifErr } = await admin.from("notifications").insert(rows);
