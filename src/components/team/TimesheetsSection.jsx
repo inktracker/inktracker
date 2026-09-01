@@ -15,6 +15,44 @@ function fmtClock(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+// Hours + minutes editor, mirroring the shape QuickBooks TimeActivity
+// actually takes (separate Hours and Minutes fields — see qbTime.js).
+// Total minutes stays the stored value; this is purely the human face.
+function HoursMinutesInput({ entry, onSave, disabled }) {
+  const total = entryMinutes(entry);
+  const [hours, setHours] = useState(Math.floor(total / 60));
+  const [mins, setMins] = useState(total % 60);
+
+  function save(h, m) {
+    const hh = Math.max(0, Math.min(24, Math.round(Number(h) || 0)));
+    const mm = Math.max(0, Math.min(59, Math.round(Number(m) || 0)));
+    setHours(hh);
+    setMins(mm);
+    onSave(entry, hh * 60 + mm);
+  }
+
+  const box =
+    "w-14 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm bg-white dark:bg-slate-800 disabled:opacity-50";
+  return (
+    <span className="flex items-center gap-1">
+      <input
+        type="number" min="0" max="24" value={hours} disabled={disabled}
+        onChange={(ev) => setHours(ev.target.value)}
+        onBlur={(ev) => save(ev.target.value, mins)}
+        className={box} aria-label="Hours worked"
+      />
+      <span className="text-xs text-slate-400">h</span>
+      <input
+        type="number" min="0" max="59" value={mins} disabled={disabled}
+        onChange={(ev) => setMins(ev.target.value)}
+        onBlur={(ev) => save(hours, ev.target.value)}
+        className={box} aria-label="Minutes worked"
+      />
+      <span className="text-xs text-slate-400">m</span>
+    </span>
+  );
+}
+
 // Owner-side weekly timesheet review: approve entries, fix minutes, and
 // push approved hours to QuickBooks as TimeActivity records (QBO Payroll
 // reads them for hourly pay runs). Approval is enforced by RLS as an
@@ -139,7 +177,7 @@ export default function TimesheetsSection({ user }) {
     }
   }
 
-  async function setMinutes(entry, raw) {
+  async function setMinutesTotal(entry, raw) {
     const mins = Math.max(0, Math.min(1440, Math.round(Number(raw) || 0)));
     if (mins === entryMinutes(entry)) return;
     setBusyId(entry.id);
@@ -258,21 +296,7 @@ export default function TimesheetsSection({ user }) {
                   {e.status === "approved" || e.qb_time_activity_id ? (
                     <span className="w-20 font-semibold text-slate-700 dark:text-slate-300">{fmtDuration(entryMinutes(e))}</span>
                   ) : (
-                    <span className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="0"
-                        max="1440"
-                        defaultValue={entryMinutes(e)}
-                        onBlur={(ev) => setMinutes(e, ev.target.value)}
-                        className="w-20 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm bg-white dark:bg-slate-800"
-                        aria-label="Minutes worked"
-                      />
-                      <span className="text-xs text-slate-400">min</span>
-                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 w-16">
-                        = {fmtDuration(entryMinutes(e))}
-                      </span>
-                    </span>
+                    <HoursMinutesInput entry={e} onSave={setMinutesTotal} disabled={busyId === e.id} />
                   )}
                   <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${STATUS_BADGE[e.status] || STATUS_BADGE.open}`}>
                     {e.qb_time_activity_id ? "in QuickBooks" : e.status}
