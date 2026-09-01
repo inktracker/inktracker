@@ -35,7 +35,8 @@
     "predeploy": "npm run test && npm run audit:wizard",
     "deploy": "npm run deploy:functions && npm run smoke:functions && vercel --prod --yes",
     "check:functions": "node scripts/check-edge-functions.mjs",
-    "check:functions:lock": "cd supabase/functions && deno cache --config ./deno.json --lock ./deno.lock --frozen */index.ts"
+    "check:functions:lock": "cd supabase/functions && deno cache --config ./deno.json --lock ./deno.lock --frozen */index.ts",
+    "test:edge": "deno test --allow-all --node-modules-dir=auto $(find supabase/functions -name '*.deno.test.ts')"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",

@@ -106,9 +106,11 @@ async function loadBrokerProfile(supabase: any, doc: any) {
 
 // ── getQuote ─────────────────────────────────────────────────────────────────
 
-async function handleGetQuote(quoteId: string, token?: string) {
-  const supabase = serviceClient();
-
+// Exported with an injectable client so the Deno test harness can run the
+// REAL handler against a fake supabase — the router's 2-arg call keeps prod
+// on serviceClient(). Wiring bugs (returning a raw row instead of the
+// sanitized one) live in these bodies, not in the sanitizers they call.
+export async function handleGetQuote(quoteId: string, token?: string, supabase: any = serviceClient()) {
   const { data: quote, error } = await supabase
     .from("quotes")
     .select("*")
@@ -321,9 +323,7 @@ async function handleApproveQuote(quoteId: string, token?: string) {
 
 // ── getOrder ──────────────────────────────────────────────────────────────────
 
-async function handleGetOrder(orderId: string, token?: string) {
-  const supabase = serviceClient();
-
+export async function handleGetOrder(orderId: string, token?: string, supabase: any = serviceClient()) {
   // Try by DB uuid first, then by order_id string
   let order: any = null;
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
