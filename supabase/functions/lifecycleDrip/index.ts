@@ -136,18 +136,27 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    // ── day-2 activation nudge (zero quotes only) ──
+    // ── day-2 activation nudge (no REAL quotes yet) ──
     if (ageDays >= 2 && ageDays <= DAY2_MAX_AGE_DAYS) {
       if (await alreadySent("drip_day2", p.email)) continue;
+      // "Have they made a quote of their OWN?" — NOT "any quote". Every
+      // new signup is seeded with demo quotes (quote_id carries a DEMO/
+      // TEST segment, per the reserved test namespace #836), so a plain
+      // count is ≥5 for everyone from the moment they arrive and this
+      // gate never opens. That silently killed the day-2 nudge for the
+      // entire demo-seeding era (only pre-seed shops ever got it). Count
+      // only non-seed quotes so "hasn't activated" means what it says.
       const { count, error: qErr } = await admin
         .from("quotes")
         .select("id", { count: "exact", head: true })
-        .eq("shop_owner", p.email);
+        .eq("shop_owner", p.email)
+        .not("quote_id", "ilike", "%DEMO%")
+        .not("quote_id", "ilike", "%TEST%");
       if (qErr) {
         console.error(`[lifecycleDrip] quote count failed for ${p.email}:`, qErr.message);
         continue;
       }
-      if ((count ?? 0) > 0) continue; // they activated — no nudge needed
+      if ((count ?? 0) > 0) continue; // they made a real quote — no nudge needed
       await send("drip_day2", p.email, buildDay2NudgeEmail({
         email: p.email,
         shopName: shopLabel,
