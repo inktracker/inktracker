@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   parseRetryAfterMs,
   QbRateLimitError,
+  QbUnreachableError,
   QB_RATE_LIMIT_RETRY_AFTER_CAP_MS,
 } from "../qbRateLimit.ts";
 
@@ -74,5 +75,24 @@ describe("QbRateLimitError", () => {
     const e = new QbRateLimitError("send invoice/123", 2);
     expect(e instanceof QbRateLimitError).toBe(true);
     expect(e instanceof Error).toBe(true);
+  });
+});
+
+describe("QbUnreachableError", () => {
+  it("carries the action label and reads as an Error", () => {
+    const e = new QbUnreachableError("query");
+    expect(e).toBeInstanceOf(Error);
+    expect(e.name).toBe("QbUnreachableError");
+    expect(e.label).toBe("query");
+    expect(e.message).toContain("query");
+    expect(e.message).toContain("did not respond");
+  });
+
+  it("is distinguishable from QbRateLimitError via instanceof — the dispatcher branches separately", () => {
+    const unreachable = new QbUnreachableError("create invoice");
+    const rateLimited = new QbRateLimitError("create invoice", 3);
+    expect(unreachable instanceof QbUnreachableError).toBe(true);
+    expect(unreachable instanceof QbRateLimitError).toBe(false);
+    expect(rateLimited instanceof QbUnreachableError).toBe(false);
   });
 });
