@@ -139,24 +139,29 @@ Deno.serve(async (req) => {
     // ── day-2 activation nudge (no REAL quotes yet) ──
     if (ageDays >= 2 && ageDays <= DAY2_MAX_AGE_DAYS) {
       if (await alreadySent("drip_day2", p.email)) continue;
-      // "Have they made a quote of their OWN?" — NOT "any quote". Every
-      // new signup is seeded with demo quotes (quote_id carries a DEMO/
-      // TEST segment, per the reserved test namespace #836), so a plain
-      // count is ≥5 for everyone from the moment they arrive and this
-      // gate never opens. That silently killed the day-2 nudge for the
-      // entire demo-seeding era (only pre-seed shops ever got it). Count
-      // only non-seed quotes so "hasn't activated" means what it says.
+      // "Have they SENT a quote of their OWN?" — two ways this count is
+      // narrowed from "any quote":
+      //   1. Demo seed: every signup is seeded with demo quotes (quote_id
+      //      carries a DEMO/TEST segment, reserved test namespace #836),
+      //      so a plain count is ≥5 for everyone the moment they arrive.
+      //      That silently killed the nudge for the whole demo-seeding era.
+      //   2. Drafts don't count: a quote built but never sent (status
+      //      'Draft') is exactly the half-activated shop this nudge is for
+      //      — they poked at it and stalled. Activation = they pushed a
+      //      quote to a customer (Sent / Approved / Expired / Converted /
+      //      Paid — anything past Draft).
       const { count, error: qErr } = await admin
         .from("quotes")
         .select("id", { count: "exact", head: true })
         .eq("shop_owner", p.email)
+        .neq("status", "Draft")
         .not("quote_id", "ilike", "%DEMO%")
         .not("quote_id", "ilike", "%TEST%");
       if (qErr) {
         console.error(`[lifecycleDrip] quote count failed for ${p.email}:`, qErr.message);
         continue;
       }
-      if ((count ?? 0) > 0) continue; // they made a real quote — no nudge needed
+      if ((count ?? 0) > 0) continue; // they sent a real quote — no nudge needed
       await send("drip_day2", p.email, buildDay2NudgeEmail({
         email: p.email,
         shopName: shopLabel,
