@@ -7,7 +7,7 @@ import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profile
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { mintPaymentLink } from "../_shared/qbPaymentLink.js";
 import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
-import { parseRetryAfterMs, QbRateLimitError } from "../_shared/qbRateLimit.ts";
+import { parseRetryAfterMs, QbRateLimitError, QbUnreachableError } from "../_shared/qbRateLimit.ts";
 import {
   decideTokenRefresh,
   buildRefreshedTokenFields,
@@ -338,12 +338,25 @@ async function qbFetchWithRetry(
       // branch on the body (e.g. "Duplicate Document Number").
       return { res, data };
     } catch (err) {
-      // Network-layer failures (DNS, TLS, fetch threw). Always retry.
       lastErr = err;
-      console.warn(`[qb] ${label} attempt ${attempt + 1} network error, will retry:`, (err as Error)?.message);
+      // A per-attempt deadline fired: QBO didn't answer in attemptTimeoutMs.
+      // When Intuit is unresponsive it stays unresponsive for minutes, so
+      // grinding all 3 attempts (each a full timeout) just chews the edge
+      // function's wall for nothing and, across the several calls a
+      // create/resync makes, re-creates the gateway-504 hang we're fixing.
+      // Cap timeouts at 2 attempts and surface a tagged outage error the
+      // dispatcher turns into "QuickBooks is unreachable" — a real answer
+      // in ~2×timeout instead of an opaque spin.
+      const isTimeout = err instanceof DOMException && err.name === "TimeoutError";
+      if (isTimeout && attempt >= 1) {
+        console.warn(`[qb] ${label} timed out ${attempt + 1}× — QBO unresponsive, giving up`);
+        throw new QbUnreachableError(label);
+      }
+      console.warn(`[qb] ${label} attempt ${attempt + 1} ${isTimeout ? "timed out" : "network error"}, will retry:`, (err as Error)?.message);
       continue;
     }
   }
+  if (lastErr instanceof DOMException && lastErr.name === "TimeoutError") throw new QbUnreachableError(label);
   throw lastErr instanceof Error ? lastErr : new Error(`QB ${label} failed after retries`);
 }
 
@@ -3886,6 +3899,22 @@ Deno.serve(async (req) => {
           error_code: "qb_rate_limited",
           error: `QuickBooks is rate-limiting requests. Try again in about ${err.retryAfterSeconds} second${err.retryAfterSeconds === 1 ? "" : "s"}.`,
           retry_after_seconds: err.retryAfterSeconds,
+        },
+        { status: 200, headers: CORS },
+      );
+    }
+    // QbUnreachableError → QBO didn't answer in time (Intuit-side outage).
+    // 200 + structured body, distinct code, so the frontend shows "QB is
+    // down, try later" rather than an opaque failure or a "reconnect"
+    // scare. No QB write landed (the deadline fired before any response),
+    // so a later retry is clean.
+    if (err instanceof QbUnreachableError) {
+      console.warn(`qbSync: QuickBooks unreachable on ${err.label}`);
+      return Response.json(
+        {
+          success: false,
+          error_code: "qb_unreachable",
+          error: "QuickBooks isn't responding right now — this is an outage on Intuit's side, not your connection. Wait a few minutes and try again; nothing was changed.",
         },
         { status: 200, headers: CORS },
       );

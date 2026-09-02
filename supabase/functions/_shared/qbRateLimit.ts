@@ -41,3 +41,16 @@ export class QbRateLimitError extends Error {
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
+
+// Thrown when QuickBooks Online doesn't answer within the per-attempt
+// deadline — i.e. an Intuit-side outage, not a client problem. Tagged so
+// the dispatcher can return a structured "QBO is unreachable" response
+// (distinct from 429 rate-limiting) instead of an opaque failure.
+export class QbUnreachableError extends Error {
+  label: string;
+  constructor(label: string) {
+    super(`QB ${label} unreachable — QuickBooks did not respond in time`);
+    this.name = "QbUnreachableError";
+    this.label = label;
+  }
+}
