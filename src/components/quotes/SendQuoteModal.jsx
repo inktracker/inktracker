@@ -417,6 +417,15 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           const body = await invErr.context?.json?.();
           realMessage = body?.error || body?.message || "";
         } catch { /* body unreadable / already consumed — fall back below */ }
+        // Gateway 504: QuickBooks hung long enough that our function was
+        // cut off mid-flight. The write MAY have applied — the retry is
+        // safe (idempotency + adopt-existing-invoice on the server), so
+        // say that instead of the opaque non-2xx shell.
+        if (!realMessage && [502, 504].includes(invErr.context?.status)) {
+          realMessage =
+            "QuickBooks is responding slowly right now and this request timed out. " +
+            "Wait a minute and click the button again — if the invoice was already updated, the retry picks it up instead of duplicating it.";
+        }
         throw new Error(realMessage || invErr.message || "Couldn't reach QuickBooks. Please try again.");
       }
       if (data?.error) throw new Error(data.error);

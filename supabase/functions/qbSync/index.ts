@@ -111,15 +111,24 @@ const CORS = {
 // ── Token management ────────────────────────────────────────────────────────
 
 async function refreshToken(refreshTok: string) {
-  const res = await fetch(QB_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Basic ${btoa(`${QB_CLIENT_ID}:${QB_CLIENT_SECRET}`)}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Accept": "application/json",
-    },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshTok }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(QB_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${btoa(`${QB_CLIENT_ID}:${QB_CLIENT_SECRET}`)}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+      },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshTok }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    // Timeout / network — transient. Do NOT phrase this as a broken
+    // connection: tokens are intact, Intuit was just slow to answer.
+    console.error("[qbSync] Token refresh request failed (transient):", (err as Error)?.message);
+    throw new Error("QuickBooks is responding slowly right now. Nothing is wrong with your connection — try again in a minute.");
+  }
   if (!res.ok) {
     const body = await res.text();
     // Log the status + parsed `error` only — never the raw body (defensive:
@@ -173,6 +182,7 @@ async function revokeQbToken(token: string | null): Promise<void> {
         "Accept": "application/json",
       },
       body: JSON.stringify({ token }),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok && res.status !== 200) {
       console.error(`[qbSync] Token revoke returned ${res.status} (continuing; tokens cleared locally)`);
@@ -272,10 +282,24 @@ function qbHeaders(token: string) {
 const QB_RETRY_DELAYS_MS = [0, 500, 1500];
 const QB_RATE_LIMIT_DELAYS_MS = [0, 1500, 4000];
 
+// Per-attempt fetch deadlines. When QBO degrades it doesn't fail fast — a
+// single connection can hang for minutes before Intuit's edge finally
+// 504s, which blew past the Supabase gateway's ~150s wall and turned into
+// an opaque gateway 504 for the operator (Joe's stuck "Updating QB
+// invoice…", 2026-09-01). Aborting an attempt turns a wedged connection
+// into a normal retried network error, so the function returns a REAL
+// error inside its budget. Writes get the longer deadline: aborting a
+// write QB may have applied pressures the replay defenses (idempotency
+// re-read/adopt, doc-number dedup — #636), so we only do it when QBO is
+// truly wedged.
+const QB_READ_TIMEOUT_MS = 15_000;
+const QB_WRITE_TIMEOUT_MS = 40_000;
+
 async function qbFetchWithRetry(
   url: string,
   init: RequestInit,
   label: string,
+  attemptTimeoutMs: number = QB_WRITE_TIMEOUT_MS,
 ): Promise<{ res: Response; data: any }> {
   let lastErr: unknown = null;
   let lastRetryAfterMs: number | null = null;
@@ -291,7 +315,7 @@ async function qbFetchWithRetry(
     }
     lastRetryAfterMs = null;
     try {
-      const res = await fetch(url, init);
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(attemptTimeoutMs) });
       // Always read the body so callers can inspect QB error payloads.
       let data: any = null;
       try { data = await res.json(); } catch { data = null; }
@@ -325,7 +349,7 @@ async function qbFetchWithRetry(
 
 async function qbQuery(token: string, realmId: string, query: string) {
   const url = `${QB_BASE}/${realmId}/query?query=${encodeURIComponent(query)}&minorversion=65`;
-  const { res, data } = await qbFetchWithRetry(url, { headers: qbHeaders(token) }, `query`);
+  const { res, data } = await qbFetchWithRetry(url, { headers: qbHeaders(token) }, `query`, QB_READ_TIMEOUT_MS);
   if (!res.ok) {
     // Re-read body as text for the error message — data may have parsed
     // as JSON above but we want the raw if QB returned a non-JSON 4xx.
@@ -434,6 +458,7 @@ async function qbSendInvoice(token: string, realmId: string, invoiceId: string, 
       const res = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/octet-stream" },
+        signal: AbortSignal.timeout(30_000),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) return data;
@@ -472,7 +497,15 @@ async function qbSendInvoice(token: string, realmId: string, invoiceId: string, 
 // share link populated. A subsequent GET a moment later picks it up.
 async function qbFetchInvoiceWithLink(token: string, realmId: string, invoiceId: string) {
   const url = `${QB_BASE}/${realmId}/invoice/${invoiceId}?minorversion=65&include=invoiceLink`;
-  const res = await fetch(url, { headers: qbHeaders(token) });
+  // Contract: null on any failure — the link refetch is best-effort, so a
+  // timed-out attempt must not sink the surrounding create/update.
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: qbHeaders(token), signal: AbortSignal.timeout(QB_READ_TIMEOUT_MS) });
+  } catch (err) {
+    console.warn(`[qbFetchInvoiceWithLink] GET /invoice/${invoiceId}?include=invoiceLink failed:`, (err as Error)?.message);
+    return null;
+  }
   if (!res.ok) {
     console.warn(`[qbFetchInvoiceWithLink] GET /invoice/${invoiceId}?include=invoiceLink → ${res.status}`);
     return null;
