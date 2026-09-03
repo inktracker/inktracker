@@ -228,8 +228,23 @@ async function probeDataIntegrity(admin: any): Promise<Probe> {
   const latencyMs = Date.now() - t0;
   // The RPC is optional infra — a missing function is not a health failure.
   if (error) return P("Data integrity", "secondary", true, "check unavailable (skipped)", latencyMs);
-  const n = Array.isArray(data) ? data.length : 0;
-  return P("Data integrity", "secondary", n === 0, n === 0 ? "no violations" : `${n} violation(s)`, latencyMs);
+  // Shape: ONE summary row per table — { tbl, missing_link, dangling_link } —
+  // NOT one row per violation. Sum the count columns; row count is always the
+  // number of tables checked, not a problem count.
+  const rows = Array.isArray(data) ? data : [];
+  let violations = 0;
+  const badTables: string[] = [];
+  for (const r of rows) {
+    const n = (Number(r?.missing_link) || 0) + (Number(r?.dangling_link) || 0);
+    if (n > 0) { violations += n; badTables.push(`${r?.tbl}:${n}`); }
+  }
+  return P(
+    "Data integrity",
+    "secondary",
+    violations === 0,
+    violations === 0 ? "no violations" : `${violations} orphaned rows (${badTables.join(", ")})`,
+    latencyMs,
+  );
 }
 
 Deno.serve(async (req) => {
