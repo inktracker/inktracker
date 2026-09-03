@@ -103,6 +103,9 @@ verify_jwt = false
 [functions.lifecycleDrip]
 verify_jwt = false
 
+[functions.systemHealthCheck]
+verify_jwt = false
+
 [functions.notifySignup]
 verify_jwt = false
 
