@@ -1,0 +1,67 @@
+name: Daily system health check
+
+# Fires the systemHealthCheck edge function every morning. It probes every
+# external API + internal signal InkTracker depends on (site, Supabase,
+# QuickBooks, Stripe, Resend, suppliers, whether the other crons ran), does
+# the safe auto-fixes, and emails the operator a digest — green mornings
+# included, so a silent monitor can't pass for a healthy one.
+#
+# Same reliable pattern as qb-reconcile.yml: GitHub's scheduler (not Vercel
+# Hobby cron, which silently skips), CRON_SECRET auth, red ❌ + admin email on
+# failure. The function returns 503 on a CRITICAL failure, so on a true outage
+# (even a Resend outage that would mute the email digest) this workflow goes
+# red and GitHub emails you through a separate channel.
+#
+# Uses the SAME CRON_SECRET repo secret the other crons already need — no new
+# setup. 13:07 UTC ≈ 6am Pacific (PDT). Off-minute on purpose (not :00).
+#
+# Optional dead-man's-switch: set HEALTHCHECK_SYSTEM_URL to a healthchecks.io
+# ping URL (period 1 day, grace 2h) and it pages if the cron itself ever stops.
+
+on:
+  schedule:
+    - cron: "7 13 * * *" # 13:07 UTC ≈ 6am Pacific (PDT)
+  workflow_dispatch: {} # manual trigger for testing
+
+concurrency:
+  group: system-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger systemHealthCheck
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET repo secret is not set — add it (must match the Supabase CRON_SECRET)."
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/health.json -w "%{http_code}" -X POST \
+            "https://skmltfbibaqcjddmeqvi.supabase.co/functions/v1/systemHealthCheck" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --data "{}")
+          echo "HTTP $code"
+          cat /tmp/health.json | head -c 4000; echo
+          # 200 = all clear or degraded (digest emailed). 503 = a CRITICAL
+          # system is down; fail the workflow so GitHub emails you even if the
+          # thing that's down is Resend itself.
+          if [ "$code" != "200" ]; then
+            echo "::error::systemHealthCheck returned $code — a critical system is down (or 401 = CRON_SECRET mismatch). Check the digest / logs."
+            exit 1
+          fi
+      - name: Heartbeat (dead-man's-switch)
+        # Only reached on a healthy (200) run. Pings the external monitor so it
+        # pages if this cron ever stops firing entirely.
+        env:
+          HEALTHCHECK_SYSTEM_URL: ${{ secrets.HEALTHCHECK_SYSTEM_URL }}
+        run: |
+          if [ -n "$HEALTHCHECK_SYSTEM_URL" ]; then
+            curl -fsS -m 10 --retry 3 "$HEALTHCHECK_SYSTEM_URL" >/dev/null && echo "heartbeat sent"
+          else
+            echo "HEALTHCHECK_SYSTEM_URL not set — skipping heartbeat (see workflow header to enable the dead-man's-switch)."
+          fi
