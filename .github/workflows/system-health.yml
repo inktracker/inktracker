@@ -6,22 +6,18 @@ name: Daily system health check
 # the safe auto-fixes, and emails the operator a digest — green mornings
 # included, so a silent monitor can't pass for a healthy one.
 #
-# Same reliable pattern as qb-reconcile.yml: GitHub's scheduler (not Vercel
-# Hobby cron, which silently skips), CRON_SECRET auth, red ❌ + admin email on
-# failure. The function returns 503 on a CRITICAL failure, so on a true outage
-# (even a Resend outage that would mute the email digest) this workflow goes
-# red and GitHub emails you through a separate channel.
+# The DAILY 6am trigger is Supabase pg_cron (migration
+# 20260904000000_system_health_pg_cron.sql), NOT this workflow — GitHub's
+# scheduler drifts 3-6h on this repo (qb-reconcile's "5am" job fires ~9am),
+# so it cannot hit a specific hour. pg_cron fires from the database, precise
+# and DST-aware for 6am America/Los_Angeles.
 #
-# Uses the SAME CRON_SECRET repo secret the other crons already need — no new
-# setup. 13:07 UTC ≈ 6am Pacific (PDT). Off-minute on purpose (not :00).
-#
-# Optional dead-man's-switch: set HEALTHCHECK_SYSTEM_URL to a healthchecks.io
-# ping URL (period 1 day, grace 2h) and it pages if the cron itself ever stops.
+# This workflow is kept for MANUAL runs only (workflow_dispatch) — a one-click
+# "check right now" that also exercises the CRON_SECRET auth path. The schedule
+# was removed so it can't double-send the daily digest alongside pg_cron.
 
 on:
-  schedule:
-    - cron: "7 13 * * *" # 13:07 UTC ≈ 6am Pacific (PDT)
-  workflow_dispatch: {} # manual trigger for testing
+  workflow_dispatch: {} # manual trigger only (daily schedule is pg_cron)
 
 concurrency:
   group: system-health
