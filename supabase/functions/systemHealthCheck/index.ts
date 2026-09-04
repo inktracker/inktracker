@@ -30,6 +30,11 @@ import {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+// Dedicated token for the Supabase pg_cron trigger (precise 6am Pacific,
+// DST-aware — GitHub Actions drifts 3-6h so it can't hit a specific hour).
+// Separate from CRON_SECRET so enabling pg_cron never touches the shared
+// secret the other GitHub crons depend on.
+const CRON_TOKEN = Deno.env.get("HEALTHCHECK_CRON_TOKEN") ?? "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
 const ADMIN_EMAIL =
@@ -252,7 +257,10 @@ Deno.serve(async (req) => {
     return new Response("method not allowed", { status: 405 });
   }
   const authHeader = req.headers.get("authorization") || "";
-  if (!CRON_SECRET || !timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`)) {
+  const authed =
+    (CRON_SECRET && timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`)) ||
+    (CRON_TOKEN && timingSafeEqual(authHeader, `Bearer ${CRON_TOKEN}`));
+  if (!authed) {
     return new Response("unauthorized", { status: 401 });
   }
 
