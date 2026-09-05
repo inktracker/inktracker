@@ -1,0 +1,36 @@
+# InkTracker
+
+> InkTracker is shop management software for screen printing and embroidery shops: quoting with live garment costs from S&S Activewear, SanMar, and AS Colour, customer art approval and payment links, production tracking with a shop-floor mode, QuickBooks Online two-way sync, and broker/wholesale pricing. Built by Biota MFG, a working screen printing shop in Reno, Nevada. One plan at $99/month with a free trial (no credit card); iOS app available.
+
+InkTracker is designed for small shops (1–10 people) that want opinionated, ready-to-use workflows rather than build-your-own-board configuration. Quotes pull real-time blank garment costs so pricing always covers cost; customers approve art and pay from one link; jobs move through a five-stage pipeline (Art Approval, Order Goods, Pre-Press, Printing, Completed).
+
+## Product
+
+- [Homepage](https://www.inktracker.app/): features overview and signup
+- [For printers](https://www.inktracker.app/for-printers): who it's for and how shops use it
+- [Compare](https://www.inktracker.app/compare): InkTracker vs Printavo, DecoNetwork, and spreadsheets
+- [Support](https://www.inktracker.app/support): help and contact
+- [Security](https://www.inktracker.app/security): security practices
+- [Changelog](https://www.inktracker.app/changelog): what's shipping
+
+## Guides
+
+- [How to price a screen printing job](https://www.inktracker.app/blog/how-to-price-a-screen-printing-job)
+- [Build a screen printing price chart](https://www.inktracker.app/blog/build-a-screen-printing-price-chart)
+- [How to price embroidery](https://www.inktracker.app/blog/how-to-price-embroidery)
+- [Screen printing software: an honest comparison](https://www.inktracker.app/blog/screen-printing-software-honest-comparison)
+- [Sales tax for print shops](https://www.inktracker.app/blog/sales-tax-for-print-shops)
+- [QuickBooks for screen printers](https://www.inktracker.app/blog/quickbooks-for-screen-printers)
+- [DTF vs screen printing](https://www.inktracker.app/blog/dtf-vs-screen-printing)
+- [How to subcontract print work](https://www.inktracker.app/blog/how-to-subcontract-print-work)
+
+## Free tools
+
+- [Screen printing price calculator](https://www.inktracker.app/tools/screen-printing-price-calculator)
+- [Embroidery pricing calculator](https://www.inktracker.app/tools/embroidery-pricing-calculator)
+
+## Optional
+
+- [Terms](https://www.inktracker.app/terms)
+- [Privacy](https://www.inktracker.app/privacy)
+- [Made with InkTracker](https://www.inktracker.app/made-with-inktracker)
