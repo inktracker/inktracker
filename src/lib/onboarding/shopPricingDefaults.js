@@ -65,12 +65,20 @@ export const SHOP_PRICING_DEFAULTS = Object.freeze({
  *
  * @param {object} opts
  * @param {boolean} [opts.offersEmbroidery] — flip embroidery.enabled
+ * @param {boolean} [opts.offersScreenPrint] — default true; false turns screen
+ *   printing off for an embroidery-only (or other) shop
  * @returns {object} a deep-cloned, full pricing_config object
  */
-export function buildInitialPricingConfig({ offersEmbroidery = false } = {}) {
+export function buildInitialPricingConfig({ offersEmbroidery = false, offersScreenPrint = true } = {}) {
   // Deep clone via JSON so callers can mutate the result without
   // touching the frozen module-level constants above.
   const cloned = JSON.parse(JSON.stringify(SHOP_PRICING_DEFAULTS));
   if (offersEmbroidery) cloned.embroidery.enabled = true;
+  // Turn screen printing off ONLY if they said no AND they enabled another
+  // method — never seed a zero-method shop (getEnabledTechniques would then
+  // fall back to Screen Print anyway, so this keeps the config honest).
+  if (!offersScreenPrint && offersEmbroidery) {
+    cloned.screenPrint = { ...(cloned.screenPrint || {}), enabled: false };
+  }
   return cloned;
 }

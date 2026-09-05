@@ -248,6 +248,24 @@ describe("buildShopUpsertPayload", () => {
     expect(p.pricing_config.embroidery.enabled).toBe(true);
   });
 
+  it("screen printing is ON by default — no screenPrint flag written", () => {
+    const p = buildShopUpsertPayload({ user: NEW_USER });
+    // Absent flag = on (getEnabledTechniques default). Never write enabled:false here.
+    expect(p.pricing_config.screenPrint?.enabled).not.toBe(false);
+  });
+
+  it("an embroidery-only signup turns screen printing off", () => {
+    const p = buildShopUpsertPayload({ user: NEW_USER, offersEmbroidery: true, offersScreenPrint: false });
+    expect(p.pricing_config.screenPrint.enabled).toBe(false);
+    expect(p.pricing_config.embroidery.enabled).toBe(true);
+  });
+
+  it("never seeds a zero-method shop: screen-print-off is ignored if no other method is on", () => {
+    const p = buildShopUpsertPayload({ user: NEW_USER, offersScreenPrint: false, offersEmbroidery: false });
+    // Guard keeps screen printing on rather than leaving the shop with nothing.
+    expect(p.pricing_config.screenPrint?.enabled).not.toBe(false);
+  });
+
   it("includes the full embroidery pricing tables when offersEmbroidery is true (not just .enabled)", () => {
     // The bug this guards against: minimal payload meant _pc.embroidery
     // had .enabled but no .pricing / .qtyTiers / .stitchTiers, so the

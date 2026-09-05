@@ -56,6 +56,7 @@ export default function OnboardingWizard({ user, onComplete }) {
     }
   });
   const [offersEmbroidery, setOffersEmbroidery] = useState(false);
+  const [offersScreenPrint, setOffersScreenPrint] = useState(true);
   const [logoUrl, setLogoUrl] = useState(user?.logo_url || "");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -146,7 +147,7 @@ export default function OnboardingWizard({ user, onComplete }) {
   // and Stripe checkout); throws on the primary profile save so callers can
   // keep the user on the wizard to retry.
   async function persistOnboarding() {
-    const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, website, taxRate, timezone, offersEmbroidery, heardAbout };
+    const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, website, taxRate, timezone, offersEmbroidery, offersScreenPrint, heardAbout };
     const profileData = buildOnboardingProfile(wizardInput);
     await base44.auth.updateMe(profileData);
 
@@ -448,18 +449,34 @@ export default function OnboardingWizard({ user, onComplete }) {
                   <label className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition">
                     <input
                       type="checkbox"
+                      checked={offersScreenPrint}
+                      onChange={(e) => setOffersScreenPrint(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-teal-600 cursor-pointer"
+                    />
+                    <span className="text-sm text-slate-700">
+                      <span className="font-semibold">We offer screen printing</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">
+                        On by default. Uncheck if you only do embroidery (or another method) — it'll be hidden from your quotes and order form.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 p-3 mt-2 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition">
+                    <input
+                      type="checkbox"
                       checked={offersEmbroidery}
                       onChange={(e) => setOffersEmbroidery(e.target.checked)}
                       className="mt-0.5 w-4 h-4 accent-teal-600 cursor-pointer"
                     />
                     <span className="text-sm text-slate-700">
-                      <span className="font-semibold">We also offer embroidery</span>
+                      <span className="font-semibold">We offer embroidery</span>
                       <span className="block text-xs text-slate-500 mt-0.5">
                         Turns on embroidery pricing (stitch-count tiers + digitizing fee). You can fine-tune the rates later in Account → Pricing.
                       </span>
                     </span>
                   </label>
-                  <p className="text-xs text-slate-500 mt-2">Screen printing is enabled by default.</p>
+                  {!offersScreenPrint && !offersEmbroidery && (
+                    <p className="text-xs text-amber-600 mt-2">Pick at least one method. Screen printing stays on until you turn on another.</p>
+                  )}
                 </div>
               </div>
             )}
