@@ -3,7 +3,7 @@ import { base44 } from "@/api/supabaseClient";
 import { clampRushTierMaxDays, defaultNewRushTierMaxDays } from "@/lib/pricing/rushTierClamp";
 import { createUndoHistory, recordChange, undoTo } from "@/lib/pricing/undoHistory";
 import { decidePricingSave } from "@/lib/pricing/inputValidation";
-import { loadShopPricingConfig } from "@/components/shared/pricing";
+import { loadShopPricingConfig, getEnabledTechniques } from "@/components/shared/pricing";
 import NumericInput from "@/components/shared/NumericInput";
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
@@ -697,6 +697,38 @@ export default function PricingConfigEditor({ user }) {
       </div>
 
       {pricingTab === "screen_print" && <>
+
+      {/* Offer toggle — an embroidery-only (or DTF-only) shop can turn screen
+          printing off so it stops appearing on quotes and the public order
+          form. Default on for every existing shop. */}
+      <label className="flex items-start gap-2 mb-4 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={config.screenPrint?.enabled !== false}
+          onChange={(e) => {
+            const on = e.target.checked;
+            if (!on) {
+              const others = getEnabledTechniques(config).filter((t) => t !== "Screen Print");
+              if (others.length === 0) {
+                window.alert(
+                  "You need at least one decoration method. Turn on Embroidery (or add another method) before removing Screen Print.",
+                );
+                return;
+              }
+            }
+            setConfig((prev) => ({ ...prev, screenPrint: { ...(prev.screenPrint || {}), enabled: on } }));
+          }}
+        />
+        <span className="text-sm text-slate-700">
+          <span className="font-semibold">We offer screen printing</span>
+          <span className="block text-xs text-slate-500">
+            {config.screenPrint?.enabled === false
+              ? "Screen printing is hidden from your quotes and order form. Turn it back on any time — your pricing below is kept."
+              : "Uncheck if your shop doesn't screen print — it'll be removed from quotes and your order form."}
+          </span>
+        </span>
+      </label>
 
       {/* Color Count */}
       <div>

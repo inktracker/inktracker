@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { calcLinkedLinePrice, calcQuoteTotalsWithLinking, buildLinkedQtyMap, uid, getWizardRushDisplay } from "../shared/pricing";
+import { calcLinkedLinePrice, calcQuoteTotalsWithLinking, buildLinkedQtyMap, uid, getWizardRushDisplay, getDefaultTechnique } from "../shared/pricing";
 import { supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { getEffectiveCost } from "@/lib/wizard/getEffectiveCost";
@@ -103,7 +103,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
   // (not on each garment). Customers who want different prints submit
   // separate quote requests — see the inline microcopy near Add Garment.
   const [imprints, setImprints] = useState([
-    { id: uid(), location: "Front", colors: 1, pantones: "", technique: "Screen Print", details: "" },
+    { id: uid(), location: "Front", colors: 1, pantones: "", technique: getDefaultTechnique(), details: "" },
   ]);
   const [artFiles, setArtFiles] = useState({});
   const [colorResults, setColorResults] = useState({});
@@ -431,7 +431,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
   // across every garment and the customer hits the tier they earned.
   const allLiveItems = garments.filter(gg => gg.style).map(gg => {
     const gQty = Object.values(gg.sizes).reduce((a,v)=>a+(parseInt(v)||0),0);
-    const liveImprints = (imprints.length > 0 ? imprints : [{ id: "p1", location: "Front", colors: 1, technique: "Screen Print" }])
+    const liveImprints = (imprints.length > 0 ? imprints : [{ id: "p1", location: "Front", colors: 1, technique: getDefaultTechnique() }])
       .map(imp => ({ ...imp, linked: true }));
     return {
       id: gg.id,
@@ -579,7 +579,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
   function resetWizard() {
     setSubmitted(false); setStep(1); setRush(false);
     setGarments([blankGarment()]); setActiveIdx(0);
-    setImprints([{ id: uid(), location: "Front", colors: 1, pantones: "", technique: "Screen Print", details: "" }]);
+    setImprints([{ id: uid(), location: "Front", colors: 1, pantones: "", technique: getDefaultTechnique(), details: "" }]);
     setArtFiles({}); setColorResults({});
     setContact({name:"",email:"",phone:"",company:"",notes:"",dueDate:"",taxExempt:false,taxId:""});
     setSsLookupInput(""); setSsLookupError(""); setSsMatches([]);

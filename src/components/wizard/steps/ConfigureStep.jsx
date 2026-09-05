@@ -1,6 +1,6 @@
 import Icon from "@/components/shared/Icon";
 import ColorAnalysisResult from "@/components/shared/ColorAnalysisResult";
-import { BIG_SIZES, SIZES, DEFAULT_EMB_STITCH_TIERS, getEnabledTechniques, getMinOrderQty, getShopPricingConfig, getStandardTurnaroundDays, getWizardRushDisplay } from "@/components/shared/pricing";
+import { BIG_SIZES, SIZES, DEFAULT_EMB_STITCH_TIERS, getEnabledTechniques, getDefaultTechnique, getMinOrderQty, getShopPricingConfig, getStandardTurnaroundDays, getWizardRushDisplay } from "@/components/shared/pricing";
 import { StepBadge, TintedImage, colorNameToHex, LOCATIONS, COLOR_COUNTS, CATEGORY_BLURBS } from "@/components/wizard/steps/wizardHelpers";
 
 // STEP 1: Configure — style + color + sizes + prints all on one page.
@@ -527,7 +527,7 @@ export default function ConfigureStep({
           // customers building "front print + back print" runs
           // don't have to re-pick the method every row. Each new
           // row's dropdown can still override.
-          const seedMethod = imprints[imprints.length - 1]?.technique || "Screen Print";
+          const seedMethod = imprints[imprints.length - 1]?.technique || getDefaultTechnique();
           setImprints(prev => [...prev, {id:uid(),location:"Back",colors:1,pantones:"",technique:seedMethod,details:""}]);
         }}
           className="w-full text-sm font-semibold text-[var(--brand)] border border-[var(--brand-tint)] rounded-xl py-2.5 hover:bg-[var(--brand-tint)] transition">+ Add Print Location</button>

@@ -21,6 +21,14 @@
       "destination": "/blog/$1/index.html"
     },
     {
+      "source": "/features",
+      "destination": "/features/index.html"
+    },
+    {
+      "source": "/features/(.*)",
+      "destination": "/features/$1/index.html"
+    },
+    {
       "source": "/for-printers",
       "destination": "/for-printers/index.html"
     },

@@ -9,6 +9,7 @@ import {
   activeSizeNames,
   getShopPricingConfig,
   getEnabledTechniques,
+  getDefaultTechnique,
   uid,
   getLineExtras,
 } from "../shared/pricing";
@@ -674,7 +675,7 @@ export default function BrokerLineItemEditor({
           height: "",
           colors: 1,
           pantones: "",
-          technique: "Screen Print",
+          technique: getDefaultTechnique(shopPricingConfig),
           details: "",
           linked: false,
         },
