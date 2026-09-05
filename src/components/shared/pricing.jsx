@@ -111,7 +111,12 @@ export function getEnabledTechniques(configOverride) {
   // technique dropdown because _pc was still null on the first render.
   // Passing the config explicitly makes it React-tracked state.
   const pc = configOverride ?? _pc;
-  const enabled = ["Screen Print"];
+  const enabled = [];
+  // Screen Print is on by default. Only an EXPLICIT screenPrint.enabled===false
+  // turns it off — for a shop that doesn't offer it (e.g. embroidery-only).
+  // Every existing shop has no such flag, so they keep Screen Print: this is
+  // backward-compatible. (Absent/true → on; only literal false → off.)
+  if (pc?.screenPrint?.enabled !== false) enabled.push("Screen Print");
   const emb = pc?.embroidery;
   const hasPricing = emb?.pricing && Object.keys(emb.pricing).length > 0;
   if (emb?.enabled || hasPricing) enabled.push("Embroidery");
@@ -125,7 +130,19 @@ export function getEnabledTechniques(configOverride) {
       if (t && !enabled.includes(t)) enabled.push(t);
     }
   }
+  // A shop must always have at least one method or quoting breaks. If they
+  // somehow disabled everything, fall back to Screen Print.
+  if (enabled.length === 0) enabled.push("Screen Print");
   return enabled;
+}
+
+// The technique a NEW imprint should default to: the shop's first enabled
+// method. A screen-print shop still gets "Screen Print"; an embroidery-only
+// shop (Screen Print turned off) gets "Embroidery" instead of the historical
+// hardcoded "Screen Print". Callers that only ever create imprints for the
+// current shop can omit the arg (reads the hydrated _pc).
+export function getDefaultTechnique(configOverride) {
+  return getEnabledTechniques(configOverride)[0] || "Screen Print";
 }
 
 // Technique dropdown options for a line that ALREADY has `currentTechnique`

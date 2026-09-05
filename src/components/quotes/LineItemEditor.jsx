@@ -4,6 +4,7 @@ import {
   BIG_SIZES,
   LOCATIONS,
   getTechniqueOptions,
+  getDefaultTechnique,
   getTechniqueRates,
   getShopPricingConfig,
   GARMENT_CATEGORIES,
@@ -91,7 +92,10 @@ export function normalizeImprint(imprint) {
     height: imprint?.height || "",
     colors: imprint?.colors === 0 || imprint?.colors ? imprint.colors : 1,
     pantones: imprint?.pantones || "",
-    technique: imprint?.technique || "Screen Print",
+    // Default only when a new imprint has no technique yet — the shop's first
+    // enabled method (Embroidery for an embroidery-only shop). Saved imprints
+    // keep their own technique.
+    technique: imprint?.technique || getDefaultTechnique(),
     details: imprint?.details || "",
     linked: !!imprint?.linked,
     artwork_id: imprint?.artwork_id || "",
@@ -957,7 +961,7 @@ export default function LineItemEditor({
           height: "",
           colors: 1,
           pantones: "",
-          technique: "Screen Print",
+          technique: getDefaultTechnique(),
           details: "",
           linked: false,
           artwork_id: "",
