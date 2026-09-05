@@ -93,6 +93,24 @@ export function stitchCell(M, stitchesK, tierIdx) {
 }
 
 // One labelled slider row. Shared by every calculator widget.
+// ── Stale-blank-price model (the /tools/stale-blank-price-calculator) ───────
+// How much a price chart built on old garment costs gives away. Pure and
+// self-contained so the browser script can inject it verbatim
+// (stalePriceModel.toString()) and static render === live render.
+//   S = { blank, qty, ageMonths, driftPct, markup, ordersMo }
+// chartCost: what the blank cost when the chart was made (today's cost
+// deflated by the drift over the chart's age). gap: today − chart, absorbed
+// silently. underquote: the gap carried through the shop's garment markup —
+// the revenue the quote SHOULD have carried. Losses = underquote × volume.
+export function stalePriceModel(S) {
+  const chartCost = S.blank / (1 + (S.driftPct / 100) * (S.ageMonths / 12));
+  const gap = S.blank - chartCost;
+  const underquote = gap * S.markup;
+  const orderLoss = underquote * S.qty;
+  const yearLoss = orderLoss * S.ordersMo * 12;
+  return { chartCost, gap, underquote, orderLoss, yearLoss };
+}
+
 export function sliderRow(key, label, hint, attrs, initial = "–") {
   return `<div class="calc-row">
     <div class="calc-label"><b>${esc(label)}</b><span>${esc(hint)}</span></div>

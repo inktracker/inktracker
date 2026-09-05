@@ -16,7 +16,7 @@ import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SITE } from "./content/comparisons.mjs";
-import { esc, sliderRow, chartModel, chartCell, CALC_CSS, QTY_TIERS, stitchModel, stitchCell, STITCH_QTY_TIERS, STITCH_TIERS } from "./content/calc.mjs";
+import { esc, sliderRow, chartModel, chartCell, CALC_CSS, QTY_TIERS, stitchModel, stitchCell, STITCH_QTY_TIERS, STITCH_TIERS, stalePriceModel } from "./content/calc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dirname, "..", "public");
@@ -141,6 +141,15 @@ const TOOLS = Object.freeze([
     render: renderEmbroidery,
     metaTitle: "Free Embroidery Pricing Calculator — Stitch Chart + Full Job Price",
     metaDesc: "Free embroidery pricing calculator: build a per-piece price chart from your machine's stitch capacity (heads × speed × hours), then add garment markup, digitizing, and 3D/puff to price a whole embroidery job. Built by a working shop.",
+  },
+  {
+    slug: "stale-blank-price-calculator",
+    tag: "Pricing",
+    title: "Stale Blank Price Calculator",
+    hubDesc: "Your price chart was built on what blanks cost back then. See what the gap between old and current garment costs gives away on one order — and over a year. Free, no signup.",
+    render: renderStalePrice,
+    metaTitle: "Stale Blank Price Calculator — What Old Garment Costs Give Away",
+    metaDesc: "Free calculator for print shops: enter today's blank cost, how old your price chart is, and your order size to see how much quoting from outdated garment costs gives away per order and per year.",
   },
   // Future: setup-fee calculator, job margin calculator, etc.
 ]);
@@ -306,6 +315,121 @@ buildBreakdown();
   </div>
 
   <p>Want the full method, in a printer's own words? Read <a href="${SITE.baseUrl}/blog/build-a-screen-printing-price-chart">how I build a screen printing price chart</a> and <a href="${SITE.baseUrl}/blog/how-to-price-a-screen-printing-job">how to price a single job</a>. More free tools on the <a href="${SITE.baseUrl}/tools">tools hub</a>, and see <a href="${SITE.baseUrl}/for-printers">what InkTracker does for print shops</a>.</p>
+</main>
+${siteFooter}
+${script}`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${esc(tool.metaTitle)}</title>
+  <meta name="description" content="${esc(tool.metaDesc)}" />
+  <link rel="canonical" href="${esc(canonical)}" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${esc(tool.metaTitle)}" />
+  <meta property="og:description" content="${esc(tool.metaDesc)}" />
+  <meta property="og:url" content="${esc(canonical)}" />
+  <meta property="og:image" content="${SITE.logo}" />
+  <meta name="twitter:card" content="summary" />
+  ${FONTS}
+  <style>${CSS}</style>
+  ${ldJson(webApp)}
+  ${ldJson(breadcrumb)}
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+
+// ── The stale-blank-price calculator (what an old chart gives away) ──────────
+function renderStalePrice(tool) {
+  const canonical = `${SITE.baseUrl}/tools/${tool.slug}`;
+  const TRIAL_STALE = `${SITE.baseUrl}/?ref=stale-calc`;
+
+  // Static-first defaults: a $12 blend/hoodie-adjacent blank, 100 pieces, a
+  // chart last touched 18 months ago, 6%/yr supplier drift, 1.40 markup.
+  const S = { blank: 12, qty: 100, ageMonths: 18, driftPct: 6, markup: 1.4, ordersMo: 8 };
+  const M0 = stalePriceModel(S);
+
+  const controls =
+    sliderRow("blank", "Today's blank cost", "what the garment costs per piece right now", 'min="1" max="40" step="0.25" value="12"', m2(S.blank)) +
+    sliderRow("qty", "Pieces in the order", "the run you're quoting", 'min="12" max="500" step="1" value="100"', ct(S.qty)) +
+    sliderRow("ageMonths", "Age of your price chart", "months since you last updated garment costs", 'min="1" max="36" step="1" value="18"', S.ageMonths + " mo") +
+    sliderRow("driftPct", "Supplier price drift", "how much blank costs rise per year", 'min="0" max="12" step="0.5" value="6"', S.driftPct + "%/yr") +
+    sliderRow("markup", "Your garment markup", "what you multiply blank cost by", 'min="1" max="2" step="0.05" value="1.4"', "×" + S.markup.toFixed(2)) +
+    sliderRow("ordersMo", "Orders like this per month", "for the yearly picture", 'min="1" max="30" step="1" value="8"', ct(S.ordersMo));
+
+  const stats = `<div class="calc-out">
+    <div class="calc-stat"><div class="k">Gap per piece</div><div class="v" data-out="gap">${m2(M0.gap)}</div></div>
+    <div class="calc-stat"><div class="k">Given away on this order</div><div class="v" data-out="orderLoss">${m2(M0.orderLoss)}</div></div>
+    <div class="calc-stat"><div class="k">Given away per year</div><div class="v" data-out="yearLoss">${m0(M0.yearLoss)}</div></div>
+  </div>
+  <p class="calc-note" data-out="story">Your chart thinks this blank costs <b data-out="chartCost">${m2(M0.chartCost)}</b>. It costs <b data-out="blankNow">${m2(S.blank)}</b> today. Carried through your ×<span data-out="mk">${S.markup.toFixed(2)}</span> markup, every quote off that chart is <b data-out="under">${m2(M0.underquote)}</b> per piece lower than it should be.</p>`;
+
+  const script = `<script>(function(){
+var root=document.getElementById("calc-stale");if(!root)return;
+${stalePriceModel.toString()}
+function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}
+function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}
+function ct(n){return Math.round(n).toLocaleString("en-US");}
+var S={blank:12,qty:100,ageMonths:18,driftPct:6,markup:1.4,ordersMo:8};
+function put(k,v){var el=root.querySelector('[data-out="'+k+'"]');if(el)el.textContent=v;}
+function update(){var M=stalePriceModel(S);
+put("gap",m2(M.gap));put("orderLoss",m2(M.orderLoss));put("yearLoss",m0(M.yearLoss));
+put("chartCost",m2(M.chartCost));put("blankNow",m2(S.blank));put("mk",S.markup.toFixed(2));put("under",m2(M.underquote));}
+root.querySelectorAll("input[data-in]").forEach(function(inp){
+inp.addEventListener("input",function(){
+var k=inp.getAttribute("data-in");var v=parseFloat(inp.value);S[k]=v;
+var out=root.querySelector('[data-val="'+k+'"]');
+if(out){out.textContent=k==="blank"?m2(v):k==="ageMonths"?v+" mo":k==="driftPct"?v+"%/yr":k==="markup"?"\\u00d7"+v.toFixed(2):ct(v);}
+update();});});
+update();
+})();</script>`;
+
+  const webApp = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: tool.title,
+    url: canonical,
+    description: tool.metaDesc,
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Web",
+    inLanguage: "en-US",
+    isPartOf: { "@type": "WebSite", name: SITE.name, url: SITE.baseUrl },
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    publisher: { "@type": "Organization", name: SITE.name, url: SITE.baseUrl, logo: { "@type": "ImageObject", url: SITE.logo } },
+  };
+  const breadcrumb = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "InkTracker", item: `${SITE.baseUrl}/` },
+      { "@type": "ListItem", position: 2, name: "Free Tools", item: `${SITE.baseUrl}/tools` },
+      { "@type": "ListItem", position: 3, name: tool.title, item: canonical },
+    ],
+  };
+
+  const body = `${siteHeader}
+<main class="wrap">
+  <nav class="crumbs"><a href="${SITE.baseUrl}/">Home</a> › <a href="${SITE.baseUrl}/tools">Free Tools</a> › Stale Blank Price Calculator</nav>
+  <h1>What is your old price chart giving away?</h1>
+  <p class="lede">Most shops quote off a chart built from what blanks cost the day the chart was made. Suppliers keep moving; the chart doesn't. Put in your numbers and see what the gap hands out — on one order, and over a year. No signup.</p>
+
+  <h2>Your numbers</h2>
+  <div class="calc" id="calc-stale">${controls}${stats}</div>
+  <p class="calc-note">The math: today's blank cost, deflated by your drift rate over the chart's age, is what your chart still believes. The difference rides through your garment markup on every piece you quote — so a $2 gap on a $25 hoodie at 100 pieces walks out the door as roughly $290 on that one order. Drag the blank cost up to hoodie territory and watch.</p>
+
+  <div class="soft-cta">
+    <h3>Or never have a stale chart again</h3>
+    <p>InkTracker quotes pull the live per-piece blank cost from S&amp;S Activewear, SanMar, and AS Colour while you build the quote — your markup applies to what the garment costs today, automatically. Start a 14-day free trial.</p>
+    <a class="cta" href="${TRIAL_STALE}">Start your free trial</a>
+  </div>
+
+  <p>Related: <a href="${SITE.baseUrl}/features/live-supplier-pricing">how live supplier pricing works in InkTracker</a>, <a href="${SITE.baseUrl}/blog/how-to-price-a-screen-printing-job">how to price a screen printing job</a>, and the <a href="${SITE.baseUrl}/tools">free tools hub</a>.</p>
 </main>
 ${siteFooter}
 ${script}`;

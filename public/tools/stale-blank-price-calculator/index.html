@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Free Tools for Print Shops</title>
-  <meta name="description" content="Free tools for screen printers — a price calculator and more, built by a working print shop. No signup." />
-  <link rel="canonical" href="https://www.inktracker.app/tools" />
+  <title>Stale Blank Price Calculator — What Old Garment Costs Give Away</title>
+  <meta name="description" content="Free calculator for print shops: enter today's blank cost, how old your price chart is, and your order size to see how much quoting from outdated garment costs gives away per order and per year." />
+  <link rel="canonical" href="https://www.inktracker.app/tools/stale-blank-price-calculator" />
   <link rel="icon" type="image/png" href="/icon-192.png" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Free Tools for Print Shops" />
-  <meta property="og:description" content="Free tools for screen printers — a price calculator and more, built by a working print shop. No signup." />
-  <meta property="og:url" content="https://www.inktracker.app/tools" />
+  <meta property="og:title" content="Stale Blank Price Calculator — What Old Garment Costs Give Away" />
+  <meta property="og:description" content="Free calculator for print shops: enter today's blank cost, how old your price chart is, and your order size to see how much quoting from outdated garment costs gives away per order and per year." />
+  <meta property="og:url" content="https://www.inktracker.app/tools/stale-blank-price-calculator" />
   <meta property="og:image" content="https://www.inktracker.app/icon-512.png" />
   <meta name="twitter:card" content="summary" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -108,6 +108,37 @@ footer.site a{color:var(--muted);margin-right:16px}
   <script type="application/ld+json">
 {
   "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Stale Blank Price Calculator",
+  "url": "https://www.inktracker.app/tools/stale-blank-price-calculator",
+  "description": "Free calculator for print shops: enter today's blank cost, how old your price chart is, and your order size to see how much quoting from outdated garment costs gives away per order and per year.",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web",
+  "inLanguage": "en-US",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "InkTracker",
+    "url": "https://www.inktracker.app"
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "InkTracker",
+    "url": "https://www.inktracker.app",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://www.inktracker.app/icon-512.png"
+    }
+  }
+}
+</script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
   "@type": "BreadcrumbList",
   "itemListElement": [
     {
@@ -121,6 +152,12 @@ footer.site a{color:var(--muted);margin-right:16px}
       "position": 2,
       "name": "Free Tools",
       "item": "https://www.inktracker.app/tools"
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "name": "Stale Blank Price Calculator",
+      "item": "https://www.inktracker.app/tools/stale-blank-price-calculator"
     }
   ]
 }
@@ -135,36 +172,80 @@ footer.site a{color:var(--muted);margin-right:16px}
   </nav>
 </div></header>
 <main class="wrap">
-  <nav class="crumbs"><a href="https://www.inktracker.app/">Home</a> › Free Tools</nav>
-  <h1>Free tools for print shops</h1>
-  <p class="lede">Small, genuinely useful tools built by a printer — no signup, no email wall. More get added over time.</p>
-  <ul class="tool-grid">
-      <li>
-        <span class="tool-tag">Pricing</span>
-        <h3><a href="https://www.inktracker.app/tools/screen-printing-price-calculator">Screen Printing Price Calculator</a></h3>
-        <p>Build a print-price chart from your shop's overhead, then stack garment, setup, and extra locations to see the full job price. Free, no signup.</p>
-      </li>
-      <li>
-        <span class="tool-tag">Pricing</span>
-        <h3><a href="https://www.inktracker.app/tools/embroidery-pricing-calculator">Embroidery Pricing Calculator</a></h3>
-        <p>Build a per-piece embroidery price chart from your machine's real capacity — heads, speed, run hours — then stack garment, digitizing, and 3D stitches for the full job price. Free, no signup.</p>
-      </li>
-      <li>
-        <span class="tool-tag">Pricing</span>
-        <h3><a href="https://www.inktracker.app/tools/stale-blank-price-calculator">Stale Blank Price Calculator</a></h3>
-        <p>Your price chart was built on what blanks cost back then. See what the gap between old and current garment costs gives away on one order — and over a year. Free, no signup.</p>
-      </li>
-  </ul>
-  <div class="soft-cta">
-    <h3>Run your whole shop, not just the math</h3>
-    <p>These free tools come out of InkTracker — quoting, production, and invoicing built for screen print and embroidery shops. Start a 14-day free trial.</p>
-    <a class="cta" href="https://www.inktracker.app/?ref=tools">Start your free trial</a>
+  <nav class="crumbs"><a href="https://www.inktracker.app/">Home</a> › <a href="https://www.inktracker.app/tools">Free Tools</a> › Stale Blank Price Calculator</nav>
+  <h1>What is your old price chart giving away?</h1>
+  <p class="lede">Most shops quote off a chart built from what blanks cost the day the chart was made. Suppliers keep moving; the chart doesn't. Put in your numbers and see what the gap hands out — on one order, and over a year. No signup.</p>
+
+  <h2>Your numbers</h2>
+  <div class="calc" id="calc-stale"><div class="calc-row">
+    <div class="calc-label"><b>Today's blank cost</b><span>what the garment costs per piece right now</span></div>
+    <input type="range" class="calc-slider" data-in="blank" min="1" max="40" step="0.25" value="12" />
+    <output class="calc-val" data-val="blank">$12.00</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Pieces in the order</b><span>the run you're quoting</span></div>
+    <input type="range" class="calc-slider" data-in="qty" min="12" max="500" step="1" value="100" />
+    <output class="calc-val" data-val="qty">100</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Age of your price chart</b><span>months since you last updated garment costs</span></div>
+    <input type="range" class="calc-slider" data-in="ageMonths" min="1" max="36" step="1" value="18" />
+    <output class="calc-val" data-val="ageMonths">18 mo</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Supplier price drift</b><span>how much blank costs rise per year</span></div>
+    <input type="range" class="calc-slider" data-in="driftPct" min="0" max="12" step="0.5" value="6" />
+    <output class="calc-val" data-val="driftPct">6%/yr</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Your garment markup</b><span>what you multiply blank cost by</span></div>
+    <input type="range" class="calc-slider" data-in="markup" min="1" max="2" step="0.05" value="1.4" />
+    <output class="calc-val" data-val="markup">×1.40</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Orders like this per month</b><span>for the yearly picture</span></div>
+    <input type="range" class="calc-slider" data-in="ordersMo" min="1" max="30" step="1" value="8" />
+    <output class="calc-val" data-val="ordersMo">8</output>
+  </div><div class="calc-out">
+    <div class="calc-stat"><div class="k">Gap per piece</div><div class="v" data-out="gap">$0.99</div></div>
+    <div class="calc-stat"><div class="k">Given away on this order</div><div class="v" data-out="orderLoss">$138.72</div></div>
+    <div class="calc-stat"><div class="k">Given away per year</div><div class="v" data-out="yearLoss">$13,317</div></div>
   </div>
-  <p>New to pricing? Start with <a href="https://www.inktracker.app/blog/how-to-price-a-screen-printing-job">how to price a screen printing job</a> or the <a href="https://www.inktracker.app/blog">full blog</a>.</p>
+  <p class="calc-note" data-out="story">Your chart thinks this blank costs <b data-out="chartCost">$11.01</b>. It costs <b data-out="blankNow">$12.00</b> today. Carried through your ×<span data-out="mk">1.40</span> markup, every quote off that chart is <b data-out="under">$1.39</b> per piece lower than it should be.</p></div>
+  <p class="calc-note">The math: today's blank cost, deflated by your drift rate over the chart's age, is what your chart still believes. The difference rides through your garment markup on every piece you quote — so a $2 gap on a $25 hoodie at 100 pieces walks out the door as roughly $290 on that one order. Drag the blank cost up to hoodie territory and watch.</p>
+
+  <div class="soft-cta">
+    <h3>Or never have a stale chart again</h3>
+    <p>InkTracker quotes pull the live per-piece blank cost from S&amp;S Activewear, SanMar, and AS Colour while you build the quote — your markup applies to what the garment costs today, automatically. Start a 14-day free trial.</p>
+    <a class="cta" href="https://www.inktracker.app/?ref=stale-calc">Start your free trial</a>
+  </div>
+
+  <p>Related: <a href="https://www.inktracker.app/features/live-supplier-pricing">how live supplier pricing works in InkTracker</a>, <a href="https://www.inktracker.app/blog/how-to-price-a-screen-printing-job">how to price a screen printing job</a>, and the <a href="https://www.inktracker.app/tools">free tools hub</a>.</p>
 </main>
 <footer class="site"><div class="wrap">
   <a href="https://www.inktracker.app/">InkTracker home</a><a href="https://www.inktracker.app/tools">Free Tools</a><a href="https://www.inktracker.app/blog">Blog</a><a href="https://www.inktracker.app/compare">Software guide</a><a href="https://www.inktracker.app/support">Support</a>
   <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
 </div></footer>
+<script>(function(){
+var root=document.getElementById("calc-stale");if(!root)return;
+function stalePriceModel(S) {
+  const chartCost = S.blank / (1 + (S.driftPct / 100) * (S.ageMonths / 12));
+  const gap = S.blank - chartCost;
+  const underquote = gap * S.markup;
+  const orderLoss = underquote * S.qty;
+  const yearLoss = orderLoss * S.ordersMo * 12;
+  return { chartCost, gap, underquote, orderLoss, yearLoss };
+}
+function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}
+function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}
+function ct(n){return Math.round(n).toLocaleString("en-US");}
+var S={blank:12,qty:100,ageMonths:18,driftPct:6,markup:1.4,ordersMo:8};
+function put(k,v){var el=root.querySelector('[data-out="'+k+'"]');if(el)el.textContent=v;}
+function update(){var M=stalePriceModel(S);
+put("gap",m2(M.gap));put("orderLoss",m2(M.orderLoss));put("yearLoss",m0(M.yearLoss));
+put("chartCost",m2(M.chartCost));put("blankNow",m2(S.blank));put("mk",S.markup.toFixed(2));put("under",m2(M.underquote));}
+root.querySelectorAll("input[data-in]").forEach(function(inp){
+inp.addEventListener("input",function(){
+var k=inp.getAttribute("data-in");var v=parseFloat(inp.value);S[k]=v;
+var out=root.querySelector('[data-val="'+k+'"]');
+if(out){out.textContent=k==="blank"?m2(v):k==="ageMonths"?v+" mo":k==="driftPct"?v+"%/yr":k==="markup"?"\u00d7"+v.toFixed(2):ct(v);}
+update();});});
+update();
+})();</script>
 </body>
 </html>

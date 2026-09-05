@@ -102,10 +102,12 @@ export const FEATURES = Object.freeze([
         ],
       },
       {
-        h2: "Why it matters more than it sounds",
+        h2: "The math on one order",
         paras: [
-          "A fifty-cent blank increase on a 100-piece job is fifty dollars gone if your chart didn't move. Multiply by every job in a season and stale garment costs become one of the quietest ways a shop loses money. Pricing from live cost closes that gap without anyone maintaining a spreadsheet.",
+          "Say your chart is eighteen months old and blanks have crept 6% a year — normal, quiet drift. A $12 blank now carries a gap of about a dollar a piece; run it through a 1.4× garment markup and every quote is roughly $1.40 per piece lighter than it should be. On a 100-piece run that's about $140 handed away on a single order. Price the same drift on a $25 hoodie and the one-order number is closer to $290.",
+          "Multiply by every order in a season and stale garment costs become one of the quietest ways a shop loses money. Pricing from live cost closes the gap without anyone maintaining a spreadsheet.",
         ],
+        link: { href: "/tools/stale-blank-price-calculator", text: "Run your own numbers in the free stale-blank-price calculator" },
       },
     ],
     faqs: [

@@ -117,7 +117,10 @@ function renderFeature(f) {
       const bullets = s.bullets
         ? `<ul class="points">${s.bullets.map((b) => `<li>${esc(b)}</li>`).join("\n")}</ul>`
         : "";
-      return `<h2>${esc(s.h2)}</h2>\n${paras}\n${bullets}`;
+      const link = s.link
+        ? `<p><a href="${SITE.baseUrl}${esc(s.link.href)}"><b>${esc(s.link.text)} →</b></a></p>`
+        : "";
+      return `<h2>${esc(s.h2)}</h2>\n${paras}\n${bullets}${link}`;
     })
     .join("\n");
   const faqs = f.faqs.map((q) => `<dt>${esc(q.q)}</dt><dd>${esc(q.a)}</dd>`).join("\n");
