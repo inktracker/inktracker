@@ -6,8 +6,8 @@
 //   - Every InkTracker claim must be verifiable in the live product.
 //   - No negative claims about competitors. These posts teach pricing; they
 //     don't knock other tools.
-//   - The trial REQUIRES a card (since 2026-07-02) — never write "no card" /
-//     "no credit card". Enforced by scripts/__tests__/blogPosts.test.js.
+//   - The trial is CARDLESS (since 2026-08-06) — never write that a card is
+//     required to start. Enforced by scripts/__tests__/blogPosts.test.js.
 //
 // `body` is an ordered list of blocks the renderer understands:
 //   { type:'p', html }              — paragraph (html allowed; author-trusted)
@@ -539,6 +539,133 @@ export const POSTS = Object.freeze([
       {
         q: "Can I split an order between shops?",
         a: "Yes. Different lines can go to different shops — hats to one, shirts to another. The same line can't go to two shops, so nothing gets made twice.",
+      },
+    ],
+  },
+
+  // ── Post 9 — Printavo alternatives ──────────────────────────────────────
+  {
+    slug: "printavo-alternatives",
+    title: "Printavo alternatives for small print shops (2026)",
+    description:
+      "An honest look at the shop management options if you're shopping around: DecoNetwork, PriceIt, Printmatics, Teesom, and InkTracker — what each is built for, what published pricing looks like, and how to pick for your shop size.",
+    category: "Software",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-09-05",
+    updated: "2026-09-05",
+    readMin: 7,
+    ogImage: SITE.logo,
+    cta: true,
+    body: [
+      { type: "p", html: "Printavo is the name most shops hear first, and for good reason — it's been the default answer for print shop management for a decade. If you're reading this, you're probably either outgrowing a spreadsheet and comparing everything, or re-evaluating what you pay for against what your shop actually uses. Either way, the honest answer is that the right tool depends on your shop's size and shape, so this is a field guide rather than a sales pitch. (Yes, we make one of the tools below. We'll be upfront about which jobs it's the wrong answer for.)" },
+
+      { type: "h2", text: "What actually differs between these tools" },
+      { type: "p", html: "Every product in this space quotes, invoices, and tracks orders. The real differences are in four places:" },
+      { type: "ul", items: [
+        "<b>Where garment prices come from.</b> Some tools make you maintain price matrices by hand; others pull live blank costs from suppliers like S&amp;S Activewear, SanMar, and AS Colour at quote time, so a price change at the supplier can't silently eat your margin.",
+        "<b>Setup work vs. ready-made workflow.</b> Configurable board systems can model any shop — after you design the boards, statuses, and automations. Opinionated systems work on day one but bend less.",
+        "<b>Online stores.</b> If team stores and fundraisers are a big slice of your revenue, that narrows the field fast — it's the hardest feature to bolt on later.",
+        "<b>Per-user pricing.</b> Some tools price per seat, which matters the day you hire; others are flat.",
+      ] },
+
+      { type: "h2", text: "The options, honestly" },
+      { type: "p", html: "<b>Printavo</b> is the established generalist: quoting, approvals, payments, a production calendar, and a large user community. Published pricing is per-user and tiered (entry plans have monthly quote caps; see their site for current numbers). If you have a larger team and want the most widely-adopted tool, it's a safe pick." },
+      { type: "p", html: "<b>DecoNetwork</b> is the e-commerce heavyweight — business management plus full online-store builder in one. Published plans run roughly $199–$399/month. If branded web stores are the center of your business, it's arguably the category leader; if you never sell through stores, you'd be paying for its biggest feature to sit idle." },
+      { type: "p", html: "<b>PriceIt</b> and <b>Printmatics</b> both lean into estimating and production for established shops, with Printmatics emphasizing scheduling. <b>Teesom</b> is the budget pick — genuinely inexpensive to start, lighter on automation, and plenty of one-person shops run happily on it." },
+      { type: "p", html: "<b>InkTracker</b> — ours — is built specifically for small shops (roughly one to ten people) that want the workflow already decided: quotes pull live blank costs from S&amp;S, SanMar, and AS Colour; customers approve art and pay from one link; jobs run through a fixed five-stage pipeline with a tablet shop-floor mode; QuickBooks syncs both ways; and there's a broker/wholesale pricing layer plus shop-to-shop subcontracting. One flat plan ($99/month, every feature, unlimited quotes) and a free trial with no card. It's the wrong answer if you need online team stores today, deep multi-department routing for a 30-person floor, or software you can reshape board-by-board — that's DecoNetwork or Printavo territory." },
+
+      { type: "h2", text: "How to actually decide" },
+      { type: "ul", items: [
+        "<b>Count your people.</b> Per-seat pricing is fine at 2 users and painful at 8. Flat pricing is the reverse of that curve.",
+        "<b>Count your stores.</b> More than a couple of team stores a year? Weight DecoNetwork heavily.",
+        "<b>Price a real job in the trial.</b> Not the demo data — your garment, your quantities, your margins. The tool that gets <i>your</i> Tuesday right is the right tool.",
+        "<b>Check the accounting seam.</b> If your books live in QuickBooks, make sure invoices, payments, and sales tax flow both directions, not just export.",
+      ] },
+      { type: "p", html: "Whichever way you go: the shops that get value out of any of these tools are the ones that stop quoting from gut feel. The software matters less than the habit." },
+    ],
+    related: [
+      { href: "/compare", text: "InkTracker vs. the alternatives, feature by feature" },
+      { href: "/blog/how-much-does-screen-printing-software-cost", text: "How much does screen printing software cost?" },
+      { href: "/blog/screen-printing-software-honest-comparison", text: "Screen printing software: an honest comparison" },
+    ],
+    faqs: [
+      {
+        q: "What is the best Printavo alternative for a small shop?",
+        a: "For a one-to-ten-person shop that wants working workflows out of the box, InkTracker is built for exactly that ($99/month flat, live supplier pricing, QuickBooks sync). If online team stores drive your revenue, DecoNetwork is the stronger fit. If budget is the constraint, Teesom is the inexpensive starting point.",
+      },
+      {
+        q: "Is there screen printing software with a free trial and no credit card?",
+        a: "InkTracker's trial is free and doesn't ask for a card. Most tools in the category offer some form of trial or demo — check each vendor's current terms.",
+      },
+      {
+        q: "Can I switch shop software without losing my history?",
+        a: "Mostly yes, if your books live in QuickBooks: your invoices, customers, and payments stay in your accounting file no matter which shop tool you use. InkTracker imports your QuickBooks invoice history on connect, so past jobs are visible alongside new ones.",
+      },
+      {
+        q: "Do these tools pull real garment prices?",
+        a: "It varies, and it's worth checking specifically. InkTracker pulls live per-piece costs from S&S Activewear, SanMar, and AS Colour at quote time. Some other tools rely on catalogs you update manually — fine until a blank's price moves and your quote doesn't.",
+      },
+    ],
+  },
+
+  // ── Post 10 — What software costs ───────────────────────────────────────
+  {
+    slug: "how-much-does-screen-printing-software-cost",
+    title: "How much does screen printing software cost in 2026?",
+    description:
+      "Published pricing across the category — flat plans, per-seat tiers, quote caps, and license fees — plus the hidden costs that matter more than the sticker price.",
+    category: "Software",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-09-05",
+    updated: "2026-09-05",
+    readMin: 5,
+    ogImage: SITE.logo,
+    cta: true,
+    body: [
+      { type: "p", html: "Short answer: real shop management software runs from roughly <b>$50 to $400+ per month</b>, and the sticker price is the least interesting part. The pricing <i>structure</i> — per-seat vs. flat, quote caps, one-time license fees — determines what you'll actually pay a year from now, after you've hired someone or had a busy season. Here's the category as of September 2026; treat every number as \"published pricing, verify on their site,\" because vendors change plans." },
+
+      { type: "h2", text: "The pricing structures you'll run into" },
+      { type: "ul", items: [
+        "<b>Flat monthly.</b> One price, every feature, any usage. InkTracker is $99/month flat with unlimited quotes and users on one plan. Predictable by design.",
+        "<b>Per-seat tiers.</b> Printavo's published plans are tiered per user — entry tiers around $50–$110/month with monthly quote caps, mid tiers in the low-to-mid $200s for around five users. Fine at two people; do the math at eight.",
+        "<b>Platform + license.</b> DecoNetwork publishes plans roughly $199–$399/month, plus a one-time license fee. You're buying an e-commerce platform, not just shop software, and the price reflects it.",
+        "<b>Budget tools.</b> Teesom and similar start very cheap or free-with-limits. What you give up is usually automation and integrations, not correctness.",
+      ] },
+
+      { type: "h2", text: "The costs that don't show up on the pricing page" },
+      { type: "ul", items: [
+        "<b>Setup and configuration time.</b> Board-builder systems can take days-to-weeks of workflow design before they run your shop. Opinionated systems trade flexibility for a working day one. Your time is the largest unbilled line item in the purchase.",
+        "<b>Quote caps.</b> A cap that fits January can bite in September. If a plan meters quotes, price the tier you'd need in your busiest month, not your slowest.",
+        "<b>Payment processing.</b> Everyone routes card payments through a processor (typically ~3%). That's a cost of taking cards, not of the software — but check whether the tool adds its own platform fee on top.",
+        "<b>The margin you can't see.</b> The most expensive software is the one that lets you quote off last year's blank costs. One mispriced 100-piece job can eat a month's subscription. Live supplier pricing is a feature that pays for the tool.",
+      ] },
+
+      { type: "h2", text: "What a small shop should actually budget" },
+      { type: "p", html: "For a one-to-ten-person shop: <b>$99–$250/month</b> covers the serious options, and the decision is mostly structure. Flat pricing (InkTracker, $99 all-in) stays constant as you add people; per-seat tiers start cheaper and climb as you grow; store-platform pricing (DecoNetwork) is worth it exactly when online stores are revenue, and not before. Run your real numbers through a free trial before believing anyone's pricing page — including ours." },
+    ],
+    related: [
+      { href: "/blog/printavo-alternatives", text: "Printavo alternatives for small print shops" },
+      { href: "/compare", text: "InkTracker vs. the alternatives" },
+      { href: "/tools/screen-printing-price-calculator", text: "Free screen printing price calculator" },
+    ],
+    faqs: [
+      {
+        q: "How much does InkTracker cost?",
+        a: "One plan: $99/month, every feature included — quoting with live supplier pricing, art approval and payment links, production tracking, shop-floor mode, QuickBooks two-way sync, and broker pricing. The trial is free with no card required.",
+      },
+      {
+        q: "How much does Printavo cost per month?",
+        a: "Printavo publishes per-user tiered plans — entry tiers around $50–$110/month with monthly quote caps, and mid tiers in the low-to-mid $200s for about five users, as of September 2026. Check printavo.com for current plans.",
+      },
+      {
+        q: "How much does DecoNetwork cost?",
+        a: "DecoNetwork publishes plans from roughly $199 to $399 per month plus a one-time license fee, as of September 2026. It bundles a full online-store platform with shop management. Check deconetwork.com for current plans.",
+      },
+      {
+        q: "Is free screen printing software worth it?",
+        a: "For a brand-new one-person shop, free or very cheap tools (or a spreadsheet) can be fine while volume is low. The switch usually pays for itself the first time stale garment pricing or a forgotten follow-up costs you a job — for most shops that's around the point quoting becomes a daily task.",
       },
     ],
   },
