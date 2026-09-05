@@ -635,7 +635,7 @@ export function newLineItem() {
         height: "",
         colors: 1,
         pantones: "",
-        technique: "Screen Print",
+        technique: getDefaultTechnique(),
         details: "",
         linked: false,
       },

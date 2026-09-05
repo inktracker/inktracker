@@ -2,7 +2,7 @@ import { openSignedArtwork } from "@/lib/uploadFile";
 import { normalizeShipTo } from "@/lib/tax/address";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import PlacementSelect from "@/components/shared/PlacementSelect";
-import { LOCATIONS } from "@/components/shared/pricing";
+import { LOCATIONS, getDefaultTechnique } from "@/components/shared/pricing";
 import AddressFields from "@/components/shared/AddressFields";
 import ExemptionFields from "@/components/customers/ExemptionFields";
 import ReactivateLink from "@/components/shared/ReactivateLink";
@@ -179,7 +179,7 @@ export default function EditCustomerModal({
             <button
               onClick={() => setEditing({
                 ...editing,
-                saved_imprints: [...(editing.saved_imprints || []), { title: "", location: "Front", width: "", height: "", colors: 1, technique: "Screen Print", pantones: "" }]
+                saved_imprints: [...(editing.saved_imprints || []), { title: "", location: "Front", width: "", height: "", colors: 1, technique: getDefaultTechnique(), pantones: "" }]
               })}
               className="text-xs font-semibold text-teal-600 border border-teal-200 px-2.5 py-1 rounded-lg hover:bg-teal-50 transition"
             >
