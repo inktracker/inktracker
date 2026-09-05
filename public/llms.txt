@@ -19,6 +19,8 @@ InkTracker is designed for small shops (1–10 people) that want opinionated, re
 - [Build a screen printing price chart](https://www.inktracker.app/blog/build-a-screen-printing-price-chart)
 - [How to price embroidery](https://www.inktracker.app/blog/how-to-price-embroidery)
 - [Screen printing software: an honest comparison](https://www.inktracker.app/blog/screen-printing-software-honest-comparison)
+- [Printavo alternatives for small print shops](https://www.inktracker.app/blog/printavo-alternatives)
+- [How much does screen printing software cost?](https://www.inktracker.app/blog/how-much-does-screen-printing-software-cost)
 - [Sales tax for print shops](https://www.inktracker.app/blog/sales-tax-for-print-shops)
 - [QuickBooks for screen printers](https://www.inktracker.app/blog/quickbooks-for-screen-printers)
 - [DTF vs screen printing](https://www.inktracker.app/blog/dtf-vs-screen-printing)
