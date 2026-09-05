@@ -99,7 +99,7 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
  * to bump rates, one place to add future toggles.
  */
 export function buildShopUpsertPayload(input) {
-  const { user = {}, shopName = "", logoUrl = "", offersEmbroidery = false, timezone = "" } = input || {};
+  const { user = {}, shopName = "", logoUrl = "", offersEmbroidery = false, offersScreenPrint = true, timezone = "" } = input || {};
   const base = {
     owner_email: user.email || "",
     shop_name:   trimStr(shopName) || user.email || "",
@@ -118,7 +118,7 @@ export function buildShopUpsertPayload(input) {
   // anywhere. Now: every new shop starts with sensible numbers, and
   // any toggles set during onboarding (currently just embroidery)
   // are honored on top.
-  base.pricing_config = buildInitialPricingConfig({ offersEmbroidery });
+  base.pricing_config = buildInitialPricingConfig({ offersEmbroidery, offersScreenPrint });
   return base;
 }
 
