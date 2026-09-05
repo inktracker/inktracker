@@ -34,6 +34,7 @@ InkTracker is designed for small shops (1–10 people) that want opinionated, re
 
 - [Screen printing price calculator](https://www.inktracker.app/tools/screen-printing-price-calculator)
 - [Embroidery pricing calculator](https://www.inktracker.app/tools/embroidery-pricing-calculator)
+- [Stale blank price calculator](https://www.inktracker.app/tools/stale-blank-price-calculator): how much quoting from outdated garment costs gives away per order
 
 ## Optional
 
