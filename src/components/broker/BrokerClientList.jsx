@@ -11,7 +11,7 @@ import {
   Trash2,
   ExternalLink,
 } from "lucide-react";
-import { getEnabledTechniques, LOCATIONS } from "../shared/pricing";
+import { getEnabledTechniques, getDefaultTechnique, LOCATIONS } from "../shared/pricing";
 
 const FIELDS = [
   { key: "name", label: "Name *", placeholder: "Jane Smith" },
@@ -366,7 +366,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                 <button
                   onClick={() => setEditing({
                     ...editing,
-                    saved_imprints: [...(editing.saved_imprints || []), { title: "", location: "Front", width: "", height: "", colors: 1, technique: "Screen Print", pantones: "" }]
+                    saved_imprints: [...(editing.saved_imprints || []), { title: "", location: "Front", width: "", height: "", colors: 1, technique: getDefaultTechnique(shopPricingConfig), pantones: "" }]
                   })}
                   className="text-xs font-semibold text-teal-600 border border-teal-200 px-2.5 py-1 rounded-lg hover:bg-teal-50 transition"
                 >
