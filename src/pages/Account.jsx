@@ -21,6 +21,7 @@ import ProductionTasksSection from "../components/account/ProductionTasksSection
 import OrderEditingSection from "../components/account/OrderEditingSection";
 import DeleteAccountSection from "../components/account/DeleteAccountSection";
 import ExportDataSection from "../components/account/ExportDataSection";
+import ImportCustomersSection from "../components/account/ImportCustomersSection";
 import SupplierKeysSection from "../components/account/SupplierKeysSection";
 import StepUpConfirmModal from "@/components/StepUpConfirmModal";
 import { notify } from "@/lib/notify";
@@ -672,6 +673,13 @@ export default function Account() {
                 <div className="text-sm text-slate-700 font-semibold capitalize">{user?.role || "user"}</div>
               </div>
             </div>
+
+            {(user?.role === "admin" || user?.role === "shop" || user?.role === "manager") && (
+              <div className="border-t border-slate-200 dark:border-slate-700 pt-5">
+                <div className="text-sm font-semibold text-slate-700 mb-2">Import Customers</div>
+                <ImportCustomersSection user={user} />
+              </div>
+            )}
 
             <div className="border-t border-slate-200 dark:border-slate-700 pt-5">
               <div className="text-sm font-semibold text-slate-700 mb-2">Export Data</div>
