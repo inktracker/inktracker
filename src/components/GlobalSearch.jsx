@@ -5,6 +5,7 @@ import { createPageUrl } from "@/utils";
 import ModalBackdrop from "./shared/ModalBackdrop";
 import { getDisplayName } from "./shared/pricing";
 import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
+import { mergeContentHits } from "@/lib/search/mergeContentHits";
 
 export default function GlobalSearch() {
   const [open, setOpen] = useState(false);
@@ -56,20 +57,30 @@ export default function GlobalSearch() {
             return data || [];
           });
 
+      // Content search (job titles + line-item text) rides a SECURITY INVOKER
+      // RPC — RLS scopes it exactly like the table grabs. Best-effort: a
+      // failure degrades to name/id search instead of breaking the panel.
+      const grabContent = () =>
+        supabase.rpc("search_docs_content", { term }).then(({ data, error }) => {
+          if (error) { console.error("[GlobalSearch] content:", error.message); return []; }
+          return data || [];
+        });
+
       try {
-        const [customers, orders, quotes, invoices, inventory] = await Promise.all([
+        const [customers, orders, quotes, invoices, inventory, contentHits] = await Promise.all([
           grab("customers",       `name.ilike.${pat},company.ilike.${pat},email.ilike.${pat}`, "name"),
-          grab("orders",          `customer_name.ilike.${pat},order_id.ilike.${pat}`,          "order_id"),
-          grab("quotes",          `customer_name.ilike.${pat},quote_id.ilike.${pat}`,          "quote_id"),
+          grab("orders",          `customer_name.ilike.${pat},order_id.ilike.${pat},job_title.ilike.${pat}`, "order_id"),
+          grab("quotes",          `customer_name.ilike.${pat},quote_id.ilike.${pat},job_title.ilike.${pat}`, "quote_id"),
           grab("invoices",        `customer_name.ilike.${pat},invoice_id.ilike.${pat}`,        "invoice_id"),
           grab("inventory_items", `item.ilike.${pat},sku.ilike.${pat}`,                        "item"),
+          grabContent(),
         ]);
 
         setResults({
           customers: customers
             .sort((a, b) => ((a.company || a.name) || "").localeCompare((b.company || b.name) || "", undefined, { sensitivity: 'base' })),
-          orders,
-          quotes,
+          orders: mergeContentHits(orders, contentHits, "order", "order_id"),
+          quotes: mergeContentHits(quotes, contentHits, "quote", "quote_id"),
           invoices,
           inventory,
         });
@@ -103,7 +114,7 @@ export default function GlobalSearch() {
               <input
                 autoFocus
                 type="text"
-                placeholder="Search customers, orders, quotes, invoices, inventory..."
+                placeholder="Search customers, jobs, products, invoices, inventory..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="flex-1 outline-none text-slate-700"
@@ -138,7 +149,7 @@ export default function GlobalSearch() {
                       {results.orders.map(o => (
                         <a key={o.id} href={createPageUrl("Orders")} onClick={() => setOpen(false)} className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">
                           <div className="font-semibold text-slate-900">{o.order_id}</div>
-                          <div className="text-xs text-slate-500">{resolveJobLabel(o)}</div>
+                          <div className="text-xs text-slate-500">{resolveJobLabel(o)}{o._contentHit ? " · matched job contents" : ""}</div>
                         </a>
                       ))}
                     </div>
@@ -150,7 +161,7 @@ export default function GlobalSearch() {
                       {results.quotes.map(q => (
                         <a key={q.id} href={createPageUrl("Quotes")} onClick={() => setOpen(false)} className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">
                           <div className="font-semibold text-slate-900">{q.quote_id}</div>
-                          <div className="text-xs text-slate-500">{resolveJobLabel(q)}</div>
+                          <div className="text-xs text-slate-500">{resolveJobLabel(q)}{q._contentHit ? " · matched job contents" : ""}</div>
                         </a>
                       ))}
                     </div>
