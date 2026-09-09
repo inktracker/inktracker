@@ -22,6 +22,11 @@ const ROOT = "supabase/functions";
 function walk(dir) {
   const out = [];
   for (const name of readdirSync(dir)) {
+    // Never descend into a local dependency install (supabase/functions/
+    // node_modules is gitignored and can appear after a local `deno`/npm
+    // install). Its vendored .d.ts/.js files aren't our code and were
+    // producing false failures the deploy never actually hits.
+    if (name === "node_modules") continue;
     const p = join(dir, name);
     if (statSync(p).isDirectory()) out.push(...walk(p));
     else if ([".ts", ".js", ".mjs"].includes(extname(p))) out.push(p);

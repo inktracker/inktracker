@@ -249,8 +249,15 @@ export default function Production() {
     return true;
   });
   // Method filter (mixed print/embroidery shops): keep an order if any of its
-  // line-item imprints use the selected decoration method.
-  filteredTable = filteredTable.filter((o) => orderHasMethod(o, methodFilter));
+  // line-item imprints use the selected decoration method. If the selected
+  // method is no longer present in the order set (its last order completed or
+  // was filtered away), fall back to "All" so the page can't get stuck showing
+  // an empty list with no visible chip to clear — the chip row hides once only
+  // one method remains, stranding a stale selection otherwise.
+  const methodsPresent = availableMethods(orders);
+  const effectiveMethodFilter =
+    methodFilter !== "All" && !methodsPresent.includes(methodFilter) ? "All" : methodFilter;
+  filteredTable = filteredTable.filter((o) => orderHasMethod(o, effectiveMethodFilter));
   filteredTable = filteredTable.filter((o) => {
     if (advFilters.customer) {
       const customerSearch = advFilters.customer.toLowerCase();
@@ -268,7 +275,6 @@ export default function Production() {
 
   // Only mixed shops (more than one decoration method in their orders) get the
   // method filter row — a print-only shop shouldn't see clutter.
-  const methodsPresent = availableMethods(orders);
   const showMethodFilter = methodsPresent.length > 1;
 
   const advFilterOptions = [
@@ -668,7 +674,7 @@ export default function Production() {
                 <button
                   key={m}
                   onClick={() => setMethodFilter(m)}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${methodFilter === m ? "bg-teal-600 text-white border-teal-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-teal-300"}`}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${effectiveMethodFilter === m ? "bg-teal-600 text-white border-teal-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-teal-300"}`}
                 >
                   {m}
                 </button>

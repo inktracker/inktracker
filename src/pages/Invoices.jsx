@@ -105,7 +105,11 @@ export default function Invoices() {
           });
           if (pullRes?.truncatedAtCap) setQbTruncated(true);
           // Reload with fresh data + recompute outstanding from local rows.
-          const freshInv = await base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }, "-date", 1000);
+          // .all() pages past PostgREST's 1000-row cap so the AR total counts
+          // EVERY unpaid invoice — a .filter(...,1000) silently undercounts a
+          // shop with more than 1000 invoices (the outstanding balance is a
+          // money figure; it must be complete, not the first page).
+          const freshInv = await base44.entities.Invoice.all({ shop_owner: shopScope(currentUser) }, "-date");
           setInvoices(freshInv);
           const stats = computeOutstanding(freshInv);
           setQbOutstanding({ total: stats.total, count: stats.count });
@@ -412,6 +416,7 @@ export default function Invoices() {
     setSelected(prev => (prev && prev.id === row.id ? { ...prev, ...row } : prev));
   }
 
+  const agingToday = todayInShopTz();
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -512,7 +517,7 @@ export default function Invoices() {
                       ?<span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full whitespace-nowrap">Paid</span>
                       :<span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full whitespace-nowrap">Unpaid</span>
                     }
-                    {(() => { const a = invoiceAging(inv); return a ? <span className={`text-[11px] whitespace-nowrap ${AGING_TONE_CLASS[a.tone]}`}>{a.label}</span> : null; })()}
+                    {(() => { const a = invoiceAging(inv, agingToday); return a ? <span className={`text-[11px] whitespace-nowrap ${AGING_TONE_CLASS[a.tone]}`}>{a.label}</span> : null; })()}
                   </div>
                 </td>
                 <td className="px-3 py-3.5">
@@ -547,7 +552,7 @@ export default function Invoices() {
                     ? <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Paid</span>
                     : <span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full">Unpaid</span>
                   }
-                  {(() => { const a = invoiceAging(inv); return a ? <span className={`text-[11px] whitespace-nowrap ${AGING_TONE_CLASS[a.tone]}`}>{a.label}</span> : null; })()}
+                  {(() => { const a = invoiceAging(inv, agingToday); return a ? <span className={`text-[11px] whitespace-nowrap ${AGING_TONE_CLASS[a.tone]}`}>{a.label}</span> : null; })()}
                 </div>
               </div>
               <div className="flex items-center justify-between text-xs text-slate-500 gap-3">

@@ -1,42 +1,57 @@
 // Invoice aging for the Invoices list — the "how long has this been owed"
-// signal the walkthrough flagged as missing (unpaid rows showed no age, only
-// a Mark Paid button). Maps to the design-language color roles: slate =
-// quiet, amber = aging/attention, red = overdue (past its due date).
+// signal (unpaid rows previously showed no age). Maps to the design-language
+// color roles: slate = quiet, amber = aging/attention, red = overdue.
 //
-// Pure and defensive: paid invoices and rows with no usable issue date
-// return null (no signal).
+// Pure and timezone-correct: the caller passes `todayStr`, today's calendar
+// date ("YYYY-MM-DD") in the SHOP's timezone (via todayInShopTz). All day
+// math is calendar-day differences between date-only strings, so an invoice
+// is never labeled overdue a day early because UTC crossed midnight before
+// the shop's wall clock did. Paid invoices and rows with no usable issue
+// date return null (no signal).
 
 const DAY = 86400000;
 const AGING_DAYS = 30; // net-30 convention: past this and it's worth noticing
 
-function toEpoch(dateStr) {
-  if (!dateStr) return NaN;
-  // Date-only strings ("2026-09-01") parse as UTC midnight; that's fine for
-  // day-count math where both sides get the same treatment.
-  const t = new Date(dateStr).getTime();
-  return Number.isFinite(t) ? t : NaN;
+// A date-only string ("2026-09-01"), the date portion of an ISO timestamp,
+// or "" — normalized to "YYYY-MM-DD" or null. (invoice.date is date-only;
+// created_at is a full timestamp whose leading 10 chars are its date.)
+function toDateStr(value) {
+  if (!value) return null;
+  const s = String(value);
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
 }
 
-// invoiceAging(invoice, now)
-//   → null when paid, or when there's no issue date to age from
+// Whole calendar days from aStr to bStr (b - a). Both parsed as UTC midnight,
+// so the result is an exact, timezone-independent day count.
+function dayDiff(aStr, bStr) {
+  const a = Date.parse(`${aStr}T00:00:00Z`);
+  const b = Date.parse(`${bStr}T00:00:00Z`);
+  if (Number.isNaN(a) || Number.isNaN(b)) return NaN;
+  return Math.round((b - a) / DAY);
+}
+
+// invoiceAging(invoice, todayStr)
+//   todayStr — "YYYY-MM-DD" today in the shop's tz (todayInShopTz()).
+//   → null when paid, or when there's no issue date to age from, or todayStr
+//     is unusable.
 //   → { days, overdue, overdueDays, tone, label }
-//       days        — whole days since the invoice date
-//       overdue     — true when a due date exists and today is past it
-//       overdueDays — whole days past the due date (0 when not overdue)
-//       tone        — "red" (overdue) | "amber" (aging) | "slate"
-//       label       — "5 days overdue" | "42 days outstanding" | "Due today"
-export function invoiceAging(invoice, now = Date.now()) {
+export function invoiceAging(invoice, todayStr) {
   if (!invoice || invoice.paid) return null;
+  const today = toDateStr(todayStr);
+  if (!today) return null;
 
-  const issued = toEpoch(invoice.date || invoice.created_at);
-  if (Number.isNaN(issued)) return null;
+  const issued = toDateStr(invoice.date || invoice.created_at);
+  if (!issued) return null;
 
-  const days = Math.max(0, Math.floor((now - issued) / DAY));
+  const rawDays = dayDiff(issued, today);
+  if (Number.isNaN(rawDays)) return null;
+  const days = Math.max(0, rawDays);
 
-  const dueEpoch = toEpoch(invoice.due);
-  const hasDue = !Number.isNaN(dueEpoch);
-  const overdueDays = hasDue ? Math.floor((now - dueEpoch) / DAY) : 0;
-  const overdue = hasDue && overdueDays > 0;
+  const dueStr = toDateStr(invoice.due);
+  const hasDue = !!dueStr;
+  const overdueDays = hasDue ? dayDiff(dueStr, today) : 0;
+  const overdue = hasDue && Number.isFinite(overdueDays) && overdueDays > 0;
 
   let tone, label;
   if (overdue) {
@@ -45,7 +60,9 @@ export function invoiceAging(invoice, now = Date.now()) {
   } else if (hasDue && overdueDays === 0) {
     tone = "amber";
     label = "Due today";
-  } else if (days >= AGING_DAYS) {
+  } else if (!hasDue && days >= AGING_DAYS) {
+    // Age-based heuristic only when there's no due date — a not-yet-due
+    // net-60 invoice issued 40 days ago is not "attention", it's on time.
     tone = "amber";
     label = `${days} days outstanding`;
   } else {
@@ -53,7 +70,7 @@ export function invoiceAging(invoice, now = Date.now()) {
     label = `${days} day${days === 1 ? "" : "s"} outstanding`;
   }
 
-  return { days, overdue, overdueDays: Math.max(0, overdueDays), tone, label };
+  return { days, overdue, overdueDays: Math.max(0, Number.isFinite(overdueDays) ? overdueDays : 0), tone, label };
 }
 
 // Tailwind text class per tone — kept next to the logic so the two can't drift.
