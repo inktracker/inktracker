@@ -12,6 +12,7 @@ export default function ExportDataSection({ user }) {
     { key: "quotes",    label: "Quotes",    entity: base44.entities.Quote },
     { key: "orders",    label: "Orders",    entity: base44.entities.Order },
     { key: "invoices",  label: "Invoices",  entity: base44.entities.Invoice },
+    { key: "expenses",  label: "Expenses",  entity: base44.entities.Expense },
     { key: "inventory", label: "Inventory", entity: base44.entities.InventoryItem },
   ];
 
@@ -193,7 +194,7 @@ export default function ExportDataSection({ user }) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-slate-500 leading-relaxed">
-        Download your shop's data for backup or migration. CSVs are cleaned up for Excel/Sheets — friendly column names, formatted dates, line items as readable summaries. The full backup JSON is a raw dump of every entity for migration or restore. Large datasets may take a moment.
+        Your data is yours — export it anytime, no strings. Download your customers, quotes, orders, invoices, and expenses for backup or migration. CSVs are cleaned up for Excel/Sheets — friendly column names, formatted dates, line items as readable summaries. The full backup JSON is a raw dump of every record for migration or restore. Large datasets may take a moment.
       </p>
       <div className="grid sm:grid-cols-2 gap-2">
         {ENTITIES.map((item) => (

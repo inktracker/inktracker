@@ -72,6 +72,10 @@ export const GUIDE = Object.freeze({
       why: "If you take work from resellers, look for per-reseller pricing and a portal so their orders come in correctly priced without manual math.",
     },
     {
+      name: "Getting your data out",
+      why: "Before you commit, check that you can export your own customers, quotes, orders, invoices, and expenses whenever you want — not just view them. A tool that makes leaving hard is a tool that's counting on you not looking. InkTracker exports every record to CSV, plus a full JSON backup, from your account settings, anytime.",
+    },
+    {
       name: "Support, onboarding & fit",
       why: "Consider who the tool is built for, how fast you can get running, and whether you'll lean on storefronts, production, or selling — the best fit matches your actual workflow.",
     },

@@ -127,6 +127,60 @@ export const FEATURES = Object.freeze([
   },
 
   {
+    slug: "your-data-is-yours",
+    title: "Your Data Is Yours — InkTracker",
+    h1: "Leave whenever you want — with all your data",
+    metaDescription:
+      "InkTracker lets you export your customers, quotes, orders, invoices, and expenses to CSV — plus a full JSON backup — anytime, from your account. No lock-in, no export fees, no support ticket.",
+    lede:
+      "The quietest thing a shop tool can do to keep you is make leaving hard. No export button, a stripped-down report, or a support ticket that takes a week — and suddenly a decade of your customer list feels trapped. InkTracker takes the opposite position: your records are yours, and you can take them out the front door any day of the week.",
+    sections: [
+      {
+        h2: "One click per record type",
+        paras: [
+          "From your account settings, export customers, quotes, orders, invoices, expenses, and inventory — each as a clean CSV that opens straight in Excel or Google Sheets. Column names are readable, dates are formatted, and line items come across as plain summaries instead of raw code, so the file is useful the moment it lands.",
+        ],
+      },
+      {
+        h2: "Or take everything at once",
+        paras: [
+          "One button downloads a complete JSON backup of every record in your account — the raw, full-fidelity version, meant for migrating to another system or keeping your own archive. Nothing is held back, and there's no fee to get it.",
+        ],
+        bullets: [
+          "Customers, quotes, orders, invoices, expenses, inventory — all exportable",
+          "Spreadsheet-ready CSVs plus a complete JSON backup",
+          "Available anytime from your account — no ticket, no waiting, no charge",
+          "Runs on your whole history, however many years deep",
+        ],
+      },
+      {
+        h2: "Why we build it this way",
+        paras: [
+          "InkTracker is made by a working print shop, and we've been the shop stuck inside someone else's software. A tool worth staying on earns it every month — it shouldn't need a locked door. So we'd rather you always know the exit is right there, and choose to stay anyway.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: "Can I export my data out of InkTracker?",
+        a: "Yes, anytime. From your account settings you can download CSVs of your customers, quotes, orders, invoices, expenses, and inventory, plus a full JSON backup of everything. No support ticket and no fee.",
+      },
+      {
+        q: "What format is the export?",
+        a: "Each record type exports as a spreadsheet-ready CSV (readable column names, formatted dates, line items as plain summaries) that opens in Excel or Google Sheets. There's also a complete JSON backup for migration or archiving.",
+      },
+      {
+        q: "Is there a fee to get my data?",
+        a: "No. Exporting your own data is free and always available while your account is active — it's your data.",
+      },
+      {
+        q: "Does the export include my whole history?",
+        a: "Yes. Exports run across your full account history, not just recent records, so a backup or migration captures everything.",
+      },
+    ],
+  },
+
+  {
     slug: "know-your-margin",
     title: "Know Your Margin — InkTracker",
     h1: "See what you make before you hit send",
