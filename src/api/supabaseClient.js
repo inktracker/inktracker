@@ -67,6 +67,7 @@ const TABLE_MAP = {
   User: "profiles",
   Shop: "shops",
   Invoice: "invoices",
+  Expense: "expenses",
   InventoryItem: "inventory_items",
   // The "commissions" table is actually broker pricing reference, not
   // a commission payout — preserved both names so legacy callers work

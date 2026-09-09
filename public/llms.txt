@@ -11,6 +11,7 @@ InkTracker is designed for small shops (1–10 people) that want opinionated, re
 - [Shop-to-shop partnerships](https://www.inktracker.app/features/shop-partnerships): subcontract between shops with blind hand-offs and agreed trade rates
 - [Live supplier pricing](https://www.inktracker.app/features/live-supplier-pricing): quotes pull today's blank costs from S&S, SanMar, and AS Colour
 - [Know your margin](https://www.inktracker.app/features/know-your-margin): cost and margin visible on every quote line before sending
+- [Your data is yours](https://www.inktracker.app/features/your-data-is-yours): export customers, quotes, orders, invoices, and expenses to CSV/JSON anytime — no lock-in
 - [For printers](https://www.inktracker.app/for-printers): who it's for and how shops use it
 - [Compare](https://www.inktracker.app/compare): InkTracker vs Printavo, DecoNetwork, and spreadsheets
 - [Support](https://www.inktracker.app/support): help and contact
