@@ -29,8 +29,10 @@ export default function ImportCustomersSection({ user }) {
 
       // RLS scopes this to the shop; includes QB-imported customers so they
       // dedupe. shopScope handles managers/brokers acting for the shop.
-      const existing = await base44.entities.Customer.filter(
-        { shop_owner: shopScope(user) }, "-created_date", 100000,
+      // .all() paginates past PostgREST's 1000-row cap — a plain .filter would
+      // miss customers beyond row 1000, letting a big shop import duplicates.
+      const existing = await base44.entities.Customer.all(
+        { shop_owner: shopScope(user) }, "-created_date",
       );
       const result = classifyImport(rows, existing || []);
       if (result.toCreate.length === 0) {

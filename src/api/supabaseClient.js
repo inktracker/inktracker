@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { queryClientInstance } from "@/lib/query-client";
 import { describeEdgeError } from "@/lib/edgeErrors";
 import { enrichEntityError } from "@/lib/entityErrors";
+import { paginateAll, PAGE } from "@/lib/queries/paginateAll";
 import { resolveTeamSubscription } from "@/lib/billing";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -138,6 +139,29 @@ function createEntityProxy(tableName) {
       const { data, error } = await q;
       if (error) throw enrichEntityError(error);
       return data ?? [];
+    },
+
+    /**
+     * Fetch EVERY matching row, paginating past PostgREST's per-response cap
+     * (db-max-rows, 1000). `.limit(100000)` is silently clamped to that cap
+     * server-side, which was truncating data exports — so range through in
+     * pages until a short page ends it. For exports/backups, not hot paths.
+     */
+    async all(filters, sort, columns) {
+      const s = parseSort(sort);
+      return paginateAll(async (n) => {
+        let q = supabase.from(tableName).select(columns || "*");
+        if (filters) {
+          for (const [key, value] of Object.entries(filters)) {
+            if (value != null) q = q.eq(key, value);
+          }
+        }
+        if (s) q = q.order(s.column, { ascending: s.ascending });
+        q = q.range(n * PAGE, n * PAGE + PAGE - 1);
+        const { data, error } = await q;
+        if (error) throw enrichEntityError(error);
+        return data ?? [];
+      });
     },
 
     /** Fetch a single row by id */
