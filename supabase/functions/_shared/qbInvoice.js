@@ -162,14 +162,20 @@ export function customerIdentityMatches(qbRow, customer) {
   const rowCompany = normalizeForMatch(qbRow.CompanyName);
   const rowGiven = normalizeForMatch(qbRow.GivenName);
   const rowDisplay = normalizeForMatch(qbRow.DisplayName);
+  // InkTracker stores a single `name` ("John Doe"); a QB customer often splits
+  // it into GivenName + FamilyName. Compare against the reassembled full name
+  // too, or a QB customer with a last name never matches and gets duplicated
+  // on the next pullCustomers.
+  const rowFull = normalizeForMatch(`${qbRow.GivenName || ""} ${qbRow.FamilyName || ""}`);
+  const nameMatches = name && (rowGiven === name || rowFull === name || rowDisplay === name);
 
   if (company && name) {
-    if (rowCompany === company && rowGiven === name) return true;
+    if (rowCompany === company && (rowGiven === name || rowFull === name)) return true;
     // DisplayName "company (name)" formatting fallback.
     return rowDisplay === normalizeForMatch(`${customer.company} (${customer.name})`);
   }
   if (company) return rowCompany === company || rowDisplay === company;
-  if (name) return rowGiven === name || rowDisplay === name;
+  if (name) return nameMatches;
   return false;
 }
 

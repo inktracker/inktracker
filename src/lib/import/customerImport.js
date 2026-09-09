@@ -29,16 +29,18 @@ export function isLikelyEmail(v) {
 }
 
 // True when an incoming row is the same logical customer as an existing one.
-// Both are InkTracker-shaped { name, company, email }. Email is decisive;
-// otherwise normalized company + name (both required when both present, so
-// two contacts at one company aren't merged), or the single field present.
+// Both are InkTracker-shaped { name, company, email }.
+//
+// Email is decisive (equal emails → same customer), consistent with
+// qbSync's customerIdentityMatches so a QB customer is never re-created. When
+// emails differ (or are absent) the match is SYMMETRIC over the fields BOTH
+// records actually have — this is the fix for the "asymmetric enrichment"
+// bug where a QB record with only a name (blank company) would NOT match a
+// richer CSV row carrying name+company, and get duplicated. Match on the
+// intersection of populated fields, never keyed off one side alone.
 export function customerRowMatches(row, existing) {
   if (!row || !existing) return false;
 
-  // Email match is DECISIVE (like qbInvoice.customerIdentityMatches): equal
-  // emails → same customer. But differing emails do NOT rule out a match —
-  // same name + company with an updated email is a merge, not a duplicate —
-  // so fall through to the identity check rather than returning false here.
   const email = isLikelyEmail(row.email) ? row.email.trim().toLowerCase() : "";
   const exEmail = isLikelyEmail(existing.email) ? existing.email.trim().toLowerCase() : "";
   if (email && exEmail && email === exEmail) return true;
@@ -48,9 +50,16 @@ export function customerRowMatches(row, existing) {
   const exCompany = normalizeForMatch(existing.company);
   const exName = normalizeForMatch(existing.name);
 
-  if (company && name) return exCompany === company && exName === name;
-  if (company) return exCompany === company;
-  if (name) return exName === name;
+  const bothCompany = company && exCompany;
+  const bothName = name && exName;
+
+  // Both records carry company AND name → require both to agree (distinct
+  // contacts at the same company are NOT merged).
+  if (bothCompany && bothName) return exCompany === company && exName === name;
+  // Only one field is shared by both → match on that field (mirrors QB's
+  // single-field behavior, and closes the enrichment-asymmetry gap).
+  if (bothName) return exName === name;
+  if (bothCompany) return exCompany === company;
   return false;
 }
 
@@ -70,7 +79,10 @@ export function parseCsv(text) {
         if (src[i + 1] === '"') { field += '"'; i++; }
         else inQuotes = false;
       } else field += c;
-    } else if (c === '"') {
+    } else if (c === '"' && field === "") {
+      // Quote is only special at the START of a field (RFC-4180). A stray
+      // quote mid-field — an inch mark (12" sleeve) or Apt "B" — is a literal,
+      // NOT a quote-mode toggle, so it can't swallow later commas/newlines.
       inQuotes = true;
     } else if (c === ",") {
       record.push(field); field = "";
@@ -108,12 +120,12 @@ const pick = (row, ...aliases) => {
 export function mapCustomerRow(row) {
   const first = pick(row, "first name", "firstname", "contact first name");
   const last = pick(row, "last name", "lastname", "contact last name");
-  const fullName = pick(row, "name", "contact name", "full name", "customer name");
+  const fullName = pick(row, "name", "contact name", "full name", "customer name", "primary contact");
   const name = fullName || [first, last].filter(Boolean).join(" ");
   const company = pick(row, "company", "company name", "business name", "customer");
   const email = pick(row, "email", "email address", "contact email");
   const phone = pick(row, "phone", "phone number", "contact phone", "mobile");
-  const address = pick(row, "address", "billing address", "street", "address line 1");
+  const address = pick(row, "address", "billing address", "billing address 1", "street", "address line 1");
   return { name, company, email: email || null, phone: phone || null, address: address || null };
 }
 
