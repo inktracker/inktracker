@@ -19,24 +19,53 @@ import __Layout from './Layout.jsx';
 // hashes. A sessionStorage timestamp guard prevents a reload loop if the asset
 // is genuinely gone (offline / bad deploy) — after that it rethrows and the
 // ErrorBoundary shows the snag screen.
-function lazyWithRetry(importer) {
+// A real page module always has a default export (React.lazy requires it).
+// A resolved import missing one means a stale/broken chunk — Safari resolves
+// these to an empty module instead of rejecting, which is what produces the
+// "undefined is not an object (evaluating 't.default')" crash.
+export function isBrokenLazyModule(mod) {
+  return !mod || mod.default == null;
+}
+
+// Message match for a chunk that failed to LOAD (fetch rejected). Covers the
+// phrasings Chrome/Firefox/Safari use, plus our own synthetic marker.
+export function isStaleChunkError(message) {
+  return /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|dynamically imported module|Load failed|stale\/broken chunk/i.test(
+    String(message || ""),
+  );
+}
+
+// One full reload, guarded so a genuinely-gone asset can't loop. Returns
+// true if it triggered the reload, false if the guard blocked it (already
+// reloaded in the last 10s → let the caller rethrow to the snag screen).
+function selfHealReloadOnce() {
+  try {
+    const KEY = 'it:chunk-reload-at';
+    const last = Number(sessionStorage.getItem(KEY) || 0);
+    if (Date.now() - last > 10000) {
+      sessionStorage.setItem(KEY, String(Date.now()));
+      window.location.reload();
+      return true;
+    }
+  } catch { /* sessionStorage unavailable */ }
+  return false;
+}
+
+export function lazyWithRetry(importer) {
   return lazy(async () => {
     try {
-      return await importer();
+      const mod = await importer();
+      // Proactively catch the Safari "resolved to an empty module" case
+      // BEFORE React.lazy reads `.default` and throws from inside React
+      // (where this try/catch can't reach) — the redeploy Sentry crash.
+      if (isBrokenLazyModule(mod)) {
+        if (selfHealReloadOnce()) return new Promise(() => {});
+        throw new Error('Lazy chunk resolved without a default export (stale/broken chunk)');
+      }
+      return mod;
     } catch (err) {
-      const msg = String(err?.message || err);
-      const isChunkError =
-        /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|dynamically imported module/i.test(msg);
-      if (isChunkError) {
-        try {
-          const KEY = 'it:chunk-reload-at';
-          const last = Number(sessionStorage.getItem(KEY) || 0);
-          if (Date.now() - last > 10000) {
-            sessionStorage.setItem(KEY, String(Date.now()));
-            window.location.reload();
-            return new Promise(() => {}); // hold render until the reload takes over
-          }
-        } catch { /* sessionStorage unavailable — fall through to rethrow */ }
+      if (isStaleChunkError(err?.message || err) && selfHealReloadOnce()) {
+        return new Promise(() => {}); // hold render until the reload takes over
       }
       throw err;
     }
