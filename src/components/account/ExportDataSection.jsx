@@ -156,7 +156,11 @@ export default function ExportDataSection({ user }) {
 
   async function fetchAll(entity) {
     try {
-      return await entity.filter({ shop_owner: shopScope(user) }, "-created_date", 100000);
+      // .all() paginates past PostgREST's 1000-row response cap — a plain
+      // .filter(..., 100000) was silently truncating exports of large tables
+      // (e.g. a shop's full expense history), breaking the "your whole
+      // history" promise.
+      return await entity.all({ shop_owner: shopScope(user) }, "-created_date");
     } catch (e) {
       console.error("[Export] fetch failed:", e);
       return [];
