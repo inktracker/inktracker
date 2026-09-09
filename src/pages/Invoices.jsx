@@ -13,6 +13,7 @@ import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtDate, fmtMoney, tod, getDisplayName } from "../components/shared/pricing";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
+import { invoiceAging, AGING_TONE_CLASS } from "@/lib/invoices/invoiceAging";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
@@ -506,10 +507,13 @@ export default function Invoices() {
                 <td className="px-3 py-3.5 text-slate-500">{fmtMoney(inv.tax)}</td>
                 <td className="px-3 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(inv.total)}</td>
                 <td className="px-3 py-3.5">
-                  {inv.paid
-                    ?<span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full whitespace-nowrap">Paid</span>
-                    :<span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full whitespace-nowrap">Unpaid</span>
-                  }
+                  <div className="flex flex-col gap-0.5 items-start">
+                    {inv.paid
+                      ?<span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full whitespace-nowrap">Paid</span>
+                      :<span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full whitespace-nowrap">Unpaid</span>
+                    }
+                    {(() => { const a = invoiceAging(inv); return a ? <span className={`text-[11px] whitespace-nowrap ${AGING_TONE_CLASS[a.tone]}`}>{a.label}</span> : null; })()}
+                  </div>
                 </td>
                 <td className="px-3 py-3.5">
                   {!inv.paid && (
@@ -538,10 +542,13 @@ export default function Invoices() {
                   <div className="font-mono text-xs text-slate-500">{inv.invoice_id}</div>
                   <div className="font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</div>
                 </div>
-                {inv.paid
-                  ? <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Paid</span>
-                  : <span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full">Unpaid</span>
-                }
+                <div className="flex flex-col gap-0.5 items-end">
+                  {inv.paid
+                    ? <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Paid</span>
+                    : <span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full">Unpaid</span>
+                  }
+                  {(() => { const a = invoiceAging(inv); return a ? <span className={`text-[11px] whitespace-nowrap ${AGING_TONE_CLASS[a.tone]}`}>{a.label}</span> : null; })()}
+                </div>
               </div>
               <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
                 <span>Due: {fmtDate(inv.due)}</span>
