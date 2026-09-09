@@ -20,6 +20,7 @@ import { canSeeMoney } from "@/lib/managerPermissions";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import ACOrderModal from "../components/orders/ACOrderModal";
 import AdvancedFilters from "../components/AdvancedFilters";
+import { orderHasMethod, availableMethods } from "../lib/production/orderMethods";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import { ChevronLeft, ChevronRight, CalendarDays, List, LayoutGrid } from "lucide-react";
 import { todayInShopTz, nowInShopTz } from "@/lib/shopTimezone";
@@ -133,6 +134,7 @@ export default function Production() {
   );
   const [filter, setFilter] = useState("All");
   const [originFilter, setOriginFilter] = useState("All");
+  const [methodFilter, setMethodFilter] = useState("All");
   // Hide finished work so the table focuses on what still needs doing.
   const [hideCompleted, setHideCompleted] = useState(false);
   const [advFilters, setAdvFilters] = useState({});
@@ -246,6 +248,9 @@ export default function Production() {
     if (originFilter === "Broker" && !o.broker_id) return false;
     return true;
   });
+  // Method filter (mixed print/embroidery shops): keep an order if any of its
+  // line-item imprints use the selected decoration method.
+  filteredTable = filteredTable.filter((o) => orderHasMethod(o, methodFilter));
   filteredTable = filteredTable.filter((o) => {
     if (advFilters.customer) {
       const customerSearch = advFilters.customer.toLowerCase();
@@ -260,6 +265,11 @@ export default function Production() {
     if (advFilters.maxTotal && (o.total || 0) > parseFloat(advFilters.maxTotal)) return false;
     return true;
   });
+
+  // Only mixed shops (more than one decoration method in their orders) get the
+  // method filter row — a print-only shop shouldn't see clutter.
+  const methodsPresent = availableMethods(orders);
+  const showMethodFilter = methodsPresent.length > 1;
 
   const advFilterOptions = [
     { key: "customer", label: "Customer / Job Title", type: "text" },
@@ -651,6 +661,20 @@ export default function Production() {
               {hideCompleted ? "Show Completed" : "Hide Completed"}
             </button>
           </div>
+          {showMethodFilter && (
+            <div className="flex gap-2 items-center flex-wrap">
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mr-1">Method</span>
+              {["All", ...methodsPresent].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMethodFilter(m)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${methodFilter === m ? "bg-teal-600 text-white border-teal-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-teal-300"}`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          )}
           <AdvancedFilters filters={advFilters} onFilterChange={handleAdvFilterChange} filterOptions={advFilterOptions} />
 
           {selectedIds.size > 0 && (
