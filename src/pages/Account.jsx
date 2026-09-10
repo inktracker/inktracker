@@ -681,10 +681,12 @@ export default function Account() {
               </div>
             )}
 
-            <div className="border-t border-slate-200 dark:border-slate-700 pt-5">
-              <div className="text-sm font-semibold text-slate-700 mb-2">Export Data</div>
-              <ExportDataSection user={user} />
-            </div>
+            {(user?.role === "admin" || user?.role === "shop" || user?.role === "manager") && (
+              <div className="border-t border-slate-200 dark:border-slate-700 pt-5">
+                <div className="text-sm font-semibold text-slate-700 mb-2">Export Data</div>
+                <ExportDataSection user={user} />
+              </div>
+            )}
 
             {(user?.role === "admin" || user?.role === "shop") && (
               <div className="border-t border-red-200 dark:border-red-900/50 pt-5">
