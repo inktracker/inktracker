@@ -5,6 +5,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { captureError } from "../_shared/observability.ts";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
+import { fetchAllRows } from "../_shared/paginate.js";
 import { mintPaymentLink } from "../_shared/qbPaymentLink.js";
 import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { parseRetryAfterMs, QbRateLimitError, QbUnreachableError } from "../_shared/qbRateLimit.ts";
@@ -2677,13 +2678,16 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   const depositInvoiceIds = new Set<string>();
   try {
     for (const table of ["quotes", "orders", "invoices"]) {
-      const { data: depRows } = await supabase
+      // Page the full set — a .limit(2000) is clamped to 1000, so a large
+      // shop's deposit invoices past that would NOT be added to the skip-set
+      // and could be mis-imported as regular invoices.
+      const depRows = await fetchAllRows(() => supabase
         .from(table)
         .select("qb_deposit_invoice_id")
         .eq("shop_owner", shopOwner)
         .not("qb_deposit_invoice_id", "is", null)
-        .limit(2000);
-      for (const r of depRows ?? []) {
+        .order("qb_deposit_invoice_id", { ascending: true }));
+      for (const r of depRows) {
         if (r?.qb_deposit_invoice_id) depositInvoiceIds.add(String(r.qb_deposit_invoice_id));
       }
     }

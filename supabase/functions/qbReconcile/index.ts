@@ -39,6 +39,7 @@ import {
 } from "../_shared/connectionLogic.js";
 import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
+import { fetchAllRows } from "../_shared/paginate.js";
 import { escapeQbStringLiteral } from "../_shared/qbInvoice.js";
 import { logEvent } from "../_shared/qbAudit.js";
 import {
@@ -460,21 +461,26 @@ async function reconcileShop(adminClient: any, profile: any) {
   const driftRows: any[] = [];
   try {
     const DRIFT_LIVE_CHECK_CAP = 25;
-    const [{ data: qRows }, { data: iRows }] = await Promise.all([
-      adminClient
+    // Page the candidate pool — a .limit(2000) is clamped to 1000, so a shop
+    // with >1000 QB-linked rows could have a genuinely-drifting invoice sit
+    // past the cap and never get verified/alerted. (The live-QB verification
+    // below is still capped at DRIFT_LIVE_CHECK_CAP; this just makes the pool
+    // it draws from complete.)
+    const [qRows, iRows] = await Promise.all([
+      fetchAllRows(() => adminClient
         .from("quotes")
         .select("id, quote_id, shop_owner, qb_invoice_id, total, qb_total")
         .eq("shop_owner", shopOwner)
         .not("qb_total", "is", null)
         .not("qb_invoice_id", "is", null)
-        .limit(2000),
-      adminClient
+        .order("id", { ascending: true })),
+      fetchAllRows(() => adminClient
         .from("invoices")
         .select("id, invoice_id, shop_owner, qb_invoice_id, total, qb_total")
         .eq("shop_owner", shopOwner)
         .not("qb_total", "is", null)
         .not("qb_invoice_id", "is", null)
-        .limit(2000),
+        .order("id", { ascending: true })),
     ]);
     const candidatesToVerify: any[] = [
       ...findDriftRows((qRows ?? []).map((r: any) => ({ ...r, ref: r.quote_id, table: "quotes" }))),
@@ -961,23 +967,33 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
     const invoiceDriftAll = rows.filter((r: any) => r.source === "invoices");
 
     // Paid invoice → unpaid order. No FK between invoices.order_id and
-    // orders.order_id, so match in two passes.
-    const { data: paidLinked } = await adminClient
+    // orders.order_id, so match in two passes. This runs GLOBALLY (all shops)
+    // so a .limit(5000) — clamped to 1000 by PostgREST — silently dropped
+    // paid+linked invoices past the first 1000, meaning real stuck orders
+    // never reached the operator alert. Page the full set (deterministic order
+    // so pages don't overlap).
+    const paidLinked = await fetchAllRows(() => adminClient
       .from("invoices")
       .select("shop_owner, invoice_id, order_id")
       .eq("paid", true)
       .not("order_id", "is", null)
-      .limit(5000);
+      .order("invoice_id", { ascending: true }));
     let stuckOrdersAll: any[] = [];
-    const linkedIds = (paidLinked ?? []).map((r: any) => r.order_id);
+    const linkedIds = paidLinked.map((r: any) => r.order_id);
     if (linkedIds.length) {
-      const { data: unpaidOrders } = await adminClient
-        .from("orders")
-        .select("shop_owner, order_id")
-        .eq("paid", false)
-        .in("order_id", linkedIds);
-      const unpaidKey = new Set((unpaidOrders ?? []).map((o: any) => `${o.shop_owner}|${o.order_id}`));
-      stuckOrdersAll = (paidLinked ?? []).filter((r: any) => unpaidKey.has(`${r.shop_owner}|${r.order_id}`));
+      // Batch the .in() — an unbounded list would blow the PostgREST URL /
+      // parameter limit now that paidLinked is no longer capped at 1000.
+      const unpaidKey = new Set<string>();
+      for (let i = 0; i < linkedIds.length; i += 500) {
+        const batch = linkedIds.slice(i, i + 500);
+        const { data: unpaidOrders } = await adminClient
+          .from("orders")
+          .select("shop_owner, order_id")
+          .eq("paid", false)
+          .in("order_id", batch);
+        for (const o of unpaidOrders ?? []) unpaidKey.add(`${o.shop_owner}|${o.order_id}`);
+      }
+      stuckOrdersAll = paidLinked.filter((r: any) => unpaidKey.has(`${r.shop_owner}|${r.order_id}`));
     }
 
     const { count: taxHoldCount } = await adminClient
