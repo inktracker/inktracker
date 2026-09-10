@@ -717,7 +717,7 @@ export default function BrokerLineItemEditor({
           </div>
         </div>
 
-        <div className="grid grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-3">
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1 whitespace-nowrap overflow-hidden text-ellipsis">
               Style #
@@ -954,7 +954,7 @@ export default function BrokerLineItemEditor({
       </div>
 
       {!isCollapsed && (
-        <div className="grid grid-cols-2 divide-x divide-slate-100">
+        <div className="grid grid-cols-1 md:grid-cols-2 md:divide-x divide-slate-100">
           <div className="p-5 space-y-5">
             <div>
               <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
