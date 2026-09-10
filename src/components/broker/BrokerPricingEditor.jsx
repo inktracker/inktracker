@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { base44 } from "@/api/supabaseClient";
 import NumericInput from "@/components/shared/NumericInput";
 import { notify } from "@/lib/notify";
@@ -228,13 +228,20 @@ function BrokerPricingEditorBody({ broker, shopOwner, shopConfig, existingRow, o
     impliedQuickPct(buildDraft(existingRow?.overrides, shopConfig || {}), shopConfig || {}),
   );
 
-  // When the cells were hand-edited to DIFFERENT ratios, no single % describes
-  // the sheet — the readout shows "Custom" instead of a misleading number.
+  // Compare against the standard sheet as it was AT MOUNT — the draft was built
+  // from that, and the gate guarantees it's loaded. Freezing it here means the
+  // "Custom" readout can't flip just because the owner edits their standard
+  // sheet in another panel while this one is open.
+  const configAtMount = useRef(shopConfig).current;
+
+  // When the cells were hand-edited off a single scale (any section: print,
+  // garment markup, embroidery, custom technique), no single % describes the
+  // sheet — the readout shows "Custom cells" instead of a misleading number.
   // Recomputes as cells change; dragging the slider rescales everything
   // uniformly and clears it.
   const isCustom = useMemo(
-    () => draft.mode === "sheet" && !isSheetUniform(draft, shopConfig || {}),
-    [draft, shopConfig],
+    () => draft.mode === "sheet" && !isSheetUniform(draft, configAtMount),
+    [draft, configAtMount],
   );
 
   function handleQuickPctChange(next) {
@@ -353,9 +360,9 @@ function BrokerPricingEditorBody({ broker, shopOwner, shopConfig, existingRow, o
               <input
                 type="range"
                 min={0}
-                max={100}
+                max={200}
                 step={1}
-                value={Math.min(100, Math.max(0, quickPct))}
+                value={Math.min(200, Math.max(0, quickPct))}
                 onChange={(e) => handleQuickPctChange(e.target.value)}
                 aria-label="Quick price percent of standard rates"
                 className="flex-1 min-w-[140px] accent-teal-600"

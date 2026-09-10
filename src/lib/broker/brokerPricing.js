@@ -288,51 +288,102 @@ export function mergeBrokerPricing(shopConfig, overrides) {
   return merged;
 }
 
-// The "quick price %" a saved broker sheet represents — used by the editor to
-// reopen at the real percentage instead of a hardcoded default. Print cells
-// scale linearly (cell = standard × pct in buildScaledSheet), so invert the
-// first comparable cell against the shop's STANDARD sheet (pct 100). A sheet
-// with no comparable print cell returns `fallback`.
-export function impliedQuickPct(sheet, shopConfig, fallback = 90) {
-  const standard = buildScaledSheet(shopConfig || {}, 100);
-  for (const key of ["firstPrint", "addlPrint"]) {
-    const dGrid = sheet?.[key];
-    const sGrid = standard?.[key];
-    if (!dGrid || !sGrid) continue;
+// Every scalable value in a sheet, paired with its STANDARD (100%) counterpart
+// and the standard magnitude — across ALL sections buildScaledSheet touches,
+// not just print cells: print firstPrint/addlPrint (cell = standard × pct),
+// garment markup MARGIN (markup−1 scales linearly), embroidery pricing grid +
+// digitizing fee, and custom-technique matrices. Used to (a) derive the % from
+// the most reliable (largest) value and (b) tell a uniform sheet from a
+// hand-edited "Custom" one. `mag` lets us sample the biggest value, immune to
+// the cent-rounding that skews tiny cells.
+function collectScaleRatios(sheet, standard) {
+  const out = [];
+  const grid = (dGrid, sGrid) => {
+    if (!dGrid || !sGrid) return;
     for (const r of Object.keys(sGrid)) {
       for (const c of Object.keys(sGrid[r] || {})) {
         const s = Number(sGrid[r][c]);
         const d = Number(dGrid?.[r]?.[c]);
-        if (s > 0 && Number.isFinite(d)) {
-          return Math.min(200, Math.max(0, Math.round((d / s) * 100)));
-        }
+        if (s > 0 && Number.isFinite(d)) out.push({ pct: Math.round((d / s) * 100), mag: s });
       }
     }
+  };
+  grid(sheet?.firstPrint, standard?.firstPrint);
+  grid(sheet?.addlPrint, standard?.addlPrint);
+  // Garment markup: the margin (markup − 1) is what scales linearly.
+  const dGM = Array.isArray(sheet?.garmentMarkup) ? sheet.garmentMarkup : [];
+  const sGM = Array.isArray(standard?.garmentMarkup) ? standard.garmentMarkup : [];
+  for (let i = 0; i < sGM.length; i++) {
+    if (dGM[i] == null) continue; // sheet doesn't define this bracket — don't invent a 0% ratio
+    const sMargin = (Number(sGM[i]?.markup) || 1) - 1;
+    const dMargin = (Number(dGM[i]?.markup) || 1) - 1;
+    if (sMargin > 0 && Number.isFinite(dMargin)) out.push({ pct: Math.round((dMargin / sMargin) * 100), mag: sMargin * 100 });
   }
-  return fallback;
+  // Embroidery.
+  grid(sheet?.embroidery?.pricing, standard?.embroidery?.pricing);
+  const sFee = Number(standard?.embroidery?.digitizingFee);
+  const dFee = Number(sheet?.embroidery?.digitizingFee);
+  if (sFee > 0 && Number.isFinite(dFee)) out.push({ pct: Math.round((dFee / sFee) * 100), mag: sFee });
+  // Custom techniques (DTG/DTF/…).
+  const sCT = standard?.customTechniques || {};
+  const dCT = sheet?.customTechniques || {};
+  for (const name of Object.keys(sCT)) {
+    grid(dCT[name]?.firstPrint, sCT[name]?.firstPrint);
+    grid(dCT[name]?.addlPrint, sCT[name]?.addlPrint);
+  }
+  return out;
 }
 
-// True when a broker sheet is a UNIFORM % of the shop's standard sheet (i.e.
-// every print cell shares one scale) — so the "quick price %" slider can show
-// that single %. False when cells were hand-edited to different ratios, in
-// which case no single % describes the sheet and the UI shows "Custom" instead.
-// Tolerance absorbs the per-cent rounding buildScaledSheet applies (a uniform
-// 90% sheet can compute 89–91 across cells of different magnitudes).
-export function isSheetUniform(sheet, shopConfig, tolerance = 2) {
-  const standard = buildScaledSheet(shopConfig || {}, 100);
-  const ratios = [];
-  for (const key of ["firstPrint", "addlPrint"]) {
-    const dGrid = sheet?.[key];
-    const sGrid = standard?.[key];
-    if (!dGrid || !sGrid) continue;
-    for (const r of Object.keys(sGrid)) {
-      for (const c of Object.keys(sGrid[r] || {})) {
-        const s = Number(sGrid[r][c]);
-        const d = Number(dGrid?.[r]?.[c]);
-        if (s > 0 && Number.isFinite(d)) ratios.push(Math.round((d / s) * 100));
-      }
+// The "quick price %" a saved broker sheet represents — so the editor reopens
+// at the real percentage instead of a hardcoded default. Samples the ratio
+// from the LARGEST standard value across every section (immune to cent-rounding
+// on tiny cells). No comparable value → `fallback`.
+export function impliedQuickPct(sheet, shopConfig, fallback = 90) {
+  const ratios = collectScaleRatios(sheet, buildScaledSheet(shopConfig || {}, 100));
+  if (ratios.length === 0) return fallback;
+  let best = ratios[0];
+  for (const r of ratios) if (r.mag > best.mag) best = r;
+  return Math.min(200, Math.max(0, best.pct));
+}
+
+// True when a sheet is a UNIFORM % of the shop's standard sheet — so the slider
+// can show that one %. False when ANY section (print, garment markup,
+// embroidery, custom technique) was hand-edited off that scale, in which case
+// the UI shows "Custom cells" instead. Method: recover the % from the most
+// reliable value, RECONSTRUCT the whole sheet at that % via buildScaledSheet,
+// and compare every scalable value — reconstruction rounds identically, so a
+// genuinely-uniform sheet matches to the cent (no tiny-cell false positives)
+// while a single off-scale edit anywhere fails.
+export function isSheetUniform(sheet, shopConfig, tolerance = 0.011) {
+  const pct = impliedQuickPct(sheet, shopConfig, null);
+  if (pct == null) return true; // nothing comparable → trivially uniform
+  const expected = buildScaledSheet(shopConfig || {}, pct);
+  const near = (a, b) => Math.abs((Number(a) || 0) - (Number(b) || 0)) <= tolerance;
+  const gridsMatch = (g1, g2) => {
+    const rows = new Set([...Object.keys(g1 || {}), ...Object.keys(g2 || {})]);
+    for (const r of rows) {
+      const cols = new Set([...Object.keys(g1?.[r] || {}), ...Object.keys(g2?.[r] || {})]);
+      for (const c of cols) if (!near(g1?.[r]?.[c] ?? 0, g2?.[r]?.[c] ?? 0)) return false;
     }
+    return true;
+  };
+  if (!gridsMatch(sheet?.firstPrint, expected.firstPrint)) return false;
+  if (!gridsMatch(sheet?.addlPrint, expected.addlPrint)) return false;
+  const eGM = expected.garmentMarkup || [];
+  const dGM = Array.isArray(sheet?.garmentMarkup) ? sheet.garmentMarkup : [];
+  for (let i = 0; i < eGM.length; i++) {
+    // markup rounds to 4dp in buildScaledSheet; allow a hair for that.
+    if (!near((dGM[i]?.markup ?? 1) * 1, eGM[i].markup, 0.0011)) return false;
   }
-  if (ratios.length <= 1) return true;
-  return Math.max(...ratios) - Math.min(...ratios) <= tolerance;
+  if (expected.embroidery) {
+    if (!near(sheet?.embroidery?.digitizingFee ?? 0, expected.embroidery.digitizingFee)) return false;
+    if (!gridsMatch(sheet?.embroidery?.pricing, expected.embroidery.pricing)) return false;
+  }
+  for (const name of Object.keys(expected.customTechniques || {})) {
+    const e = expected.customTechniques[name];
+    const d = sheet?.customTechniques?.[name];
+    if (!gridsMatch(d?.firstPrint, e.firstPrint)) return false;
+    if (!gridsMatch(d?.addlPrint, e.addlPrint)) return false;
+  }
+  return true;
 }
