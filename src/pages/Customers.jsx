@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
-import { cachedFilter } from "@/lib/queries/cachedEntity";
+import { cachedFilter, cachedAll } from "@/lib/queries/cachedEntity";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
 import { uploadFile } from "@/lib/uploadFile";
 import AdvancedFilters from "../components/AdvancedFilters";
@@ -105,10 +105,16 @@ export default function Customers() {
 
         // Cached mount-load reads — see lib/queries/cachedEntity. Merge/detail
         // lookups below stay direct (freshness-critical for the merge path).
+        // Customer roster and invoice stats use cachedAll — they must be
+        // COMPLETE: a plain cachedFilter stops at PostgREST's 1000-row cap, so
+        // a shop with >1000 customers would have some silently missing from the
+        // list, and per-customer invoice totals would undercount past 1000
+        // invoices. (BrokerDocument stays capped — it only feeds the artwork
+        // thumbnail lookup, where 500 recent is plenty.)
         const [c, docs, invs] = await Promise.all([
-          cachedFilter("Customer", { filters: { shop_owner: shopScope(currentUser) } }),
+          cachedAll("Customer", { filters: { shop_owner: shopScope(currentUser) } }),
           cachedFilter("BrokerDocument", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 500 }),
-          cachedFilter("Invoice", { filters: { shop_owner: shopScope(currentUser) } }),
+          cachedAll("Invoice", { filters: { shop_owner: shopScope(currentUser) } }),
         ]);
         // Profile-card stats come from OUR invoices table so the card
         // always matches the Invoices tab. Previously QB-sourced, which

@@ -62,6 +62,18 @@ export function cachedFilter(entity, { filters, sort, limit, columns, staleTime 
   });
 }
 
+/** Cached equivalent of base44.entities[entity].all(filters, sort) — pages
+ *  past PostgREST's 1000-row response cap. Use for lists that MUST be complete
+ *  (a full customer roster, per-customer invoice totals) where a plain
+ *  cachedFilter would silently stop at the first 1000 rows. */
+export function cachedAll(entity, { filters, sort, staleTime } = {}) {
+  return queryClientInstance.fetchQuery({
+    queryKey: entityKey(entity, { kind: "all", filters, sort }),
+    queryFn: () => base44.entities[entity].all(filters, sort),
+    ...(staleTime !== undefined ? { staleTime } : {}),
+  });
+}
+
 /** Cached equivalent of base44.entities[entity].list(sort, limit, columns). */
 export function cachedList(entity, { sort, limit, columns, staleTime } = {}) {
   return queryClientInstance.fetchQuery({

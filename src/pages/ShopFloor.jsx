@@ -321,7 +321,7 @@ export default function ShopFloor() {
       try {
         const [allOrders, allCustomers] = await Promise.all([
           base44.entities.Order.filter({ shop_owner: shopEmail }, "-created_date", 200),
-          base44.entities.Customer.filter({ shop_owner: shopEmail }),
+          base44.entities.Customer.all({ shop_owner: shopEmail }),
         ]);
         setOrders(allOrders);
         const custMap = {};

@@ -4,6 +4,7 @@ import { supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "../shared/pricing";
 import { summarizeTaxByState, taxReportTotals } from "@/lib/tax/taxReport";
 import { buildTaxSummaryCsv, buildTaxDetailCsv, buildTaxCsvFilename } from "@/lib/tax/taxCsv";
+import { paginateAll, PAGE } from "@/lib/queries/paginateAll";
 
 function downloadCsv(filename, csv) {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -31,20 +32,29 @@ export default function SalesTaxReport({ from = null, to = null }) {
       setLoading(true);
       setError("");
       try {
-        let q = supabase
-          .from("tax_records")
-          .select(
-            "txn_date,qb_invoice_id,quote_id,customer_name,ship_to_state,ship_to_zip," +
-            "authority,subtotal,taxable_amount,tax_total,total,effective_rate," +
-            "exempt,exemption_type,exemption_certificate_number",
-          )
-          .order("txn_date", { ascending: false });
-        if (from) q = q.gte("txn_date", from);
-        if (to) q = q.lte("txn_date", to);
-        const { data, error: e } = await q.limit(5000);
+        // Page past PostgREST's 1000-row response cap: a plain .limit(5000) is
+        // clamped server-side to 1000, so a shop with more than 1000 taxable
+        // transactions in the window would file a return from an UNDERSTATED
+        // total. This is the money figure on a tax return — it must be the
+        // complete set, not the most-recent page.
+        const data = await paginateAll(async (n) => {
+          let q = supabase
+            .from("tax_records")
+            .select(
+              "txn_date,qb_invoice_id,quote_id,customer_name,ship_to_state,ship_to_zip," +
+              "authority,subtotal,taxable_amount,tax_total,total,effective_rate," +
+              "exempt,exemption_type,exemption_certificate_number",
+            )
+            .order("txn_date", { ascending: false })
+            .order("qb_invoice_id", { ascending: false });
+          if (from) q = q.gte("txn_date", from);
+          if (to) q = q.lte("txn_date", to);
+          const { data: page, error: e } = await q.range(n * PAGE, n * PAGE + PAGE - 1);
+          if (e) throw e;
+          return page || [];
+        });
         if (!active) return;
-        if (e) setError(e.message);
-        else setRecords(data || []);
+        setRecords(data);
       } catch (e) {
         if (active) setError(e?.message || "Failed to load tax records");
       } finally {

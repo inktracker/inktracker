@@ -175,7 +175,7 @@ export default function Production() {
         setUser(u);
         const [o, c, q, pos, shops] = await Promise.all([
           base44.entities.Order.filter({ shop_owner: shopScope(u) }, "-created_date", 200),
-          base44.entities.Customer.filter({ shop_owner: shopScope(u) }),
+          base44.entities.Customer.all({ shop_owner: shopScope(u) }),
           // All quotes — independent of conversion status. Lets a sent or
           // approved quote appear on the calendar before there's an order.
           base44.entities.Quote.filter({ shop_owner: shopScope(u) }, "-created_date", 500).catch(() => []),
