@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { base44 } from "@/api/supabaseClient";
 import NumericInput from "@/components/shared/NumericInput";
 import { notify } from "@/lib/notify";
@@ -8,6 +8,7 @@ import {
   brokerPricingMode,
   buildScaledSheet,
   impliedQuickPct,
+  isSheetUniform,
 } from "@/lib/broker/brokerPricing";
 import { DEFAULT_TIERS, DEFAULT_COLORS } from "@/components/account/pricingConfigDefaults";
 
@@ -212,6 +213,15 @@ export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, exi
     impliedQuickPct(buildDraft(existingRow?.overrides, shopConfig || {}), shopConfig || {}),
   );
 
+  // When the cells were hand-edited to DIFFERENT ratios, no single % describes
+  // the sheet — the readout shows "Custom" instead of a misleading number.
+  // Recomputes as cells change; dragging the slider rescales everything
+  // uniformly and clears it.
+  const isCustom = useMemo(
+    () => draft.mode === "sheet" && !isSheetUniform(draft, shopConfig || {}),
+    [draft, shopConfig],
+  );
+
   function handleQuickPctChange(next) {
     const pct = Math.min(200, Math.max(0, Math.round(Number(next) || 0)));
     setQuickPct(pct);
@@ -335,25 +345,40 @@ export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, exi
                 aria-label="Quick price percent of standard rates"
                 className="flex-1 min-w-[140px] accent-teal-600"
               />
-              <div className="relative w-24">
-                <NumericInput
-                  value={quickPct}
-                  onChange={handleQuickPctChange}
-                  min={0}
-                  max={200}
-                  integer
-                  label="Quick price percent"
-                  className={inputCls}
-                />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">%</span>
-              </div>
+              {isCustom ? (
+                <div
+                  className="w-24 flex items-center justify-center rounded px-1 py-1.5 border border-amber-200 bg-amber-50 text-[10px] font-bold text-amber-700 uppercase tracking-wide text-center"
+                  title="Cells were edited individually, so no single percentage describes this sheet. Drag the slider to reset every cell to one percentage of your standard rates."
+                >
+                  Custom cells
+                </div>
+              ) : (
+                <div className="relative w-24">
+                  <NumericInput
+                    value={quickPct}
+                    onChange={handleQuickPctChange}
+                    min={0}
+                    max={200}
+                    integer
+                    label="Quick price percent"
+                    className={inputCls}
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">%</span>
+                </div>
+              )}
               <span className="text-xs font-semibold text-teal-700 whitespace-nowrap">of standard rates</span>
             </div>
             <p className="text-[10px] text-slate-500 mt-1.5">
-              Every rate below updates live as you drag — {quickPct}% of your current standard sheet
-              (garment markup scales its margin: a 40% markup becomes {Math.round(40 * quickPct) / 100}%).
-              Always derived from your standard sheet, never compounding. Moving the slider replaces any
-              hand-edited cells; fine-tune cells after you settle on a percentage.
+              {isCustom ? (
+                <>These cells were edited individually — no single percentage covers the whole sheet.
+                  Drag the slider to reset every cell to one % of your standard rates, or keep fine-tuning
+                  cells below.</>
+              ) : (
+                <>Every rate below updates live as you drag — {quickPct}% of your current standard sheet
+                  (garment markup scales its margin: a 40% markup becomes {Math.round(40 * quickPct) / 100}%).
+                  Always derived from your standard sheet, never compounding. Moving the slider replaces any
+                  hand-edited cells; fine-tune cells after you settle on a percentage.</>
+              )}
             </p>
           </div>
 
