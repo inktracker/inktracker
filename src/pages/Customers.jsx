@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
 import { cachedFilter, cachedAll } from "@/lib/queries/cachedEntity";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
@@ -68,6 +68,8 @@ function normalizeArtworkDoc(doc) {
 
 export default function Customers() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const deepLinkOpenId = new URLSearchParams(location.search).get("open") || "";
   const [customers, setCustomers] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [artworkDocs, setArtworkDocs] = useState([]);
@@ -136,6 +138,19 @@ export default function Customers() {
 
     loadData();
   }, []);
+
+  // Deep link from global search (Customers?open=<id>) — open the matched
+  // customer's edit modal once the list has loaded, so a search result lands
+  // ON the record instead of just the list. Ref-guarded so closing the modal
+  // doesn't reopen it.
+  const deepLinkOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!deepLinkOpenId || deepLinkOpenedRef.current || customers.length === 0) return;
+    const match = customers.find((c) => c.id === deepLinkOpenId);
+    if (!match) return;
+    deepLinkOpenedRef.current = true;
+    setEditing(match);
+  }, [deepLinkOpenId, customers]);
 
   // Auto-detect QB-side merges that still need finishing in InkTracker.
   // Fires ONCE after the customer list loads — one batched QB call
