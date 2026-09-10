@@ -199,7 +199,11 @@ export async function seedDemoData(userEmail) {
       job_title: "Team Warmups",
       date: today(),
       due_date: daysFromNow(12),
-      status: "On Press",
+      // "Printing" — the valid pipeline stage for a job on the press. "On Press"
+      // is not in orders_status_check, so the insert was REJECTED, and because
+      // both demo orders share one Promise.all the rejection took the valid
+      // "Art Approval" order down with it → demo seeding created no orders.
+      status: "Printing",
       line_items: [
         lineItem({ garment_style: "Stencil Hood", garment_color: "Forest", quantity: 60, colors_per_location: 3, base_price: 28.0, print_price: 5.5, unit_price: 33.5 }),
       ],
@@ -208,7 +212,10 @@ export async function seedDemoData(userEmail) {
   ];
 
   try {
-    await Promise.all(orders.map((o) => base44.entities.Order.create(o)));
+    // allSettled, not all — one rejected insert (e.g. a bad status) must not
+    // abort the others and leave the demo shop with zero orders.
+    const res = await Promise.allSettled(orders.map((o) => base44.entities.Order.create(o)));
+    for (const r of res) if (r.status === "rejected") console.warn("[demoSeed] an order create failed:", r.reason);
   } catch (err) {
     console.warn("[demoSeed] order create failed:", err);
   }
