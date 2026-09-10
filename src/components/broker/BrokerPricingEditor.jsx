@@ -200,7 +200,22 @@ const colorRowsFor = (maxColors) =>
  * @param existingRow the broker_pricing row for (shopOwner, broker), or null
  * @param onSaved     called with the new row (or null after a delete)
  */
-export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, existingRow, onSaved }) {
+// Gate: don't MOUNT the editor body until the shop's standard rates have
+// loaded. The body's useState initializers build the whole draft (and the
+// quick-price %) from shopConfig ONCE, at mount; if it mounted against a
+// still-loading (null) config, an empty standard sheet would stick — the
+// config isn't part of the remount key, so it couldn't self-correct. Rendering
+// the body only once shopConfig is non-null means its initializers always see
+// the real rates. (A loaded-but-empty {} config for a config-less shop still
+// mounts — there's simply no standard sheet to scale from.)
+export default function BrokerPricingEditor(props) {
+  if (props.shopConfig == null) {
+    return <div className="text-xs text-slate-500 py-3">Loading your rates…</div>;
+  }
+  return <BrokerPricingEditorBody {...props} />;
+}
+
+function BrokerPricingEditorBody({ broker, shopOwner, shopConfig, existingRow, onSaved }) {
   const [draft, setDraft] = useState(() => buildDraft(existingRow?.overrides, shopConfig || {}));
   const [saving, setSaving] = useState(false);
   // "Quick price" (Joe 2026-07-20): one control that sets every cell of

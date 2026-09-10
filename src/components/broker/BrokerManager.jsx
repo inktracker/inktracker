@@ -675,7 +675,7 @@ export default function BrokerManager() {
                                       key={`${broker.email}:${savedRow?.id || "new"}`}
                                       broker={{ email: broker.email, label }}
                                       shopOwner={myShop}
-                                      shopConfig={myShopConfig || {}}
+                                      shopConfig={myShopConfig}
                                       existingRow={savedRow}
                                       onSaved={(nextRow) => {
                                         setPricingRows((prev) => {
