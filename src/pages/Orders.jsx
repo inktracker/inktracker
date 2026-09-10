@@ -84,9 +84,15 @@ export default function Orders() {
         const custMap = {};
         c.forEach((cust) => (custMap[cust.id] = cust));
         setCustomers(custMap);
-        // Auto-open a specific order if ?id= was passed from the Dashboard
+        // Auto-open a specific order if ?id= was passed (Dashboard or global
+        // search). The loaded list is capped/recent, so a deep-link to an
+        // OLDER order isn't in `o` — fetch it directly rather than silently
+        // no-op'ing (global-search results were dead-clicking past the window).
         if (initialOrderId) {
-          const match = o.find((row) => row.id === initialOrderId || row.order_id === initialOrderId);
+          let match = o.find((row) => row.id === initialOrderId || row.order_id === initialOrderId);
+          if (!match) {
+            try { match = (await base44.entities.Order.filter({ id: initialOrderId }))?.[0] || null; } catch { /* non-uuid id or fetch fail → leave unopened */ }
+          }
           if (match) setViewing(match);
           navigate("/Orders", { replace: true });
         }

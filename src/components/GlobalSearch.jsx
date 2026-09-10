@@ -30,6 +30,11 @@ export default function GlobalSearch() {
   useEffect(() => {
     if (!query.trim() || !user) {
       setResults({ customers: [], orders: [], quotes: [], invoices: [], inventory: [] });
+      // Also clear loading — if the box is cleared WHILE a request is in
+      // flight, the prior effect's cleanup sets its `cancelled`, so its
+      // finally-block skips setLoading(false) and the panel would stick on
+      // "Searching…" until the next keystroke.
+      setLoading(false);
       return;
     }
 
@@ -49,9 +54,12 @@ export default function GlobalSearch() {
       // user.email returned nothing for them — their rows key to the OWNER).
       //
       // Characters with meaning in PostgREST or() / LIKE syntax are dropped
-      // from the search term, not escaped — search UX is unaffected and the
-      // filter string can't be broken out of.
-      const term = query.replace(/[,()"'\\%_]/g, " ").trim();
+      // from the search term, not escaped, so the filter string can't be
+      // broken out of. The apostrophe is KEPT — it's harmless in a PostgREST
+      // value and a LIKE literal, and stripping it made "Men's" search as
+      // "Men s" and miss. ( ) " , \ % _ stay stripped (or()-delimiters and
+      // ilike wildcards).
+      const term = query.replace(/[,()"\\%_]/g, " ").trim();
       // Require 2+ chars — matches the search_docs_content RPC's own minimum,
       // so a single character can't do a full-table ilike scan that the
       // content search would ignore anyway.
