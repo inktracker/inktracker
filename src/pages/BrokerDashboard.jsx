@@ -51,6 +51,7 @@ import { normalizeQuoteStatus } from "@/lib/broker/quoteStatus";
 import { getQuoteTotalSafe as getQuoteTotalSafeLib } from "@/lib/broker/quoteTotals";
 import SendQuoteModal from "../components/quotes/SendQuoteModal";
 import { notify } from "@/lib/notify";
+import { toCustomerWritePayload } from "@/lib/customers/normalizeCustomerWrite";
 
 // Broker dashboard's per-order progress strip. Now uses the canonical
 // O_STATUSES (slim 5-stage pipeline) instead of its own copy.
@@ -1031,24 +1032,48 @@ export default function BrokerDashboard({ initialTab } = {}) {
     setSelectedQuote(null);
   }
 
+  // These three are handed to <BrokerClientList/>, which fires them
+  // fire-and-forget (form save) and via un-caught awaits (artwork upload/
+  // remove). So they MUST NOT throw — an escaped rejection here is an
+  // unhandled promise rejection that white-screens to the generic error
+  // boundary (the Dragon Head Sentry crash). Each catches internally and
+  // surfaces a friendly notify; writes go through toCustomerWritePayload so
+  // a spread client row can't send server-managed columns / empty dates and
+  // draw a PostgREST 400. Return the saved row on success, null on failure.
   async function handleAddClient(clientData) {
-    const saved = await base44.entities.Customer.create({
-      ...clientData,
-      shop_owner: `broker:${user.email}`,
-    });
-
-    setClients((prev) => [saved, ...prev].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })));
-    return saved;
+    try {
+      const saved = await base44.entities.Customer.create(toCustomerWritePayload({
+        ...clientData,
+        shop_owner: `broker:${user.email}`,
+      }));
+      setClients((prev) => [saved, ...prev].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })));
+      return saved;
+    } catch (err) {
+      notify.error("Couldn't add client", err);
+      return null;
+    }
   }
 
   async function handleEditClient(clientId, data) {
-    const updated = await base44.entities.Customer.update(clientId, data);
-    setClients((prev) => prev.map((c) => (c.id === clientId ? updated : c)));
+    try {
+      const updated = await base44.entities.Customer.update(clientId, toCustomerWritePayload(data));
+      setClients((prev) => prev.map((c) => (c.id === clientId ? updated : c)));
+      return updated;
+    } catch (err) {
+      notify.error("Couldn't save client", err);
+      return null;
+    }
   }
 
   async function handleDeleteClient(clientId) {
-    await base44.entities.Customer.delete(clientId);
-    setClients((prev) => prev.filter((c) => c.id !== clientId));
+    try {
+      await base44.entities.Customer.delete(clientId);
+      setClients((prev) => prev.filter((c) => c.id !== clientId));
+      return true;
+    } catch (err) {
+      notify.error("Couldn't delete client", err);
+      return false;
+    }
   }
 
   function openNewQuoteEditor() {
