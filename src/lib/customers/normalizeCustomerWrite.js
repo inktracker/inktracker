@@ -26,3 +26,21 @@ export function normalizeCustomerWrite(payload) {
   }
   return out;
 }
+
+// Server-managed / tenancy columns that must never ride along in a write
+// payload. `id` is the PostgREST filter, not a settable field; the date
+// columns are DB-generated; `shop_owner` is the tenant key (an RLS rewrite
+// attempt at best, a cross-tenant move at worst). Spreading a whole loaded
+// customer row (Broker "personal clients", the Customers tab edit form) into
+// an update otherwise sends all of these — and any stale/non-column field —
+// which PostgREST answers with a 400. This is the shared strip both paths use.
+const SERVER_MANAGED_FIELDS = ["id", "created_date", "updated_date", "shop_owner"];
+
+// Build a safe customers UPDATE/CREATE body from an in-memory customer object:
+// drop server-managed columns, then coerce empty date strings to null.
+export function toCustomerWritePayload(payload) {
+  if (!payload || typeof payload !== "object") return payload;
+  const out = { ...payload };
+  for (const key of SERVER_MANAGED_FIELDS) delete out[key];
+  return normalizeCustomerWrite(out);
+}
