@@ -7,6 +7,7 @@ import {
   sanitizeBrokerOverrides,
   brokerPricingMode,
   buildScaledSheet,
+  impliedQuickPct,
 } from "@/lib/broker/brokerPricing";
 import { DEFAULT_TIERS, DEFAULT_COLORS } from "@/components/account/pricingConfigDefaults";
 
@@ -204,11 +205,12 @@ export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, exi
   // "Quick price" (Joe 2026-07-20): one control that sets every cell of
   // the sheet to a % of the shop's standard rates, LIVE — every cell in
   // the grids below rescales as the slider moves (no Apply step).
-  // Always derives from the STANDARD sheet (no compounding). Nothing
-  // rescales on mount — a saved sheet's numbers only change when the
-  // user actually moves this control; hand-edits made after settling on
-  // a % stick until the slider moves again.
-  const [quickPct, setQuickPct] = useState(90);
+  // Always derives from the STANDARD sheet (no compounding). Initialized
+  // from the SAVED sheet's implied % so reopening reflects what was set,
+  // rather than resetting to a hardcoded 90 every time (tester report).
+  const [quickPct, setQuickPct] = useState(() =>
+    impliedQuickPct(buildDraft(existingRow?.overrides, shopConfig || {}), shopConfig || {}),
+  );
 
   function handleQuickPctChange(next) {
     const pct = Math.min(200, Math.max(0, Math.round(Number(next) || 0)));

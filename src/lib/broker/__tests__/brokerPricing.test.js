@@ -5,6 +5,7 @@ import {
   mergeBrokerPricing,
   brokerPricingMode,
   buildScaledSheet,
+  impliedQuickPct,
 } from "../brokerPricing";
 import {
   calcLinkedLinePrice,
@@ -380,5 +381,23 @@ describe("buildScaledSheet — the Quick Price scaler (Joe 2026-07-20)", () => {
     expect(buildScaledSheet(SHOP, 0).firstPrint[1][25]).toBe(0);
     expect(buildScaledSheet(SHOP, -50).firstPrint[1][25]).toBe(0);
     expect(buildScaledSheet(SHOP, 999).firstPrint[1][25]).toBeCloseTo(12.0, 2); // caps at 200%
+  });
+});
+
+describe("impliedQuickPct — reopen a saved sheet at its real percentage", () => {
+  it("recovers the % a saved sheet was scaled to (round-trips buildScaledSheet)", () => {
+    for (const pct of [100, 90, 80, 65, 50, 120]) {
+      const sheet = buildScaledSheet(SHOP_CONFIG, pct);
+      expect(impliedQuickPct(sheet, SHOP_CONFIG)).toBe(pct);
+    }
+  });
+
+  it("an unmodified (standard) sheet reads as 100, not the old hardcoded 90", () => {
+    expect(impliedQuickPct(buildScaledSheet(SHOP_CONFIG, 100), SHOP_CONFIG)).toBe(100);
+  });
+
+  it("falls back when there's no comparable print cell", () => {
+    expect(impliedQuickPct({ firstPrint: {}, addlPrint: {} }, SHOP_CONFIG)).toBe(90);
+    expect(impliedQuickPct({}, SHOP_CONFIG, 100)).toBe(100);
   });
 });

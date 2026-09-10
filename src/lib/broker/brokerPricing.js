@@ -287,3 +287,27 @@ export function mergeBrokerPricing(shopConfig, overrides) {
   }
   return merged;
 }
+
+// The "quick price %" a saved broker sheet represents — used by the editor to
+// reopen at the real percentage instead of a hardcoded default. Print cells
+// scale linearly (cell = standard × pct in buildScaledSheet), so invert the
+// first comparable cell against the shop's STANDARD sheet (pct 100). A sheet
+// with no comparable print cell returns `fallback`.
+export function impliedQuickPct(sheet, shopConfig, fallback = 90) {
+  const standard = buildScaledSheet(shopConfig || {}, 100);
+  for (const key of ["firstPrint", "addlPrint"]) {
+    const dGrid = sheet?.[key];
+    const sGrid = standard?.[key];
+    if (!dGrid || !sGrid) continue;
+    for (const r of Object.keys(sGrid)) {
+      for (const c of Object.keys(sGrid[r] || {})) {
+        const s = Number(sGrid[r][c]);
+        const d = Number(dGrid?.[r]?.[c]);
+        if (s > 0 && Number.isFinite(d)) {
+          return Math.min(200, Math.max(0, Math.round((d / s) * 100)));
+        }
+      }
+    }
+  }
+  return fallback;
+}

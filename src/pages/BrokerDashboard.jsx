@@ -1042,10 +1042,16 @@ export default function BrokerDashboard({ initialTab } = {}) {
   // draw a PostgREST 400. Return the saved row on success, null on failure.
   async function handleAddClient(clientData) {
     try {
-      const saved = await base44.entities.Customer.create(toCustomerWritePayload({
-        ...clientData,
+      // shop_owner MUST be set AFTER toCustomerWritePayload — that helper
+      // strips shop_owner (a server-managed field, correct for EDITs), so
+      // routing the broker's tenant key through it dropped it, the row
+      // inserted with shop_owner=NULL, and RLS rejected every broker "add
+      // client" (which then blocked picking a client → blocked saving the
+      // quote). Set it on the outside so it survives to the insert.
+      const saved = await base44.entities.Customer.create({
+        ...toCustomerWritePayload(clientData),
         shop_owner: `broker:${user.email}`,
-      }));
+      });
       setClients((prev) => [saved, ...prev].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })));
       return saved;
     } catch (err) {
