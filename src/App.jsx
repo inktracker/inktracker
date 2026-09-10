@@ -37,7 +37,7 @@ import {
   INITIAL_STATE as TYPEWRITER_INITIAL_STATE,
   advanceTypewriter,
 } from "@/lib/landing/typewriter";
-import { FAQ_ITEMS, VALUE_PROPS, PRICING_INCLUDES, QB_PARTNER } from "@/lib/landing/landingCopy";
+import { FAQ_ITEMS, VALUE_PROPS, PRICING_INCLUDES, QB_PARTNER, SWITCH_OFFER } from "@/lib/landing/landingCopy";
 import {
   interpretActivationResponse,
   activationRetryDelayMs,
@@ -996,6 +996,17 @@ function PublicLandingPage() {
             <p className="text-[15px] md:text-base leading-[1.7] mb-2" style={{ color: MUTED }}>{QB_PARTNER.body}</p>
             <p className="text-[13px] leading-[1.6] mb-5" style={{ color: MUTED }}>{QB_PARTNER.note}</p>
             <a href={QB_PARTNER.ctaHref} className="inline-flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-xl" style={{ background: FOREST, color: '#fff' }}>{QB_PARTNER.cta}</a>
+          </div>
+        </section>
+
+        {/* SWITCH / CONCIERGE OFFER — free migration + Printavo first month free. */}
+        <section className="bg-white px-6 pb-12 md:pb-20">
+          <div className="max-w-4xl mx-auto rounded-2xl p-8 md:p-10" style={{ background: FOREST }}>
+            <p className="uppercase tracking-[0.14em] text-xs font-semibold mb-3 text-white/70">{SWITCH_OFFER.eyebrow}</p>
+            <h3 className="uppercase tracking-[0.02em] leading-tight mb-3 text-white" style={{ fontFamily: H_FONT, fontSize: 'clamp(1.5rem, 3.4vw, 2.4rem)' }}>{SWITCH_OFFER.title}</h3>
+            <p className="text-[15px] md:text-base leading-[1.7] mb-3 text-white/85">{SWITCH_OFFER.body}</p>
+            <p className="text-sm font-semibold mb-6 text-white">{SWITCH_OFFER.printavoLine}</p>
+            <a href={SWITCH_OFFER.ctaHref} className="inline-flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-xl bg-white" style={{ color: FOREST }}>{SWITCH_OFFER.cta}</a>
           </div>
         </section>
 

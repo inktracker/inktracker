@@ -70,8 +70,23 @@ export const QB_PARTNER = Object.freeze({
   ctaHref: "mailto:support@inktracker.app?subject=QuickBooks%20ProAdvisor%20discount&body=I'd%20like%20the%2030%25%20QuickBooks%20discount%20through%20InkTracker.",
 });
 
+// "Switch to InkTracker" concierge offer — free done-for-you migration for
+// everyone, plus a Printavo-switcher sweetener (first month free). Fulfillment
+// is human: the shop emails an export, we migrate + set up pricing + connect
+// QuickBooks, and comp month one. (Checkout supports promo codes too, so a
+// self-serve "first month free" code can be enabled in Stripe if wanted.)
+export const SWITCH_OFFER = Object.freeze({
+  eyebrow: "Switching from Printavo, or a spreadsheet?",
+  title: "We'll move you over — free.",
+  body:
+    "Send us an export from your old setup and we'll migrate your customers and open jobs, dial in your pricing, and connect your QuickBooks. Usually done in a day, so you start on real work instead of a blank screen.",
+  printavoLine: "Coming from Printavo? Your first month is on us.",
+  cta: "Start your switch",
+  ctaHref: "mailto:support@inktracker.app?subject=Switching%20to%20InkTracker&body=I'm%20switching%20from%20Printavo%20(or%20a%20spreadsheet)%20and%20I'd%20like%20help%20migrating.%20My%20old%20setup%20is%3A%20",
+});
+
 export const FAQ_ITEMS = Object.freeze([
-  { q: "Can I import data from Printavo, Shopworks, or another shop tool?", a: "Not via a self-serve CSV upload yet — but email support@inktracker.app with an export from your old platform and we'll port your customers, quotes, or orders over manually. Self-serve import is on the roadmap." },
+  { q: "Can I import data from Printavo, Shopworks, or another shop tool?", a: "Yes — email support@inktracker.app an export from your old platform and we'll migrate your customers, quotes, and open orders for you, set up your pricing, and connect QuickBooks. It's free and usually done in a day. Switching from Printavo? Your first month is on us. (Self-serve CSV import is on the roadmap.)" },
   { q: "Does this work for embroidery shops, or only screen printing?", a: "Both. Quote-to-invoice, customer management, production tracking, and QuickBooks sync work the same for either method. We're focused on screen print and embroidery to start — other decoration methods aren't on the v1 roadmap." },
   { q: "Do I need QuickBooks — and can I get a discount?", a: "You don't need it to use InkTracker, but the QuickBooks Online sync — quotes, invoices, and payments with no double entry — is one of the best parts. We're a certified QuickBooks ProAdvisor, so if you're setting up QuickBooks Online we can get you 30% off your first year. Already on QuickBooks? The sync works exactly the same. Email support@inktracker.app to set up the discount." },
   { q: "What happens to my data if I cancel?", a: "Yours, always. Export everything — customers, quotes, orders, invoices — as CSV at any time, including the moment of cancellation." },
