@@ -157,6 +157,13 @@ function createEntityProxy(tableName) {
           }
         }
         if (s) q = q.order(s.column, { ascending: s.ascending });
+        // ALWAYS end on a unique tiebreaker (the `id` PK). Without it, a
+        // non-unique sort — a day-granular `-date`, or no sort at all — lets
+        // PostgREST return rows in an unstable order between .range() pages, so
+        // paginating past 1000 rows can SKIP or DUPLICATE rows. That silently
+        // corrupted full-set reads (e.g. the AR total). `id` is the PK on every
+        // table; a redundant second order on `id` is harmless.
+        if (!s || s.column !== "id") q = q.order("id", { ascending: true });
         q = q.range(n * PAGE, n * PAGE + PAGE - 1);
         const { data, error } = await q;
         if (error) throw enrichEntityError(error);
