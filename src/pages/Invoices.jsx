@@ -94,26 +94,30 @@ export default function Invoices() {
       setInvoices(inv);
       setLoading(false);
 
-      // Pull live stats and sync from QB (non-blocking)
+      // Sync invoices from QB (non-blocking, best-effort). Kept in its own try
+      // so a QB failure can't prevent the complete-AR recompute below.
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
-          // Sync invoices from QB (updates existing, creates new — no duplicates)
           const { data: pullRes } = await base44.functions.invoke("qbSync", {
             action: "pullInvoices",
             accessToken: session.access_token,
           });
           if (pullRes?.truncatedAtCap) setQbTruncated(true);
-          // Reload with fresh data + recompute outstanding from local rows.
-          // .all() pages past PostgREST's 1000-row cap so the AR total counts
-          // EVERY unpaid invoice — a .filter(...,1000) silently undercounts a
-          // shop with more than 1000 invoices (the outstanding balance is a
-          // money figure; it must be complete, not the first page).
-          const freshInv = await base44.entities.Invoice.all({ shop_owner: shopScope(currentUser) }, "-date");
-          setInvoices(freshInv);
-          const stats = computeOutstanding(freshInv);
-          setQbOutstanding({ total: stats.total, count: stats.count });
         }
+      } catch {}
+
+      // Recompute the AR total from the COMPLETE local set — OUTSIDE the QB
+      // try, so the money figure is always the full history even when the QB
+      // sync throws (network/timeout). .all() pages past PostgREST's 1000-row
+      // cap; a capped read would silently undercount the outstanding balance
+      // for a shop with >1000 invoices. This is a local DB read — it does not
+      // depend on QB connectivity.
+      try {
+        const freshInv = await base44.entities.Invoice.all({ shop_owner: shopScope(currentUser) }, "-date");
+        setInvoices(freshInv);
+        const stats = computeOutstanding(freshInv);
+        setQbOutstanding({ total: stats.total, count: stats.count });
       } catch {}
     }
     loadData();
