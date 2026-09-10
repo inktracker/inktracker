@@ -3,6 +3,7 @@ import { fmtDate, fmtMoney, getQty, activeSizeNames, calcLinkedLinePrice, buildL
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
+import { StatusChip } from "../shared/chips";
 
 export default function BrokerOrderPDFModal({ order, onClose }) {
   const brokerDiscVal = parseFloat(order.discount || 0);
@@ -43,9 +44,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${order.status === "Completed" ? "bg-emerald-100 text-emerald-700" : "bg-teal-100 text-teal-700"}`}>
-              {order.status}
-            </span>
+            <StatusChip s={order.status} />
             <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-600"><X className="w-5 h-5" /></button>
           </div>
         </div>

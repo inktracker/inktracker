@@ -21,6 +21,15 @@ export const STATUS_CHIP_STYLES = {
   "Approved and Paid": "bg-emerald-50 text-emerald-700 border-emerald-200",
   "Converted to Order": "bg-teal-50 text-teal-700 border-teal-200",
   Declined: "bg-red-50 text-red-600 border-red-200",
+  Paid: "bg-emerald-50 text-emerald-700 border-emerald-200", // legacy alias of Approved and Paid
+  Expired: "bg-slate-100 text-slate-500 border-slate-200",   // terminal, quiet
+  // Broker lifecycle (written by BrokerDashboard; these DO appear on shop
+  // surfaces — a broker quote the client approved shows on the shop's Quote
+  // detail/list — so they must read as approved/waiting, not fall to slate).
+  "Sent to Client": "bg-amber-50 text-amber-700 border-amber-200",   // waiting on the client
+  "Client Approved": "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "Shop Approved": "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "Client Rejected": "bg-red-50 text-red-600 border-red-200",
   // Production pipeline
   "Art Approval": "bg-violet-50 text-violet-700 border-violet-200",
   Artwork: "bg-violet-50 text-violet-700 border-violet-200",
