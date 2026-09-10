@@ -6,6 +6,7 @@ import {
   brokerPricingMode,
   buildScaledSheet,
   impliedQuickPct,
+  isSheetUniform,
 } from "../brokerPricing";
 import {
   calcLinkedLinePrice,
@@ -399,5 +400,30 @@ describe("impliedQuickPct — reopen a saved sheet at its real percentage", () =
   it("falls back when there's no comparable print cell", () => {
     expect(impliedQuickPct({ firstPrint: {}, addlPrint: {} }, SHOP_CONFIG)).toBe(90);
     expect(impliedQuickPct({}, SHOP_CONFIG, 100)).toBe(100);
+  });
+});
+
+describe("isSheetUniform — 'Custom cells' detection for the quick-price readout", () => {
+  it("a uniformly-scaled sheet is uniform (any single %)", () => {
+    for (const pct of [100, 90, 75, 50]) {
+      expect(isSheetUniform(buildScaledSheet(SHOP_CONFIG, pct), SHOP_CONFIG)).toBe(true);
+    }
+  });
+
+  it("a hand-edited cell (different ratio) makes it non-uniform → Custom", () => {
+    const sheet = buildScaledSheet(SHOP_CONFIG, 90);
+    // 1-color/25-tier standard is $2.00; set it to $2.70 (135%) while the rest stay at 90%.
+    sheet.firstPrint[1][25] = 2.7;
+    expect(isSheetUniform(sheet, SHOP_CONFIG)).toBe(false);
+  });
+
+  it("tolerates per-cent rounding within a genuinely uniform sheet", () => {
+    // buildScaledSheet already rounds to cents; a real 90% sheet must not read as Custom.
+    expect(isSheetUniform(buildScaledSheet(SHOP_CONFIG, 90), SHOP_CONFIG, 2)).toBe(true);
+  });
+
+  it("an empty or single-cell sheet is trivially uniform", () => {
+    expect(isSheetUniform({ firstPrint: {}, addlPrint: {} }, SHOP_CONFIG)).toBe(true);
+    expect(isSheetUniform({}, SHOP_CONFIG)).toBe(true);
   });
 });

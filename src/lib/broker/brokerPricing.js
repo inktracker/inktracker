@@ -311,3 +311,28 @@ export function impliedQuickPct(sheet, shopConfig, fallback = 90) {
   }
   return fallback;
 }
+
+// True when a broker sheet is a UNIFORM % of the shop's standard sheet (i.e.
+// every print cell shares one scale) — so the "quick price %" slider can show
+// that single %. False when cells were hand-edited to different ratios, in
+// which case no single % describes the sheet and the UI shows "Custom" instead.
+// Tolerance absorbs the per-cent rounding buildScaledSheet applies (a uniform
+// 90% sheet can compute 89–91 across cells of different magnitudes).
+export function isSheetUniform(sheet, shopConfig, tolerance = 2) {
+  const standard = buildScaledSheet(shopConfig || {}, 100);
+  const ratios = [];
+  for (const key of ["firstPrint", "addlPrint"]) {
+    const dGrid = sheet?.[key];
+    const sGrid = standard?.[key];
+    if (!dGrid || !sGrid) continue;
+    for (const r of Object.keys(sGrid)) {
+      for (const c of Object.keys(sGrid[r] || {})) {
+        const s = Number(sGrid[r][c]);
+        const d = Number(dGrid?.[r]?.[c]);
+        if (s > 0 && Number.isFinite(d)) ratios.push(Math.round((d / s) * 100));
+      }
+    }
+  }
+  if (ratios.length <= 1) return true;
+  return Math.max(...ratios) - Math.min(...ratios) <= tolerance;
+}
