@@ -109,6 +109,27 @@ export default function ImportCustomersSection({ user }) {
               ? `${preview.duplicates.length} row${preview.duplicates.length === 1 ? "" : "s"} already match a customer you have (by email or name) and won't be touched.`
               : "None of these match an existing customer."}
           </p>
+          {(() => {
+            // Surface rows that were combined ONLY because they share an email
+            // with a differently-named contact — the rare "two people, one
+            // info@ address" case the user should eyeball before importing.
+            const shared = preview.duplicates.filter((d) => d.sharedEmailNameDiffers);
+            if (shared.length === 0) return null;
+            return (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 space-y-1">
+                <div className="font-semibold">
+                  {shared.length} contact{shared.length === 1 ? "" : "s"} combined by a shared email:
+                </div>
+                {shared.slice(0, 8).map((d, i) => (
+                  <div key={i}>
+                    “{d.row.name || d.row.company}” shares {d.row.email} with “{d.matchedName}” — treated as the same customer.
+                  </div>
+                ))}
+                {shared.length > 8 && <div>…and {shared.length - 8} more.</div>}
+                <div className="text-amber-700">If these are different people, give them separate emails in the file before importing.</div>
+              </div>
+            );
+          })()}
           <div className="flex gap-2">
             <button
               type="button"

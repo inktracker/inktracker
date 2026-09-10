@@ -129,8 +129,35 @@ export function mapCustomerRow(row) {
   return { name, company, email: email || null, phone: phone || null, address: address || null };
 }
 
+// True when `a` and `b` share an email but have DIFFERENT (both non-empty)
+// names — the one collapse worth showing the user before import: two distinct
+// contacts on one address (info@…) that email-decisive matching folds into a
+// single customer. Not a bug (email-decisive is what protects the QB-dedup
+// guarantee), just worth surfacing so a real different-person case is caught.
+function sharedEmailNameDiffers(a, b) {
+  const ea = isLikelyEmail(a?.email) ? a.email.trim().toLowerCase() : "";
+  const eb = isLikelyEmail(b?.email) ? b.email.trim().toLowerCase() : "";
+  if (!ea || !eb || ea !== eb) return false;
+  const na = normalizeForMatch(a?.name);
+  const nb = normalizeForMatch(b?.name);
+  return Boolean(na && nb && na !== nb);
+}
+
+// Duplicate record for the preview: the incoming row, what it matched (id +
+// display name), and the shared-email-different-name flag above.
+function makeDuplicate(row, matched, matchId) {
+  return {
+    row,
+    matchId,
+    matchedName: matched?.name || matched?.company || "",
+    sharedEmailNameDiffers: sharedEmailNameDiffers(row, matched),
+  };
+}
+
 // Classify parsed CSV rows against existing customers.
-//   → { toCreate: [customerShape...], duplicates: [{ row, matchId }], invalid: n }
+//   → { toCreate: [customerShape...],
+//       duplicates: [{ row, matchId, matchedName, sharedEmailNameDiffers }],
+//       invalid: n }
 // A row is invalid (skipped) when it has neither a name nor a company —
 // nothing to key on. Within-file duplicates also collapse to one create.
 export function classifyImport(csvRows, existingCustomers) {
@@ -145,10 +172,10 @@ export function classifyImport(csvRows, existingCustomers) {
     if (!c.name && !c.company) { invalid++; continue; }
 
     const existingMatch = existing.find((e) => customerRowMatches(c, e));
-    if (existingMatch) { duplicates.push({ row: c, matchId: existingMatch.id }); continue; }
+    if (existingMatch) { duplicates.push(makeDuplicate(c, existingMatch, existingMatch.id)); continue; }
 
     const inFile = seen.find((s) => customerRowMatches(c, s));
-    if (inFile) { duplicates.push({ row: c, matchId: null }); continue; }
+    if (inFile) { duplicates.push(makeDuplicate(c, inFile, null)); continue; }
 
     seen.push(c);
     toCreate.push(c);
