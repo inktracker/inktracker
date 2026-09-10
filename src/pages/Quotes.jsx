@@ -109,11 +109,24 @@ export default function Quotes() {
         // by the approve-replay bug) reappear here as unconvertible zombies.
         const q = allQuotes.filter((quote) => !isConvertedToOrder(quote));
         setQuotes(q);
-        // If the Dashboard linked us here with ?id=, auto-open that quote
+        // Deep-link (Dashboard or global search) with ?id=. Search the FULL
+        // loaded set (allQuotes, pre-converted-filter) so a converted quote is
+        // findable, and fetch by id when it's outside the loaded window — a
+        // search result was dead-clicking on both a converted quote (hidden
+        // from `q`) and any quote past the 500-row load.
         if (searchId) {
-          const match = q.find((row) => row.id === searchId || row.quote_id === searchId);
-          if (match) setViewing(match);
-          navigate("/Quotes", { replace: true });
+          let match = allQuotes.find((row) => row.id === searchId || row.quote_id === searchId);
+          if (!match) {
+            try { match = (await base44.entities.Quote.filter({ id: searchId }))?.[0] || null; } catch { /* non-uuid id or fetch fail */ }
+          }
+          if (match && isConvertedToOrder(match)) {
+            // Converted quotes live under Orders now — send the deep-link there
+            // rather than dead-ending on a quote the list intentionally hides.
+            navigate(match.converted_order_id ? `/Orders?id=${match.converted_order_id}` : "/Orders", { replace: true });
+          } else {
+            if (match) setViewing(match);
+            navigate("/Quotes", { replace: true });
+          }
         }
         setCustomers([...c].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })));
 
