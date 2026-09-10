@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef, Suspense, lazy } from "react";
+import { useEffect, useMemo, useState, useRef, Suspense } from "react";
 import { supabase } from "@/api/supabaseClient";
 import ErrorBoundary, { RouteErrorBoundary } from "@/components/ErrorBoundary";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
@@ -6,16 +6,19 @@ import { Toaster } from "@/components/ui/toaster";
 // Static legal/marketing/setup pages — lazy so they don't sit in the eager
 // app shell (they were ~part of the "270 KB unused JS on Quotes" Lighthouse
 // flagged). Each is its own route, rendered under the Suspense in AppRoutes.
-const Privacy = lazy(() => import("./pages/Privacy.jsx"));
-const Terms = lazy(() => import("./pages/Terms.jsx"));
-const Changelog = lazy(() => import("./pages/Changelog.jsx"));
-const Security = lazy(() => import("./pages/Security.jsx"));
-const QbSetup = lazy(() => import("./pages/QbSetup.jsx"));
-const Support = lazy(() => import("./pages/Support.jsx"));
-const SentryTest = lazy(() => import("./pages/SentryTest.jsx"));
+// Routed through lazyWithRetry (not bare lazy) so a stale chunk after a
+// redeploy self-heals with one reload instead of throwing the React.lazy
+// "undefined is not an object (evaluating 't.default')" Sentry error.
+const Privacy = lazyWithRetry(() => import("./pages/Privacy.jsx"));
+const Terms = lazyWithRetry(() => import("./pages/Terms.jsx"));
+const Changelog = lazyWithRetry(() => import("./pages/Changelog.jsx"));
+const Security = lazyWithRetry(() => import("./pages/Security.jsx"));
+const QbSetup = lazyWithRetry(() => import("./pages/QbSetup.jsx"));
+const Support = lazyWithRetry(() => import("./pages/Support.jsx"));
+const SentryTest = lazyWithRetry(() => import("./pages/SentryTest.jsx"));
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
-import { pagesConfig } from "./pages.config";
+import { pagesConfig, lazyWithRetry } from "./pages.config";
 import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
 import { managerCanAccess, firstAllowedPage } from "@/lib/managerPermissions";
 import PageNotFound from "./lib/PageNotFound";
@@ -28,7 +31,7 @@ import { isNative } from "@/lib/mobile/native";
 import MfaGate from "@/components/MfaGate";
 // Lazy — the onboarding wizard is large and only rendered for brand-new users,
 // so it should never sit in the eager bundle every page downloads.
-const OnboardingWizard = lazy(() => import("@/components/OnboardingWizard"));
+const OnboardingWizard = lazyWithRetry(() => import("@/components/OnboardingWizard"));
 import {
   TYPEWRITER_LINES,
   INITIAL_STATE as TYPEWRITER_INITIAL_STATE,
