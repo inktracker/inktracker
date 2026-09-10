@@ -93,7 +93,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
     if (clients.length > 0) return;
     setLoadingClients(true);
     try {
-      const res = await base44.entities.Customer.filter({ shop_owner: `broker:${broker.email}` });
+      const res = await base44.entities.Customer.all({ shop_owner: `broker:${broker.email}` });
       setClients(res);
     } catch (e) {
       console.error("[BrokerCard] clients fetch failed:", e);

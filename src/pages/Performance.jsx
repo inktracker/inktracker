@@ -115,12 +115,16 @@ export default function Performance() {
       // the UI as a banner instead of silently rendering zeros. Each
       // bucket falls back to [] so the math below stays safe.
       let failures = 0;
+      // .all() pages past PostgREST's 1000-row cap so the secondary metrics and
+      // Total-Volume dedup that read these arrays don't undercount a shop with
+      // more than 1000 orders/invoices/quotes. (The stat CARDS come from the
+      // performance_stats RPC — server-truth — this is the overlay/fallback set.)
       const [allOrders, allInvoices, allQuotes] = await Promise.all([
-        base44.entities.Order.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] orders fetch failed:", e); failures++; return []; }),
-        base44.entities.Invoice.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] invoices fetch failed:", e); failures++; return []; }),
+        base44.entities.Order.all({ shop_owner: shopScope(u) }, "-created_date").catch((e) => { console.error("[Performance] orders fetch failed:", e); failures++; return []; }),
+        base44.entities.Invoice.all({ shop_owner: shopScope(u) }, "-created_date").catch((e) => { console.error("[Performance] invoices fetch failed:", e); failures++; return []; }),
         // Quotes feed ONLY the Total Volume dedup (quote-born invoices carry
         // the order pointer on the quote, not the invoice row).
-        base44.entities.Quote.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] quotes fetch failed:", e); failures++; return []; }),
+        base44.entities.Quote.all({ shop_owner: shopScope(u) }, "-created_date").catch((e) => { console.error("[Performance] quotes fetch failed:", e); failures++; return []; }),
       ]);
       setOrders(allOrders);
       setInvoices(allInvoices);

@@ -164,7 +164,7 @@ export default function Mockups() {
           base44.entities.Order.filter({ shop_owner: shopScope(me) }, "-created_date", 200),
           base44.entities.Quote.filter({ shop_owner: shopScope(me) }, "-created_date", 200),
           base44.entities.Shop.filter({ owner_email: me.email }),
-          base44.entities.Customer.filter({ shop_owner: shopScope(me) }, "", 1000),
+          base44.entities.Customer.all({ shop_owner: shopScope(me) }),
         ]);
         if (cancelled) return;
         setOrders((ordersRes || []).filter(o => o.status !== "Completed"));
