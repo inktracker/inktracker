@@ -1010,14 +1010,18 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
     // oldest-first so the newest cents per row win; a drift whose amount
     // changes re-alerts. Stuck orders share the ledger, keyed by order.
     const since90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: priorEvents } = await adminClient
+    // Page the FULL 90-day ledger. A .limit(1000) is clamped to 1000 and,
+    // ordered ascending, would keep the OLDEST 1000 and drop the NEWEST — so
+    // the most recent alerts fall out of the dedup map and the operator gets
+    // RE-EMAILED about drift they were already told about (audit F6). Paginating
+    // keeps every event while preserving the oldest-first replay the map needs.
+    const priorEvents = await fetchAllRows(() => adminClient
       .from("qb_event_log")
       .select("response_body")
       .eq("action", "books_drift_alert")
       .gte("created_at", since90d)
-      .order("created_at", { ascending: true })
-      .limit(1000);
-    const priorAlerted = buildPriorAlertMap((priorEvents ?? []).map((e: any) => e.response_body));
+      .order("created_at", { ascending: true }));
+    const priorAlerted = buildPriorAlertMap(priorEvents.map((e: any) => e.response_body));
 
     const stuckTagged = stuckOrdersAll.map((r: any) => ({
       shop_owner: r.shop_owner, ref: r.order_id, source: "stuck_order", drift: 0,
