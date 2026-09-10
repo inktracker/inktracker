@@ -28,6 +28,9 @@ export const STATUS_CHIP_STYLES = {
   "Pre-Press": "bg-cyan-50 text-cyan-700 border-cyan-200",
   Printing: "bg-indigo-50 text-indigo-700 border-indigo-200",
   Completed: "bg-teal-50 text-teal-700 border-teal-200",
+  // Terminal / quiet — slate, never red (red is reserved for late/blocked).
+  Cancelled: "bg-slate-100 text-slate-500 border-slate-200",
+  Voided: "bg-slate-100 text-slate-500 border-slate-200",
 };
 
 export function StatusChip({ s }) {

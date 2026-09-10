@@ -23,13 +23,7 @@ import HintTip from "../components/shared/HintTip";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { shopScope } from "@/lib/shopScope";
 import ActivityFeed from "../components/shared/ActivityFeed";
-
-const STATUS_COLORS = {
-  Draft: "bg-slate-100 text-slate-600",
-  Pending: "bg-yellow-100 text-yellow-700",
-  Approved: "bg-emerald-100 text-emerald-700",
-  Declined: "bg-red-100 text-red-600",
-};
+import { StatusChip } from "../components/shared/chips";
 
 function MetricCard({ label, value, sub, color = "text-teal-600", onClick }) {
   return (
@@ -893,9 +887,7 @@ export default function Dashboard() {
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         {q.date && <span className="font-display uppercase tracking-[0.1em] text-[10px] text-slate-500">{fmtDate(q.date)}</span>}
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[q.status] || "bg-slate-100 text-slate-600"}`}>
-                          {q.status}
-                        </span>
+                        <StatusChip s={q.status} />
                       </div>
                     </button>
                   ))}
