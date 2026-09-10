@@ -198,4 +198,35 @@ describe("classifyImport — the zero-conflict guarantee", () => {
     expect(invalid).toBe(1);
     expect(toCreate).toHaveLength(0);
   });
+
+  it("flags a shared-email/different-name collapse for the preview (within file)", () => {
+    // Alice and Bob both list info@shop.com → Bob collapses into Alice. Not a
+    // bug (email-decisive), but the preview must surface it so a real
+    // different-person case is catchable.
+    const rows = [
+      { Name: "Alice Green", Email: "info@shop.com" },
+      { Name: "Bob White", Email: "info@shop.com" },
+    ];
+    const { toCreate, duplicates } = classifyImport(rows, []);
+    expect(toCreate).toHaveLength(1);
+    expect(duplicates).toHaveLength(1);
+    expect(duplicates[0].sharedEmailNameDiffers).toBe(true);
+    expect(duplicates[0].matchedName).toBe("Alice Green");
+  });
+
+  it("does NOT flag a same-email SAME-name dup (a genuine duplicate row)", () => {
+    const rows = [
+      { Name: "Alice Green", Email: "a@x.com" },
+      { Name: "Alice Green", Email: "a@x.com" },
+    ];
+    const { duplicates } = classifyImport(rows, []);
+    expect(duplicates[0].sharedEmailNameDiffers).toBe(false);
+  });
+
+  it("does NOT flag a name/company match with different emails as shared-email", () => {
+    const existing = [{ id: "e1", name: "John Doe", company: "Acme", email: "john@acme.com" }];
+    const { duplicates } = classifyImport([{ Name: "John Doe", Company: "Acme", Email: "different@acme.com" }], existing);
+    expect(duplicates[0].matchId).toBe("e1");
+    expect(duplicates[0].sharedEmailNameDiffers).toBe(false);
+  });
 });
