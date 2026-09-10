@@ -385,11 +385,25 @@ describe("buildScaledSheet — the Quick Price scaler (Joe 2026-07-20)", () => {
   });
 });
 
+// A shop config exercising EVERY scalable section: print grids, a garment
+// bracket, embroidery (grid + digitizing fee), and a custom technique — plus a
+// deliberately tiny print cell ($0.04) to prove cent-rounding doesn't lie.
+const FULL_CONFIG = {
+  tiers: [25, 50],
+  maxColors: 2,
+  firstPrint: { 1: { 25: 2.0, 50: 0.04 }, 2: { 25: 2.5, 50: 2.0 } },
+  addlPrint: { 1: { 25: 1.0, 50: 0.75 }, 2: { 25: 1.5, 50: 1.0 } },
+  garmentMarkup: [{ above: 0, markup: 1.4 }],
+  brokerMarkupShare: 0.5,
+  embroidery: { enabled: true, qtyTiers: [12, 24], stitchTiers: [5000, 10000], digitizingFee: 20, pricing: { 5000: { 12: 6, 24: 5 }, 10000: { 12: 9, 24: 8 } } },
+  custom_techniques: { DTF: { tiers: [25, 50], maxColors: 2, firstPrint: { 1: { 25: 3, 50: 2.5 } }, addlPrint: { 1: { 25: 1, 50: 0.8 } } } },
+};
+
 describe("impliedQuickPct — reopen a saved sheet at its real percentage", () => {
   it("recovers the % a saved sheet was scaled to (round-trips buildScaledSheet)", () => {
-    for (const pct of [100, 90, 80, 65, 50, 120]) {
-      const sheet = buildScaledSheet(SHOP_CONFIG, pct);
-      expect(impliedQuickPct(sheet, SHOP_CONFIG)).toBe(pct);
+    for (const pct of [100, 90, 80, 65, 50, 120, 200]) {
+      expect(impliedQuickPct(buildScaledSheet(SHOP_CONFIG, pct), SHOP_CONFIG)).toBe(pct);
+      expect(impliedQuickPct(buildScaledSheet(FULL_CONFIG, pct), FULL_CONFIG)).toBe(pct);
     }
   });
 
@@ -397,32 +411,61 @@ describe("impliedQuickPct — reopen a saved sheet at its real percentage", () =
     expect(impliedQuickPct(buildScaledSheet(SHOP_CONFIG, 100), SHOP_CONFIG)).toBe(100);
   });
 
-  it("falls back when there's no comparable print cell", () => {
+  it("a tiny print cell can't skew the % — it samples the LARGEST value", () => {
+    // A $0.04 cell scaled to 90% rounds to $0.04 (ratio would read 100); the
+    // big garment/print values still pin the % at 90.
+    expect(impliedQuickPct(buildScaledSheet(FULL_CONFIG, 90), FULL_CONFIG)).toBe(90);
+  });
+
+  it("falls back when there's nothing comparable", () => {
     expect(impliedQuickPct({ firstPrint: {}, addlPrint: {} }, SHOP_CONFIG)).toBe(90);
     expect(impliedQuickPct({}, SHOP_CONFIG, 100)).toBe(100);
   });
 });
 
-describe("isSheetUniform — 'Custom cells' detection for the quick-price readout", () => {
-  it("a uniformly-scaled sheet is uniform (any single %)", () => {
+describe("isSheetUniform — 'Custom cells' detection (ALL sections, not just print)", () => {
+  it("a uniformly-scaled sheet is uniform — every section, any %", () => {
     for (const pct of [100, 90, 75, 50]) {
       expect(isSheetUniform(buildScaledSheet(SHOP_CONFIG, pct), SHOP_CONFIG)).toBe(true);
+      expect(isSheetUniform(buildScaledSheet(FULL_CONFIG, pct), FULL_CONFIG)).toBe(true);
     }
   });
 
-  it("a hand-edited cell (different ratio) makes it non-uniform → Custom", () => {
+  it("a hand-edited PRINT cell → Custom", () => {
     const sheet = buildScaledSheet(SHOP_CONFIG, 90);
-    // 1-color/25-tier standard is $2.00; set it to $2.70 (135%) while the rest stay at 90%.
-    sheet.firstPrint[1][25] = 2.7;
+    sheet.firstPrint[1][25] = 2.7; // was $1.80 at 90%
     expect(isSheetUniform(sheet, SHOP_CONFIG)).toBe(false);
   });
 
-  it("tolerates per-cent rounding within a genuinely uniform sheet", () => {
-    // buildScaledSheet already rounds to cents; a real 90% sheet must not read as Custom.
-    expect(isSheetUniform(buildScaledSheet(SHOP_CONFIG, 90), SHOP_CONFIG, 2)).toBe(true);
+  it("a hand-edited GARMENT MARKUP bracket → Custom (the print cells still read 90%)", () => {
+    // The audit's exact case: scale to 90%, then bump only the garment bracket.
+    const sheet = buildScaledSheet(FULL_CONFIG, 90);
+    sheet.garmentMarkup[0].markup = 1.25; // 90% would be 1.36
+    expect(isSheetUniform(sheet, FULL_CONFIG)).toBe(false);
   });
 
-  it("an empty or single-cell sheet is trivially uniform", () => {
+  it("a hand-edited EMBROIDERY cell or digitizing fee → Custom", () => {
+    const s1 = buildScaledSheet(FULL_CONFIG, 90);
+    s1.embroidery.pricing[5000][12] = 6; // was $5.40 at 90%
+    expect(isSheetUniform(s1, FULL_CONFIG)).toBe(false);
+    const s2 = buildScaledSheet(FULL_CONFIG, 90);
+    s2.embroidery.digitizingFee = 20; // was $18 at 90%
+    expect(isSheetUniform(s2, FULL_CONFIG)).toBe(false);
+  });
+
+  it("a hand-edited CUSTOM-TECHNIQUE cell → Custom", () => {
+    const sheet = buildScaledSheet(FULL_CONFIG, 90);
+    sheet.customTechniques.DTF.firstPrint[1][25] = 3; // was $2.70 at 90%
+    expect(isSheetUniform(sheet, FULL_CONFIG)).toBe(false);
+  });
+
+  it("a tiny cell does NOT falsely read as Custom (no cent-rounding false positive)", () => {
+    // The $0.04 cell in FULL_CONFIG previously could push a uniform sheet over
+    // a fixed ± tolerance. Reconstruct-and-compare matches it to the cent.
+    expect(isSheetUniform(buildScaledSheet(FULL_CONFIG, 90), FULL_CONFIG)).toBe(true);
+  });
+
+  it("an empty sheet is trivially uniform", () => {
     expect(isSheetUniform({ firstPrint: {}, addlPrint: {} }, SHOP_CONFIG)).toBe(true);
     expect(isSheetUniform({}, SHOP_CONFIG)).toBe(true);
   });
