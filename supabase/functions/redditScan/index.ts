@@ -155,17 +155,24 @@ async function handle(): Promise<Response> {
   const db = admin();
   const { usingOAuth, anyOk, allPosts, requestCount, okCount } = await runScan();
 
-  // Reddit unreachable → alert (don't fail silently), then stop.
+  // Reddit unreachable → alert (don't fail silently), then stop. But the cron
+  // runs hourly and anonymous access is IP-blocked from datacenter ranges, so
+  // an un-throttled alert would email every hour until OAuth creds are added.
+  // Dedupe to at most once per ~day: only email if the previous run wasn't
+  // also a block within the last 20h. Always log the run either way.
   if (!anyOk) {
     const detail = `${okCount}/${requestCount} searches succeeded; auth=${usingOAuth ? "oauth" : "anonymous"}`;
-    await sendResendEmail({
-      from: FROM_EMAIL,
-      to: ADMIN_EMAIL,
-      subject: buildBlockedSubject(),
-      text: buildBlockedText(detail),
-    });
+    const alreadyAlerted = await recentlyBlocked(db);
+    if (!alreadyAlerted) {
+      await sendResendEmail({
+        from: FROM_EMAIL,
+        to: ADMIN_EMAIL,
+        subject: buildBlockedSubject(),
+        text: buildBlockedText(detail),
+      });
+    }
     await logRun(db, { status: "reddit_unreachable", detail });
-    return json({ ok: false, reason: "reddit_unreachable", detail }, 200);
+    return json({ ok: false, reason: "reddit_unreachable", detail, alerted: !alreadyAlerted }, 200);
   }
 
   // Dedupe against what we've already surfaced. Only need to check the ids we
@@ -219,6 +226,24 @@ async function handle(): Promise<Response> {
 // Provenance row: "did the scan run, and what did it see?". qb_event_log's
 // status is a constrained enum (success/error/skipped/duplicate/started) and
 // shop_owner + direction are NOT NULL — mirror the systemHealthCheck row shape.
+// True if the most recent scan run in the last 20h was also a Reddit block —
+// used to throttle the "couldn't reach Reddit" alert to ~once/day.
+async function recentlyBlocked(db: ReturnType<typeof admin>): Promise<boolean> {
+  try {
+    const since = new Date(Date.now() - 20 * 3600 * 1000).toISOString();
+    const { data } = await db
+      .from("qb_event_log")
+      .select("status")
+      .eq("action", "reddit_scan_run")
+      .eq("status", "error")
+      .gte("created_at", since)
+      .limit(1);
+    return (data?.length ?? 0) > 0;
+  } catch {
+    return false; // on doubt, prefer alerting over silence
+  }
+}
+
 async function logRun(
   db: ReturnType<typeof admin>,
   { status, detail }: { status: "ok" | "reddit_unreachable"; detail: string },
