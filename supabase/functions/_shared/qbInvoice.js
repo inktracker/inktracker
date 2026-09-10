@@ -172,7 +172,14 @@ export function customerIdentityMatches(qbRow, customer) {
   if (company && name) {
     if (rowCompany === company && (rowGiven === name || rowFull === name)) return true;
     // DisplayName "company (name)" formatting fallback.
-    return rowDisplay === normalizeForMatch(`${customer.company} (${customer.name})`);
+    if (rowDisplay === normalizeForMatch(`${customer.company} (${customer.name})`)) return true;
+    // The QB row has NO company (an individual contact) but the InkTracker
+    // record was enriched with one — the company can't match, so fall back to
+    // a name-only match. Mirrors the importer's symmetric "match on the fields
+    // both records share" rule; without it, a CSV row that adds a company
+    // duplicates a company-less QB customer on the next pull (audit F1).
+    if (!rowCompany) return nameMatches;
+    return false;
   }
   if (company) return rowCompany === company || rowDisplay === company;
   if (name) return nameMatches;
@@ -261,7 +268,11 @@ export function isLikelyEmail(value) {
   if (typeof value !== "string") return false;
   const trimmed = value.trim();
   if (!trimmed) return false;
-  return /^\S+@\S+\.\S+$/.test(trimmed);
+  // Kept byte-identical to the importer's EMAIL_RE (src/lib/import/
+  // customerImport.js) so the two never disagree on whether an email is a
+  // decisive dedup key. Exactly one @, no @ inside the local/domain parts —
+  // rejects malformed multi-@ values the looser \S+@\S+ regex accepted.
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
 }
 
 // ── QB Customer body ────────────────────────────────────────────────────────

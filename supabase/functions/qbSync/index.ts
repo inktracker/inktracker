@@ -2501,11 +2501,16 @@ async function handlePullCustomers(token: string, realmId: string, supabase: any
 
   if (all.length === 0) return { imported: 0, skipped: 0, updated: 0, total: 0, truncatedAtCap };
 
-  // Fetch existing InkTracker customers for this shop
-  const { data: existing } = await supabase
+  // Fetch existing InkTracker customers for this shop. Paginated — an
+  // unpaginated read caps at PostgREST's 1000 rows, so a shop with >1000
+  // customers wouldn't see the older ones in the dedup maps below and QB
+  // re-import would CREATE DUPLICATES of them (the exact conflict the
+  // zero-dup guarantee forbids).
+  const existing = await fetchAllRows(() => supabase
     .from("customers")
     .select("id, qb_customer_id, email, name, company")
-    .eq("shop_owner", shopOwner);
+    .eq("shop_owner", shopOwner)
+    .order("id", { ascending: true }));
   const byQbId = new Map<string, any>();
   const byEmail = new Map<string, any>();
   for (const c of existing ?? []) {
@@ -2628,10 +2633,11 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   // Build customer lookup: qb_customer_id → InkTracker customer. Pull the tax
   // fields too so the tax-record backfill below can attribute ship-to state +
   // exemption from the current customer record.
-  const { data: customers } = await supabase
+  const customers = await fetchAllRows(() => supabase
     .from("customers")
     .select("id, qb_customer_id, name, company, ship_to_address, tax_exempt, exemption_type, exemption_certificate_number")
-    .eq("shop_owner", shopOwner);
+    .eq("shop_owner", shopOwner)
+    .order("id", { ascending: true }));
   const custByQbId = new Map<string, any>();
   for (const c of customers ?? []) {
     if (c.qb_customer_id) custByQbId.set(String(c.qb_customer_id), c);
@@ -2646,10 +2652,15 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   // surfaced by the Shana Krochmal invoice.
   // line_items + order_id feed shouldReplaceLocalInvoiceItems — the pull must
   // know whether a matched row has local itemization worth preserving.
-  const { data: existingInvoices } = await supabase
+  // Paginated — an unpaginated read caps at 1000, so a shop with >1000
+  // invoices wouldn't find its older invoices in the dedup maps and QB
+  // re-pull would CREATE DUPLICATE invoice rows (the duplicate-invoice class
+  // the QB books-safety work exists to prevent).
+  const existingInvoices = await fetchAllRows(() => supabase
     .from("invoices")
     .select("id, invoice_id, qb_invoice_id, customer_id, customer_name, order_id, line_items, paid, notes")
-    .eq("shop_owner", shopOwner);
+    .eq("shop_owner", shopOwner)
+    .order("id", { ascending: true }));
   const existingByDoc = new Map<string, any>();
   const existingByQbId = new Map<string, any>();
   for (const row of existingInvoices ?? []) {

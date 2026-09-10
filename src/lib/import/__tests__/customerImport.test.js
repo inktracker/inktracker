@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   normalizeForMatch, customerRowMatches, parseCsv, mapCustomerRow, classifyImport,
+  isLikelyEmail,
 } from "../customerImport";
 // The QB sync's matcher is pure JS (no Deno-only imports), so we import the
-// REAL function and compare — not a substring check of its source.
+// REAL functions and compare — not a substring check of its source.
 import {
   normalizeForMatch as qbNormalizeForMatch,
+  isLikelyEmail as qbIsLikelyEmail,
   customerIdentityMatches,
 } from "../../../../supabase/functions/_shared/qbInvoice.js";
 
@@ -23,6 +25,17 @@ describe("normalizeForMatch — REAL drift canary vs QB sync", () => {
     ];
     for (const v of battery) {
       expect(normalizeForMatch(v)).toBe(qbNormalizeForMatch(v));
+    }
+  });
+
+  it("isLikelyEmail also stays identical to the QB one (both dedup on it)", () => {
+    const emails = [
+      "a@b.com", "A@B.COM", "  x@y.co ", "n/a", "none", "", "  ",
+      "a@b@c.com", "no-at-sign", "a@b", "a@b.", "@b.com", "a@.com",
+      "first.last@sub.domain.io", "x@y.z", 12345, null, undefined,
+    ];
+    for (const v of emails) {
+      expect(isLikelyEmail(v)).toBe(qbIsLikelyEmail(v));
     }
   });
 
@@ -72,21 +85,37 @@ describe("customerRowMatches — QB-safe dedup ladder", () => {
 describe("customerRowMatches agrees with QB customerIdentityMatches (adoption safety)", () => {
   // The importer's whole guarantee is that a customer it inserts (no qb_id)
   // will later be ADOPTED by pullCustomers, not duplicated. So the two matchers
-  // must agree on the same logical customer. Model a QB row and its InkTracker
-  // shape and assert both matchers see them as the same.
+  // must agree on the same logical customer, INCLUDING when one side is richer
+  // than the other. Each case gives the QB row, its InkTracker shape, and an
+  // INCOMING CSV row (deliberately NOT identical to the IT shape) so the import
+  // direction is a real test, not a compare-to-self.
   const cases = [
-    { qb: { GivenName: "John", FamilyName: "Doe", CompanyName: "Acme" }, it: { name: "John Doe", company: "Acme" } },
-    { qb: { GivenName: "Sara", FamilyName: "", CompanyName: "" }, it: { name: "Sara", company: "" } },
-    { qb: { GivenName: "Meg", FamilyName: "Ryan", CompanyName: "" }, it: { name: "Meg Ryan", company: "" } },
+    { qb: { GivenName: "John", FamilyName: "Doe", CompanyName: "Acme" }, it: { name: "John Doe", company: "Acme" }, csv: { name: "John Doe", company: "Acme" } },
+    { qb: { GivenName: "Sara", FamilyName: "", CompanyName: "" }, it: { name: "Sara", company: "" }, csv: { name: "Sara", company: "" } },
+    { qb: { GivenName: "Meg", FamilyName: "Ryan", CompanyName: "" }, it: { name: "Meg Ryan", company: "" }, csv: { name: "Meg Ryan", company: "" } },
   ];
-  for (const { qb, it: itc } of cases) {
+  for (const { qb, it: itc, csv } of cases) {
     it(`both see "${itc.name}" / "${itc.company}" as the same customer`, () => {
-      // QB adoption direction (pullCustomers): does the QB row match the IT customer?
       expect(customerIdentityMatches(qb, itc)).toBe(true);
-      // Import direction: does an incoming CSV row matching the IT shape match it?
-      expect(customerRowMatches(itc, itc)).toBe(true);
+      expect(customerRowMatches(csv, itc)).toBe(true);
     });
   }
+
+  // Audit F1 regression: an InkTracker record ENRICHED with a company must
+  // still be adopted by a company-less (individual) QB customer of the same
+  // name — otherwise the next pullCustomers duplicates it. This is the exact
+  // asymmetry wave 1 left on the customerIdentityMatches side.
+  it("adopts a company-enriched IT customer into a company-less QB row (no dup)", () => {
+    const qbIndividual = { GivenName: "John", FamilyName: "Doe", CompanyName: "", DisplayName: "John Doe" };
+    const itEnriched = { name: "John Doe", company: "Acme Screenprint" };
+    expect(customerIdentityMatches(qbIndividual, itEnriched)).toBe(true);
+  });
+
+  it("does NOT over-match a different name just because the QB row lacks a company", () => {
+    const qbIndividual = { GivenName: "Jane", FamilyName: "Roe", CompanyName: "", DisplayName: "Jane Roe" };
+    const itEnriched = { name: "John Doe", company: "Acme" };
+    expect(customerIdentityMatches(qbIndividual, itEnriched)).toBe(false);
+  });
 });
 
 describe("parseCsv", () => {
