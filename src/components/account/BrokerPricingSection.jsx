@@ -120,7 +120,7 @@ export default function BrokerPricingSection({ user, config }) {
                       key={`${b.email}:${saved?.id || "new"}`}
                       broker={{ email: b.email, label: brokerLabel(b) }}
                       shopOwner={shopEmail}
-                      shopConfig={config || {}}
+                      shopConfig={config}
                       existingRow={saved || null}
                       onSaved={(nextRow) => {
                         setRows((prev) => {
