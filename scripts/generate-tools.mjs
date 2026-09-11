@@ -20,6 +20,9 @@ import { esc, sliderRow, chartModel, chartCell, CALC_CSS, QTY_TIERS, stitchModel
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dirname, "..", "public");
+// Sitemap <lastmod> — honest "last reviewed" marker, synced with the other
+// content generators. Bump on a real content update.
+const CONTENT_LASTMOD = "2026-09-11";
 
 const m2 = (n) => "$" + (Math.round(n * 100) / 100).toFixed(2);
 const m0 = (n) => "$" + Math.round(n).toLocaleString("en-US");
@@ -855,7 +858,7 @@ function syncSitemap() {
   const path = join(PUBLIC, "sitemap.xml");
   const urls = [`${SITE.baseUrl}/resources`, `${SITE.baseUrl}/tools`, ...TOOLS.map((t) => `${SITE.baseUrl}/tools/${t.slug}`)];
   const entries = urls
-    .map((u) => `  <url>\n    <loc>${u}</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.6</priority>\n  </url>`)
+    .map((u) => `  <url>\n    <loc>${u}</loc>\n    <lastmod>${CONTENT_LASTMOD}</lastmod>\n    <changefreq>monthly</changefreq>\n    <priority>0.6</priority>\n  </url>`)
     .join("\n");
   const block = `  <!-- tools-pages:start -->\n${entries}\n  <!-- tools-pages:end -->`;
   let xml = readFileSync(path, "utf8");

@@ -17,6 +17,9 @@ import { SITE, FEATURES } from "./content/features.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
+// Sitemap <lastmod> for these pages — honest "last reviewed" marker, kept in
+// sync with the other content generators. Bump on a real content update.
+const CONTENT_LASTMOD = "2026-09-11";
 const OUT_DIR = join(ROOT, "public", "features");
 
 const esc = (s) =>
@@ -218,7 +221,7 @@ function syncSitemap() {
     ...FEATURES.map((f) => `${SITE.baseUrl}/features/${f.slug}`),
   ];
   const body = urls
-    .map((u) => `  <url>\n    <loc>${u}</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.8</priority>\n  </url>`)
+    .map((u) => `  <url>\n    <loc>${u}</loc>\n    <lastmod>${CONTENT_LASTMOD}</lastmod>\n    <changefreq>monthly</changefreq>\n    <priority>0.8</priority>\n  </url>`)
     .join("\n");
   const block = `  <!-- feature-pages:start -->\n${body}\n  <!-- feature-pages:end -->`;
   let xml = readFileSync(path, "utf8");

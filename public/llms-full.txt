@@ -1,0 +1,441 @@
+# InkTracker — Full Content for LLMs
+
+> InkTracker is shop management software for screen printing and embroidery shops: quoting with live garment costs from S&S Activewear, SanMar, and AS Colour, customer art approval and payment links, production tracking with a shop-floor mode, QuickBooks Online two-way sync, and broker/wholesale pricing. Built by Biota MFG, a working screen printing shop in Reno, Nevada. One plan at $99/month with a free trial (no credit card); iOS app available.
+
+This file inlines the full plain text of every InkTracker guide and feature page. It is the companion to /llms.txt, which is the curated link index.
+
+---
+
+# Guides
+
+## How to price a screen printing job without leaving money on the table
+Source: https://www.inktracker.app/blog/how-to-price-a-screen-printing-job
+
+Blanks, printing, and setup are the only three costs in a screen printing job. Here's how to price all three the same way every time — with a calculator to try it on your own numbers.
+
+Most shops price a screen printing job one of two ways: by gut, or by copying the last invoice for something that looked similar. Both feel fast, and both quietly cost you money. Gut pricing swings high enough to lose the job or low enough to lose the margin, and copying an old invoice carries forward whatever mistake was baked into it — usually a setup fee that never covered the screens.
+
+The good news is that a screen printing job only has three costs. Once you can name them and see how each one moves, you can price any job in about a minute and know the number is right before it ever hits the press.
+
+## The three costs in every job
+
+That's it — every screen print job is blanks, printing, and setup. Nothing else is a cost; everything else is margin.
+
+- Blanks. What you pay for the shirt itself, per piece. This is a hard number — it's on your supplier invoice. If you're pulling live pricing from S&S or AS Colour, it's whatever the blank costs today, not what it cost last spring.
+
+- Printing. The cost to put ink on the shirt, per piece. The key thing here: the per-shirt print cost drops as the quantity goes up. Running 12 shirts through the press costs about the same in labor and setup-per-print as running the 13th and 14th, so the more shirts in the run, the cheaper each print gets. That's why price charts have quantity columns.
+
+- Setup. One screen per color, burned once for the whole run. A 3-color print needs 3 screens whether you print 24 shirts or 240. Setup is a fixed cost for the job, so its impact per shirt depends entirely on how many shirts you spread it across.
+
+Keep those straight and the whole job prices itself: blanks and printing scale with quantity, setup is fixed and gets divided by it.
+
+Try it on your own numbers: The calculator below runs exactly this math — blank cost, ink colors, quantity, and your markup. Drag the sliders and watch the per-shirt price, the order total, and your actual margin move. Every input shows its value, so you can take the numbers straight to your own pricing.
+
+## The mistake that kills margin on small runs
+
+Here's the trap, and it catches good shops. A customer asks for 24 shirts instead of 72. You quote the same per-shirt price you'd give on a bigger run because it feels close enough, or you knock a little off to be nice. But your screen fee didn't change — a 3-color job still burns 3 screens. You just went from spreading that setup across 72 shirts to spreading it across 24.
+
+Say your setup is $60 in screens. Across 72 shirts that's $0.83 a shirt. Across 24 it's $2.50 a shirt — more than triple, on every single piece. If your per-shirt price didn't move to cover it, that $2.50 comes straight out of your margin. A markup that looked healthy on paper turns into a break-even job, and a small "friendly" discount on top turns it into a loss you won't notice until you tally the month.
+
+Small runs aren't bad business — they're just fixed-cost-heavy business. Price them like it. The setup has to land on fewer shirts, so the per-shirt number has to be higher, not the same. Slide the quantity in the calculator down to 24 and watch the margin drop if you leave everything else alone; that's the effect, live.
+
+## Price it the same way every time
+
+The fix for gut pricing isn't a fancier spreadsheet — it's a checklist you run identically on every job:
+
+- Start with the blank. Pull the current cost for the exact style and color. Not last year's — today's.
+
+- Set the print cost by quantity. Use your per-print rate for that quantity break and multiply by the number of colors.
+
+- Add setup as screens ÷ shirts. One screen per color, divided by the actual run size. This is the step everyone skips on small runs.
+
+- Apply your margin — as a margin, not a markup. More on that distinction in the price-chart post, but the short version: decide the profit you want to keep, and price up to it.
+
+- Sanity-check the per-shirt number. If it looks too low to be worth pulling a squeegee, it probably is. Trust the math over the reflex to win the job.
+
+Do that five-step pass the same way every time and two things happen: your quotes get faster because you're not reinventing the number, and your margin stops leaking on the jobs that used to sneak by. That's the whole point of a system — not to make pricing complicated, but to make it boringly consistent.
+
+This is exactly what InkTracker does on every quote automatically: it pulls the live blank price, applies your per-quantity print rates and per-color screen fees, spreads the setup across the run, and shows you the margin before you send it. You set your rates once; every quote after that just runs the checklist for you.
+
+## How I build a screen printing price chart
+Source: https://www.inktracker.app/blog/build-a-screen-printing-price-chart
+
+Your print prices worked out ahead of time — every color count, every quantity — built on what your shop actually costs to run. Cost per print, real margin, two percentages to fill the grid, and the fees that decide small runs.
+
+When I started out I priced jobs off a competitor's website and a gut feeling. Some made money, plenty didn't, and I couldn't tell which was which until the numbers came in at the end of the month.
+
+A price chart is how you stop guessing. It's your print prices worked out ahead of time — every color count, every quantity — so you quote off a number you trust instead of one you pulled out of the air. Most charts float on nothing, though. This one's built on what your shop actually costs to run.
+
+## Start with what a print actually costs you
+
+Not the ink. Everything. Rent, power, the light bill, a tube of emulsion, and your own paycheck. Two numbers get you there and you already know both — what your shop costs to run in a month, and how many shirts you print in that month. Divide one by the other. Spend $14k a month, push 4,000 shirts, and every print costs you about $3.50 before you've made a dime.
+
+Then decide what you want to keep. Want 45%? Your base isn't cost times something — it's cost divided by 0.55. That $3.50 turns into $6.36. Write it down. That's the cheapest square on your whole chart: one color, smallest run. Everything else grows from it.
+
+## Let percentages do the boring part
+
+You don't type in 32 prices. You set two rules and the chart fills itself. Bigger runs cost less per shirt, because setup is the same whether you print 25 or 250 — so knock a chunk off at each size break, around 10% for the first jump and a little less each time after. More colors cost more, but not double. The first color's the expensive one; it carries the setup. Every color after is just another screen and another pass, so each one adds a slice — call it 10% — and that slice shrinks as the count climbs.
+
+Build it this way and the chart moves as one. Want to bump prices 5% next year? Change your base. Beats retyping a spreadsheet.
+
+## Margin isn't markup (this one cost me)
+
+Mark a $6 cost up 50% and you get $9. Feels like half of it's profit. It isn't — $3 out of $9 is 33%. If you actually want to keep half, you divide by 0.5 and charge $12. I priced a whole season on "cost times 1.5" thinking I was at 50 points. I was at 33. Don't be me.
+
+## The chart is half the shirt. Here's the rest.
+
+Garment. You don't sell blanks at cost, but the markup slides down as they get pricier. Forty percent on a $4 tee is easy. Forty percent on a $30 hoodie makes you the priciest shop in town — so a hoodie gets maybe 15%. Keep it on its own ladder, away from the print chart. That's what lets you swap a tee for a hoodie without rebuilding anything.
+
+Screens. Every color's a screen, and a screen is time — burn it, tape it, register it, reclaim it later. Charge a setup fee per screen. Three-color front, three screens. Reorder the same art and the screens already exist, so drop to a small re-setup rate. On 200 shirts it's pennies each. On a 12-piece job it's the whole difference between a profit and a thank-you card.
+
+Extras and rush. A PMS match, a heavy discharge print, tags in the neck — all cost more, all get a line, some once and some per shirt. And if somebody needs 100 shirts in three days while everyone else waits, that's a rush percentage on the order.
+
+Stack it up and a real quote is: print + garment×markup + screens + extras + rush. Say 100 shirts, two-color front, $4 tee — print's about $5.77 a shirt, garment's $5.60, two screens is fifty bucks (fifty cents a shirt). Roughly $11.87 each, call it $1,187, before rush. Leave the screens off and you just ran a hundred shirts for fifty dollars under cost. Nobody does that on purpose. Lots of new printers do it by accident.
+
+## Build it once
+
+Set it up one time — a base you can defend, a couple of percentages to shape the rest, garment and fees kept separate — and stop guessing at the counter. That's the whole system.
+
+## How to price embroidery: stitch count is the number that matters
+Source: https://www.inktracker.app/blog/how-to-price-embroidery
+
+Screen printing prices by color. Embroidery prices by stitch count — because the machine bills in run time and stitches are run time. Here's how to price it, including digitizing, with a calculator to try your own numbers.
+
+If you came to embroidery from screen printing, the instinct is to price it by colors — that's the lever you know. Drop it. Embroidery doesn't care much about colors. It cares about stitch count, because stitch count is run time, and run time is what the machine actually costs you.
+
+An embroidery machine bills you in minutes. A design with 12,000 stitches sits on the head roughly twice as long as one with 6,000, so it ties up the machine — and your operator's attention — twice as long. Swapping a thread color takes a few seconds; stitching takes minutes. So the number that drives your cost is stitches, and everything else is a rounding error by comparison.
+
+## Stitch count, not colors
+
+Your digitizer gives you the stitch count for every design — it's right there in the stitch file. That one number tells you which price tier the job lands in. Instead of a colors × quantity grid like screen printing, an embroidery chart is stitch-tier × quantity: a few bands of stitch count (say, under 5,000, 5–10K, 10–15K, 15K and up) down the side, quantity breaks across the top.
+
+Colors barely move the price because they barely move the machine. A left-chest logo in one thread color and the same logo in five colors run for nearly the same time if they're the same stitch count — the head just picks up a different cone between color blocks. So don't build a color surcharge into embroidery the way you would for screens. Build stitch tiers, get the count from your digitizer, and drop the job in the right band.
+
+Get the stitch count first: Before you quote embroidery, have the design digitized (or at least estimated) so you know the stitch count. Quoting embroidery without it is like quoting screen print without knowing the color count — you're guessing at the one input that sets the price.
+
+The grid below prices embroidery the right way: stitch tiers down the side, quantities across the top, overhead spread across every piece, and margin applied on top. Set your numbers and watch it fill in — it's the same shape as the embroidery chart InkTracker keeps for you.
+
+## Don't forget digitizing
+
+There's one cost embroidery has that screen printing doesn't: digitizing. Before the machine can stitch a logo, someone has to "punch" the artwork into a stitch file — mapping every stitch, direction, and density. It's skilled work, and it's a one-time cost per design, usually somewhere around $40–75 depending on complexity.
+
+The key is that it's one-time. You pay to digitize a logo once, and then you own the stitch file forever — every reorder of that design runs off the same file at no extra digitizing cost. So charge the digitizing fee once, on the first order for a new design, and don't bury it in the per-piece price where it either scares off the first order or vanishes on the reorders. Bill it as its own line, reuse the file, and both you and the customer come out ahead.
+
+## Margin isn't markup here either
+
+The same margin lesson from screen printing carries straight over: every cell in your embroidery chart should be price = cost ÷ (1 − margin), not cost plus a markup percentage. A "50% markup" on a $6 per-piece cost is $9 — a 33% margin, not 50%. If you want to actually keep half, it's 6 ÷ (1 − 0.50) = $12. Build the grid on margin so the profit you decided on is the profit you get, on every piece, at every stitch tier.
+
+## Set it once
+
+Just like the screen-print chart, the embroidery chart is something you build once and then stop thinking about. Set your stitch tiers, your quantity breaks, your overhead-per-piece, and your margin, and every embroidery quote reads the right cell.
+
+In InkTracker, the embroidery chart lives right next to the screen-print one — same idea, stitch tiers instead of colors. You configure it once, and every quote that involves a stitched logo pulls its price from that grid and adds the one-time digitizing fee when it's a new design. Set your rates the way the price-chart post lays out, and the app runs the same disciplined math on embroidery that it runs on screen printing — automatically, on every quote.
+
+## Sales tax for print shops: the short version
+Source: https://www.inktracker.app/blog/sales-tax-for-print-shops
+
+How sales tax actually works for a print shop — destination-based rates, when you need address-level accuracy, and how software handles it. A plain-English primer (not tax advice).
+
+Not tax advice: This explains the mechanics of how sales tax gets calculated on a print order. It isn't tax advice. For what you're actually required to collect — rates, nexus, whether a specific product is taxable in a specific state — check with your accountant or your state's Department of Revenue.
+
+Sales tax on apparel is destination-based in most states: the rate that applies is the rate at the address where the goods end up, not where your shop sits. Sell a run to a customer across the state line and, if you're registered to collect there, you charge their rate — which combines state, county, and sometimes city into a single number that's hard to eyeball.
+
+## When a flat rate is fine — and when it isn't
+
+If nearly all your work stays local, a single flat rate you set is usually close enough to start. The moment you sell into more than one jurisdiction, a flat rate starts to under- or over-collect, and the gap is your problem at filing time. That's when address-based rates stop being a nicety and start being the thing that keeps your books clean.
+
+This is why InkTracker calculates tax two ways. Without QuickBooks connected, it applies the single flat rate you set and labels it "Est." on the customer's page, so nobody mistakes an estimate for a looked-up number. With QuickBooks Online connected, QuickBooks' Automated Sales Tax becomes the authority — it reads the customer's ship-to address, applies the correct destination rate, handles exemptions on the invoice, and records every sale for filing. InkTracker mirrors that number so what the customer sees matches what your books will bill.
+
+The practical takeaway: pick flat-rate to get moving, and connect QuickBooks before you're selling across state lines at any volume. Either way, keep your exemption certificates on file and let the software carry the arithmetic — it's one less place for a rounding error to become a filing headache.
+
+## How to choose screen printing software (I'm not going to trash my competitors)
+Source: https://www.inktracker.app/blog/screen-printing-software-honest-comparison
+
+An honest look at the leading screen printing software in 2026 — Printavo, YoPrint, InkSoft, DecoNetwork, and InkTracker — including where each one wins. No trash talk, from someone who sells one of them.
+
+When I was a kid, I remember watching the fast food chains at war with each other on TV. Every other commercial was one of them taking shots at the other: their beef's frozen, their coffee tastes burnt, whatever it was that week. And I remember thinking that if the only way you can get me to eat your burger is by telling me the other guy's burger is garbage, then yours probably isn't very good. The quality of the burger should speak for itself.
+
+That stuck with me.
+
+Because here's what I love about this industry. Screen printers help each other. I've had competitors — real ones, shops a twenty-minute drive away that bid against me for the same jobs — walk me through a fix on the phone when I was cursing at a press at 9pm. People post their setups, trade ink recipes, warn each other about a bad box of blanks before it burns somebody else. For a trade where we're all technically fighting over the same work, printers are about the most generous group of people I've ever been around.
+
+So I'm not going to sell you on InkTracker by telling you the other software is bad. It isn't. Most of it is good, built by people who actually care about this trade, and honestly better than mine at certain things. This started life as our comparison page, and a few people told me it was the most useful thing on the site precisely because it wasn't a hit piece. So here's the long version.
+
+## There's no single best one
+
+I'll save you the suspense: there is no "best screen printing software." There's the one that fits how your shop actually runs. A three-person shop cranking out contract work has completely different needs than a shop whose whole business is selling spirit wear online. Anybody who tells you there's one right answer is selling you something. Which, fair, so am I — but I'd rather you land on the thing that fits than sign up for mine and bounce in a month.
+
+## What actually matters when you're choosing
+
+Before you look at any specific tool, get clear on what you're actually shopping for. These are the things that separate them:
+
+- What you'll really pay. Some tools post a flat price. Others are tiered, per-seat, or a quote-based bundle where the number depends on a sales call. Neither is wrong, but figure out what it costs at YOUR size with YOUR number of users before you fall in love with a demo.
+
+- Whether it talks to your accounting. If you run QuickBooks, a two-way sync that keeps invoices, payments, and customers matched saves you hours and keeps your books honest. Check whether a tool's sync is actually two-way or just pushes one direction.
+
+- Live garment pricing. Pulling current blank prices straight from your supplier while you quote means your margins reflect what the shirt costs today, not what it cost last spring. If you quote off stale numbers, you find out at the worst time.
+
+- Production tracking your whole shop can see. A visual board from art approval to shipping, and a floor view your crew can update from their phones, is the difference between a schedule and a group text.
+
+- Online quoting. An embeddable form or store lets a customer start an order on your site at midnight instead of every job beginning with an email you have to answer.
+
+- Broker support, if you take reseller work. Per-reseller pricing and a portal so their orders come in already priced right, without you doing the math by hand every time.
+
+## The honest landscape
+
+Alphabetical, me included, same treatment for everyone. What each one is genuinely good at — not a list of what they can't do. Details and pricing change, so confirm the specifics on each company's own site before you commit. This was last reviewed June 2026.
+
+- DecoNetwork — an all-in-one web-to-print suite. Online stores, an online design studio, and business-management tools bundled together on tiered plans. If you want one platform with the whole web-to-print side built in, this is squarely aimed at you.
+
+- InkSoft — part of the Inktavo family, and strongest at the front of the funnel. Customizable online stores, group and fundraising stores, sales tools for actually selling apparel online. If your priority is selling and group ordering, they're very good at it.
+
+- InkTracker — mine. One flat price, $99 a month, everything included and unlimited employees. Live garment pricing from S&S and AS Colour right inside quoting, a two-way QuickBooks Online sync across invoices, payments, and customers, an embeddable customer quote wizard, a broker portal, and production and shop-floor tracking. I built it as a screen printer who was sick of paying per seat and doing double entry into QuickBooks. It's an operations tool, not a storefront platform.
+
+- Printavo — one of the best-known names in the space, now part of Inktavo. Established, widely used, with calendar-driven scheduling, online approvals, quoting, and invoicing. If you want a proven platform that a ton of shops already run, there's a real comfort in that.
+
+- YoPrint — modern, production-focused, with a QuickBooks integration and published tiered pricing that includes a free tier. If you want clean production management and a free way to kick the tires before you spend anything, start there.
+
+Where InkTracker probably isn't your answer: If your whole business is selling online — spirit wear, fundraisers, custom stores for a hundred different groups — InkSoft or DecoNetwork are built for that and I'm not. If you want the biggest, most-adopted name with years of shops behind it, that's Printavo. If you want to spend zero dollars this week and just try something, YoPrint has a free tier and I don't. I'm the answer when you want transparent flat pricing with tight QuickBooks and live supplier pricing, and you care more about running the shop than running a storefront.
+
+That's the real map. Pick the one that matches the shape of your business. If that's not mine, no hard feelings — genuinely. I'd rather you tell another printer "the guy at InkTracker pointed me the right way" than have you resent a tool that was never built for you.
+
+If flat pricing and tight QuickBooks does sound like your shop, the full side-by-side with the criteria and current details lives on our comparison page, and you can try InkTracker free for 14 days. And if you land somewhere else, come back and tell me how it's going anyway. We're all in this together.
+
+## DTF vs. screen printing, from a shop that only runs screens
+Source: https://www.inktracker.app/blog/dtf-vs-screen-printing
+
+I'm a screen printer — there's no DTF printer in my shop. But the question lands weekly, and the math is objective: setup cost vs. per-piece cost. Where the break-even lands, where each process wins, and why I still haven't bought the equipment.
+
+Let me be straight before the first number: I'm a screen printer. There is no DTF printer in my shop, and this isn't a secret review from someone running both. But "DTF or screen printing?" lands in my inbox about once a week, usually from someone starting out — and the honest answer doesn't need me to own the equipment, because the economics are objective. Sometimes that answer is "not my process." You should hear it anyway.
+
+Quick level-set if DTF is new to you: it's direct-to-film. Full-color art gets printed on a film sheet, dusted with adhesive powder, and heat-pressed onto the garment. No screens, no emulsion, no reclaim tank. That "no screens" part is the whole story — everything else follows from it.
+
+## It's setup cost vs. per-piece cost. That's the entire decision.
+
+Screen printing is expensive to start and cheap to run. Every color is a screen — coat it, burn it, tape it, register it, reclaim it later. I charge $25 a screen in setup because that's real labor. But once the press is dialed, each print costs pennies in ink. The setup spreads thinner with every shirt in the run.
+
+DTF is the mirror image: nothing to start, flat cost forever. No setup at all — but every single shirt carries the transfer cost plus press time, and shirt number 300 costs exactly what shirt number one did. It never gets cheaper.
+
+Put numbers on it. Twelve shirts, two-color front. My screens are $50 of setup — that's $4.17 a shirt before ink touches anything. The gang-sheet vendors will sell that same art as a transfer for a couple-fifty a print, give or take. DTF wins and it isn't close. Now make it 100 shirts: setup is 50 cents each and shrinking, ink is pennies. The transfer is still a couple-fifty. Every. Single. Shirt. Screens win and it isn't close either.
+
+The crossover lands around two dozen: For a one- or two-color design, run $25-a-screen setup against vendor transfer pricing and the lines cross somewhere around 20 to 30 pieces. More colors push the crossover higher — every color adds a screen, and DTF doesn't care if the art has four colors or forty. A six-color job might not beat film until 60+ pieces. Run your own setup fee and a real vendor quote through the math; your number will be near this one, not on it.
+
+## Where DTF wins — yes, a screen printer is telling you this
+
+- Short runs and one-offs. Twelve hats for a bachelor party, one sample for a client meeting, a reprint for the single hoodie that got a hole. Burning screens for that job is how a shop loses money politely.
+
+- Full-color and photo art. A sunset photo with forty colors is one transfer. On press it's a sim-process separation and a day of registration — gorgeous when it's worth it, priced like it always.
+
+- Mixed garments in one order. Tees, hoodies, totes, a nylon jacket — the same transfer presses onto all of it. On press, every substrate change is another setup.
+
+- Names and numbers. Shops that run both will print 200 team fronts on press and heat-press the personalization from film. Nobody burns a screen per name.
+
+## Where screens keep the crown
+
+- Volume. Past the crossover the gap widens on every shirt. At 500 pieces the difference between pennies of ink and a couple-fifty of film is your entire profit on the job.
+
+- The hand. Ink pushed into fabric feels like the shirt. A transfer sits on top of it. DTF has gotten a lot better, but on a big solid print you can still tell with your eyes closed — and so can a customer who wears the shirt fifty times.
+
+- Simple spot-color work. A one-color logo on 200 shirts is the job screen printing was born for. Nothing touches it on cost or speed.
+
+- Reorders. The art's proven, the seps exist, re-setup is cheap. A repeat customer's quarterly 300-piece run gets more profitable every time it comes back.
+
+## If you do run DTF: "no setup" doesn't mean cheap
+
+The trap I see when new shops add transfers: no setup fee, so they quote it like free money — film cost times two, done. Then they press 40 shirts, most of a minute each, and wonder where the afternoon went.
+
+Press time is production time. Overhead doesn't care whether the shirt went through a dryer or a heat press — every print that leaves a shop carries its share of rent, power, and payroll, same as the chart math. Price transfers off film cost plus press labor plus that overhead share, at the same margin you'd protect on press. If DTF is the right process for the job, it deserves a real price, not a discount for being convenient.
+
+## Why I still haven't bought the equipment
+
+Every trade show, somebody tries to sell me one. Here's the math that keeps my wallet closed: a DTF printer is a second business living inside your first one. White ink that wants to clog, humidity control, daily maintenance whether you sold film that day or not. Meanwhile the gang-sheet vendors will print anyone's art on a 22×60 sheet for twenty-something dollars and ship it in two days — ten or twelve front prints a sheet, no equipment, no babysitting.
+
+So the short-run work I'm wrong for doesn't need me to own a printer to get served — and if I ever add DTF, it starts with vendor sheets and a heat press, not the equipment. The printer makes sense when transfer volume is steady enough that the vendor bill plus the two-day wait costs more than the equipment and its upkeep. That's a spreadsheet decision. Run your monthly transfer spend against the equipment's real cost — ink, film, powder, maintenance hours — before the sales rep runs it for you.
+
+## The honest rule
+
+Small, colorful, mixed, or personalized: film is probably your answer, and a screen printer who tells you otherwise is quoting his equipment, not your job. Big, simple, repeating: bring it to a press, because nothing beats it and the reorders only get better. When a job sits in the middle, run the setup-versus-per-piece math above and let the number pick. That's how I'd want to be told, so that's how I'm telling you.
+
+## QuickBooks for screen printers: stop typing every job in twice
+Source: https://www.inktracker.app/blog/quickbooks-for-screen-printers
+
+Your shop software and your books disagree because you're the sync — retyping every job into QuickBooks by hand. What a real two-way connection should do, the three places shop books quietly rot, and how we run ours.
+
+Every print shop I know runs the same accounting system: jobs live in one place — shop software, a spreadsheet, a clipboard — and the books live in QuickBooks. And the sync between them is you, at 9pm, retyping invoices. Every job gets entered twice, which means every job is two chances to fat-finger a number, and the month-end ritual is figuring out why the shop says you billed $14,200 and QuickBooks says $13,750.
+
+I run my shop's books through QuickBooks Online, and I built the sync I'm going to describe — so read this knowing where I stand. But the first half is true whatever software you use, and if you take nothing else from it: stop being the sync.
+
+## Why QuickBooks and not a spreadsheet
+
+Not because it's fun. Because it's the language your accountant already speaks, and because QuickBooks Online does two jobs a spreadsheet can't. First, sales tax: its Automated Sales Tax looks at where the order ships and applies that jurisdiction's actual rate — which matters more every year a shop sells outside its own county (the short version of that whole mess is here). Second, getting paid: a QuickBooks invoice can carry a real payment link, so the customer pays the invoice directly and the payment is already recorded against it. No separate payment system to reconcile later.
+
+One practical note: everything below is about QuickBooks Online. Desktop is a different animal with a different (much weaker) story for connecting shop software.
+
+## The three places shop books quietly rot
+
+- Drift. The quote said $601. You typed $610 into QuickBooks at 9pm. Nobody notices until the customer pays the invoice and the shop record still shows a balance — or worse, the other way around.
+
+- Duplicate customers. Retype "Mystery Machine Co" one week and "Mystery Machine Company" the next and QuickBooks happily makes two customers. Now their history is split, their statements are wrong, and cleaning it up is an afternoon of merging you'll never schedule.
+
+- Tax by vibes. Your shop software charged the customer your home flat rate. QuickBooks calculated the real destination rate. The invoice and the quote now disagree by a few dollars, and multiplied across a year that's a filing headache you handed yourself.
+
+## What a real two-way sync should do
+
+This is the checklist I'd hold ANY shop software against — mine included. If a vendor demos "QuickBooks integration," make them show you each of these:
+
+- The invoice comes from the quote. One click, line items and amounts carried over exactly. If you can edit the quote after the invoice exists and nothing warns you, that's drift waiting to happen.
+
+- Customers get matched, not duplicated. The sync should find your existing QuickBooks customer even when the name isn't a character-for-character match — matching on email and normalized name, not exact spelling.
+
+- QuickBooks owns the tax math. Once connected, the destination-based number from Automated Sales Tax is the truth, and the shop side should display THAT — clearly labeled — instead of its own estimate. Two systems both computing tax is how you get two answers.
+
+- Payments flow back. When the customer pays the QuickBooks invoice, the job should show paid in the shop — without you copying it over.
+
+- Expenses too. Blank orders and supplier bills are half your ledger. If only invoices sync, you're still the sync for the spending side.
+
+- A safety net for missed events. Webhooks fail quietly. Something should re-check QuickBooks on a schedule and catch anything that slipped — a payment recorded directly in QB, an invoice edited on the QB side — instead of trusting that every message arrived.
+
+The tell in a demo: Ask the vendor: "What happens if my customer's name is spelled slightly differently in QuickBooks?" and "What happens if a payment gets recorded in QuickBooks directly?" If the answer to either is a pause, you've found where the double entry comes back.
+
+## How we run it
+
+InkTracker does the list above because I needed it to: my shop's books run through this exact sync every day. The quote becomes the QuickBooks invoice in one click. The customer gets matched against what's already in QuickBooks — email first, then normalized name — before the sync will ever create a new one. Once QuickBooks is connected, its Automated Sales Tax number is the one the customer sees, labeled as QuickBooks' number; before that, the shop's flat rate shows as an estimate and says so. Supplier expenses sync to the spending side. And every night a reconcile job re-checks QuickBooks and cleans up anything that slipped through — then emails me if it had to.
+
+None of that is magic. It's just the position that the books are the source of truth about money, the shop system is the source of truth about work, and a human retyping between them is the worst sync protocol ever invented.
+
+## How to work with other shops to take on jobs you can't do in-house
+Source: https://www.inktracker.app/blog/how-to-subcontract-print-work
+
+Some jobs don't fit your shop — embroidery when you only print, or a big order the week you're already busy. Instead of turning them away, work with other shops and trade the parts you each do best.
+
+Every shop has stuff it doesn't do. Maybe you print but don't embroider. Maybe you've got a six-color press but no DTG. Or a big order lands the week you're already slammed. A job comes in that you can't do all of, and it feels like you either turn it down or send the customer somewhere else.
+
+You don't have to do either. A lot of shops just work together. You do the embroidery a printer can't. They do the printing you're set up for. Everybody keeps their customers, and nobody turns away work.
+
+## Work with other shops
+
+Find a couple shops that are good at what you're not. An embroiderer if you print. A bigger printer for when you get busy. When a job comes in that's part yours and part theirs, you keep the customer and send them their part. Your customer gets the whole order from you.
+
+Shops have always done this. The annoying part was the hand-off: retyping specs into an email, guessing what they'll charge, calling to check on it. That's the part we fixed.
+
+## What makes it work
+
+- Clean hand-off. They get the sizes, the print details, and the art. You don't retype anything, and you can see where the job is without calling.
+
+- Price up front. You know what they'll charge before you quote your customer, so the invoice doesn't surprise you later.
+
+- Clear roles. You keep the customer and send the bill. They run the production.
+
+- Same terms every time. They set their rate once, so every job you send them prices the same way.
+
+## How it works in InkTracker
+
+You invite a shop by email. They accept, and now you can send each other jobs.
+
+Pick an order, or just some lines like the caps and not the tees, and send it over. They get the specs and the art. (Yes, they see the art, same as any shop making your goods.) Your customer's info and your prices stay with you, since they don't need those to run the job.
+
+It shows up on their board as a real order. You see their progress on yours, and you get a heads-up when it's done.
+
+They set their own prices, by method and quantity, and they can charge different shops different rates. When you send a job, their price fills in. You can change it, they confirm it, and that's what they bill you.
+
+You see that price while you quote. Tag a line as theirs and it shows your cost and your profit on that line before the quote goes out. So a job that's 100 printed shirts and 50 embroidered hats prices in one quote, and you can see what you make on each part.
+
+When it's done, they invoice you like any other customer, the same way you'd bill anyone else. And if one order needs two shops, you can split it: hats to one, shirts to another.
+
+You don't have to do everything to take on everything. Line up a few good shops, make it easy to trade work, and there's not much you have to turn down.
+
+## Printavo alternatives for small print shops (2026)
+Source: https://www.inktracker.app/blog/printavo-alternatives
+
+An honest look at the shop management options if you're shopping around: DecoNetwork, PriceIt, Printmatics, Teesom, and InkTracker — what each is built for, what published pricing looks like, and how to pick for your shop size.
+
+Printavo is the name most shops hear first, and for good reason — it's been the default answer for print shop management for a decade. If you're reading this, you're probably either outgrowing a spreadsheet and comparing everything, or re-evaluating what you pay for against what your shop actually uses. Either way, the honest answer is that the right tool depends on your shop's size and shape, so this is a field guide rather than a sales pitch. (Yes, we make one of the tools below. We'll be upfront about which jobs it's the wrong answer for.)
+
+## What actually differs between these tools
+
+Every product in this space quotes, invoices, and tracks orders. The real differences are in four places:
+
+- Where garment prices come from. Some tools make you maintain price matrices by hand; others pull live blank costs from suppliers like S&S Activewear, SanMar, and AS Colour at quote time, so a price change at the supplier can't silently eat your margin.
+
+- Setup work vs. ready-made workflow. Configurable board systems can model any shop — after you design the boards, statuses, and automations. Opinionated systems work on day one but bend less.
+
+- Online stores. If team stores and fundraisers are a big slice of your revenue, that narrows the field fast — it's the hardest feature to bolt on later.
+
+- Per-user pricing. Some tools price per seat, which matters the day you hire; others are flat.
+
+## The options, honestly
+
+Printavo is the established generalist: quoting, approvals, payments, a production calendar, and a large user community. Published pricing is per-user and tiered (entry plans have monthly quote caps; see their site for current numbers). If you have a larger team and want the most widely-adopted tool, it's a safe pick.
+
+DecoNetwork is the e-commerce heavyweight — business management plus full online-store builder in one. Published plans run roughly $199–$399/month. If branded web stores are the center of your business, it's arguably the category leader; if you never sell through stores, you'd be paying for its biggest feature to sit idle.
+
+PriceIt and Printmatics both lean into estimating and production for established shops, with Printmatics emphasizing scheduling. Teesom is the budget pick — genuinely inexpensive to start, lighter on automation, and plenty of one-person shops run happily on it.
+
+InkTracker — ours — is built specifically for small shops (roughly one to ten people) that want the workflow already decided: quotes pull live blank costs from S&S, SanMar, and AS Colour; customers approve art and pay from one link; jobs run through a fixed five-stage pipeline with a tablet shop-floor mode; QuickBooks syncs both ways; and there's a broker/wholesale pricing layer plus shop-to-shop subcontracting. One flat plan ($99/month, every feature, unlimited quotes) and a free trial with no card. It's the wrong answer if you need online team stores today, deep multi-department routing for a 30-person floor, or software you can reshape board-by-board — that's DecoNetwork or Printavo territory.
+
+## How to actually decide
+
+- Count your people. Per-seat pricing is fine at 2 users and painful at 8. Flat pricing is the reverse of that curve.
+
+- Count your stores. More than a couple of team stores a year? Weight DecoNetwork heavily.
+
+- Price a real job in the trial. Not the demo data — your garment, your quantities, your margins. The tool that gets your Tuesday right is the right tool.
+
+- Check the accounting seam. If your books live in QuickBooks, make sure invoices, payments, and sales tax flow both directions, not just export.
+
+Whichever way you go: the shops that get value out of any of these tools are the ones that stop quoting from gut feel. The software matters less than the habit.
+
+## How much does screen printing software cost in 2026?
+Source: https://www.inktracker.app/blog/how-much-does-screen-printing-software-cost
+
+Published pricing across the category — flat plans, per-seat tiers, quote caps, and license fees — plus the hidden costs that matter more than the sticker price.
+
+Short answer: real shop management software runs from roughly $50 to $400+ per month, and the sticker price is the least interesting part. The pricing structure — per-seat vs. flat, quote caps, one-time license fees — determines what you'll actually pay a year from now, after you've hired someone or had a busy season. Here's the category as of September 2026; treat every number as "published pricing, verify on their site," because vendors change plans.
+
+## The pricing structures you'll run into
+
+- Flat monthly. One price, every feature, any usage. InkTracker is $99/month flat with unlimited quotes and users on one plan. Predictable by design.
+
+- Per-seat tiers. Printavo's published plans are tiered per user — entry tiers around $50–$110/month with monthly quote caps, mid tiers in the low-to-mid $200s for around five users. Fine at two people; do the math at eight.
+
+- Platform + license. DecoNetwork publishes plans roughly $199–$399/month, plus a one-time license fee. You're buying an e-commerce platform, not just shop software, and the price reflects it.
+
+- Budget tools. Teesom and similar start very cheap or free-with-limits. What you give up is usually automation and integrations, not correctness.
+
+## The costs that don't show up on the pricing page
+
+- Setup and configuration time. Board-builder systems can take days-to-weeks of workflow design before they run your shop. Opinionated systems trade flexibility for a working day one. Your time is the largest unbilled line item in the purchase.
+
+- Quote caps. A cap that fits January can bite in September. If a plan meters quotes, price the tier you'd need in your busiest month, not your slowest.
+
+- Payment processing. Everyone routes card payments through a processor (typically ~3%). That's a cost of taking cards, not of the software — but check whether the tool adds its own platform fee on top.
+
+- The margin you can't see. The most expensive software is the one that lets you quote off last year's blank costs. One mispriced 100-piece job can eat a month's subscription. Live supplier pricing is a feature that pays for the tool.
+
+## What a small shop should actually budget
+
+For a one-to-ten-person shop: $99–$250/month covers the serious options, and the decision is mostly structure. Flat pricing (InkTracker, $99 all-in) stays constant as you add people; per-seat tiers start cheaper and climb as you grow; store-platform pricing (DecoNetwork) is worth it exactly when online stores are revenue, and not before. Run your real numbers through a free trial before believing anyone's pricing page — including ours.
+
+---
+
+# Features
+
+## Send work to another shop without losing the job
+Source: https://www.inktracker.app/features/shop-partnerships
+
+A screen-print shop gets asked for embroidery every week. An embroidery shop gets asked for prints. Most of that work gets turned away, or handled over text messages with a shop across town and a prayer that the numbers work out. InkTracker makes the trade a first-class feature: partner shops, agreed rates, and a hand-off that keeps your customer yours.
+
+## Quotes that pull today's blank prices
+Source: https://www.inktracker.app/features/live-supplier-pricing
+
+Most shops price off a chart built from what blanks cost the day the chart was made. Then the supplier moves a price, the chart doesn't, and every quote after that quietly gives the difference away. InkTracker asks the supplier what the garment costs while you're building the quote.
+
+## Leave whenever you want — with all your data
+Source: https://www.inktracker.app/features/your-data-is-yours
+
+The quietest thing a shop tool can do to keep you is make leaving hard. No export button, a stripped-down report, or a support ticket that takes a week — and suddenly a decade of your customer list feels trapped. InkTracker takes the opposite position: your records are yours, and you can take them out the front door any day of the week.
+
+## See what you make before you hit send
+Source: https://www.inktracker.app/features/know-your-margin
+
+Plenty of jobs feel profitable at the counter and settle up at break-even. The quote looked fine; the setup fees, the size upcharges, or a wholesale discount ate the rest. InkTracker puts the margin on the screen while you're still deciding, so the decision is made with the number in view.
