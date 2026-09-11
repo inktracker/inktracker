@@ -21,6 +21,38 @@ export function generateOrderId(now = Date.now()) {
   return `ORD-${year}-${suffix}`;
 }
 
+// Step a YYYY-MM-DD date forward by N business days (Mon–Fri). UTC-noon
+// anchored so a DST shift can't bump the calendar day. Pure.
+export function addBusinessDaysYMD(ymd, n) {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  if (isNaN(d.getTime())) return ymd;
+  let remaining = Math.max(0, Math.round(Number(n) || 0));
+  while (remaining > 0) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) remaining--;
+  }
+  return d.toISOString().split("T")[0];
+}
+
+// Count business days (Mon–Fri) from startYMD to endYMD (end − start). This is
+// the "turnaround" a quote's due date represented relative to its send date.
+// end <= start or invalid input → 0. Pure.
+export function businessDaysBetween(startYMD, endYMD) {
+  if (!startYMD || !endYMD) return 0;
+  const start = new Date(`${startYMD}T12:00:00Z`);
+  const end = new Date(`${endYMD}T12:00:00Z`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return 0;
+  let count = 0;
+  const cur = new Date(start);
+  while (cur < end) {
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    const dow = cur.getUTCDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+
 /**
  * Build the payload for `base44.entities.Order.create()` from a quote.
  *
@@ -43,7 +75,7 @@ export function generateOrderId(now = Date.now()) {
  * @param {number} [opts.now]      injected clock for deterministic order_id
  * @returns {object} payload ready for Order.create()
  */
-export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), today } = {}) {
+export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), today, approvalDate } = {}) {
   const q = quote || {};
   // The order's own creation date (= the date the quote was approved/converted).
   // Stored as a shop-tz `date` string so order forms can show it without the
@@ -51,6 +83,22 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
   // `today = todayInShopTz()`; fall back to deriving it from `now` for tests
   // and any caller that doesn't.
   const orderDate = today || new Date(now).toISOString().split("T")[0];
+
+  // Due date: the turnaround counts from APPROVAL, not from when the quote was
+  // sent (Joe, 2026-09-11). A quote's stored due_date was set at send time as
+  // send + turnaround; inheriting it verbatim means a quote approved days later
+  // carries a due date measured from the wrong day (often already in the past).
+  // So re-anchor the SAME turnaround window to the approval date — UNLESS the
+  // due date was an explicit customer-requested in-hands date
+  // (due_date_requested), which is a hard deadline that must NOT move.
+  // approvalDate (shop-tz YYYY-MM-DD from client_approved_at) is passed by the
+  // converter; fall back to the conversion date if absent.
+  const approvalYMD = approvalDate || orderDate;
+  let dueDate = q.due_date || null;
+  if (dueDate && q.date && !q.due_date_requested) {
+    const turnaround = businessDaysBetween(q.date, q.due_date);
+    dueDate = addBusinessDaysYMD(approvalYMD, turnaround);
+  }
   const brokerOrder = isBrokerQuote(q);
   const brokerDisplayName = q.broker_name || q.broker_company || q.broker_id || q.customer_name;
   const brokerClientName = q.customer_name || "";
@@ -80,7 +128,7 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
     job_title: q.job_title || "",
     date: q.date,
     order_date: orderDate,
-    due_date: q.due_date || null,
+    due_date: dueDate,
     // Carry the setup/screen-fee total forward. The order's `total` already
     // includes it (effectiveQuoteTotals folds setup in), but downstream
     // buildQBInvoicePayload emits the "Setup & Screen Fees" QB line from THIS

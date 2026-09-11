@@ -414,7 +414,17 @@ export default function Quotes() {
         notify.info("This quote has already been converted to an order.");
         return;
       }
-      const orderPayload = buildOrderFromQuote(fresh, { userEmail: shopScope(user), today: todayInShopTz() });
+      // Anchor the order's due-date turnaround to when the customer approved
+      // (not when the quote was sent). Use client_approved_at's shop-tz date;
+      // fall back to today for quotes with no recorded approval timestamp.
+      const approvalDate = fresh.client_approved_at
+        ? todayInShopTz(new Date(fresh.client_approved_at))
+        : todayInShopTz();
+      const orderPayload = buildOrderFromQuote(fresh, {
+        userEmail: shopScope(user),
+        today: todayInShopTz(),
+        approvalDate,
+      });
       await base44.entities.Order.create(orderPayload);
 
       // Broker pricing reference rows (legacy "commissions" table) are

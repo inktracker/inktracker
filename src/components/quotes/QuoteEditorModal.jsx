@@ -82,7 +82,12 @@ function blankQuote(defaultTaxRate = 8.265) {
     customer_name: "",
     job_title: "",
     date: tod(),
+    // Default due date is an AUTO turnaround (send + standard turnaround) — it
+    // re-anchors to the approval date at conversion. It only becomes a fixed
+    // "requested" deadline (kept as-is) if the operator sets a specific In-Hands
+    // date below. See buildOrderFromQuote / due_date_requested.
     due_date: addBusinessDays(new Date(), getStandardTurnaroundDays()),
+    due_date_requested: false,
     expires_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     status: "Draft",
     notes: "",
@@ -478,8 +483,9 @@ export default function QuoteEditorModal({
           ...(!prev.customer_email && data.customerEmail ? { customer_email: data.customerEmail } : {}),
           // Job title — pull from summary if blank
           ...(!prev.job_title && data.summary ? { job_title: data.summary.slice(0, 80) } : {}),
-          // In-hands date — only override if currently the auto-default
-          ...(data.inHandsDate ? { due_date: data.inHandsDate } : {}),
+          // In-hands date — a customer-provided date is a requested deadline
+          // (kept on conversion, not re-anchored to approval).
+          ...(data.inHandsDate ? { due_date: data.inHandsDate, due_date_requested: true } : {}),
           // Rush flag
           ...(data.rushNeeded && !prev.rush_rate ? { rush_rate: 0.2 } : {}),
           // Notes — prepend the parsed header, then any existing notes, then the raw paste body
@@ -1006,6 +1012,10 @@ export default function QuoteEditorModal({
                     setQ({
                       ...q,
                       due_date: due,
+                      // Operator set a specific date → treat it as a requested
+                      // deadline that stays put on conversion (clearing the
+                      // field reverts to an auto turnaround).
+                      due_date_requested: !!due,
                       rush_rate: autoRate,
                     });
                   }}
