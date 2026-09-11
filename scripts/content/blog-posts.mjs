@@ -669,4 +669,101 @@ export const POSTS = Object.freeze([
       },
     ],
   },
+
+  // ── Post 11 — How to start a screen printing business ────────────────────
+  {
+    slug: "how-to-start-a-screen-printing-business",
+    title: "How to start a screen printing business",
+    description:
+      "A working printer's honest guide to starting a screen printing business: what to buy first, what to skip, how to price so you actually make money, and how to land your first customers — without spending your whole budget on a press.",
+    category: "Getting started",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-09-11",
+    updated: "2026-09-11",
+    readMin: 10,
+    ogImage: SITE.logo,
+    cta: true,
+    body: [
+      { type: "p", html: "Printing shirts is the fun part, and it's about twenty percent of the job. The other eighty is quoting, ordering blanks, chasing approvals, curing right, and making sure the busy month actually left money in the account. I'm not saying that to scare anyone off — we started small and it's a real trade you can build a living on. I'm saying it because the people who make it are the ones who treat it like a business from the first order, and the ones who don't usually quit blaming the printing when the problem was the pricing." },
+      { type: "p", html: "So here's what I'd tell someone starting today, in the order it actually matters." },
+
+      { type: "h2", text: "Decide what business you're actually starting" },
+      { type: "p", html: "\"Screen printing business\" is three pretty different businesses, and they need different gear and different customers. Pick one to start — you can add the others later, but chasing all three at once is how you end up mediocre at each." },
+      { type: "ul", items: [
+        "<b>A side shop.</b> Nights and weekends out of a garage or spare room, printing for local teams and friends-of-friends. Lowest risk, slowest ramp, and a great way to learn on your own dime.",
+        "<b>A contract shop.</b> You print for other brands and decorators — they bring the art and the blanks, you pull the squeegee. Less marketing, more volume, and your customer is another business that knows what it wants.",
+        "<b>Your own brand.</b> You design, print, and sell your own shirts. This is the one everyone romanticizes and it's really two businesses stapled together — printing and retail — so it's the hardest to start cold.",
+      ] },
+      { type: "p", html: "Most shops that last started as a side shop or a contract shop, got good, and grew from there. There's no shame in starting small on purpose." },
+
+      { type: "h2", text: "Start with a shop package — or build the same list used" },
+      { type: "p", html: "The easiest on-ramp is one of the all-in-one shop starter packages the big screen-printing suppliers put together. They bundle a press, a flash, an exposure setup, screens, inks, and all the odds and ends into a single \"start here\" kit, priced as a package. It costs more up front than piecing it together, but it's curated by people who actually print, so you're not stitching a parts list together off forum threads and hoping it all works. If the budget's there, it's the least painful way to start." },
+      { type: "p", html: "If you'd rather not buy a package, piece it together with equipment you can find used — look at what a package includes and build the same list yourself, buying everything except the supplies secondhand. The one call worth making deliberately is the press: a 6-color / 4-station is ideal if you can swing it, but don't overthink it — a 4/4 ran my shop for five years and handled the large majority of what came through the door. Either way, you do not need an automatic to start; that's a volume decision you make later." },
+      { type: "p", html: "Buy the rest of the hardware used, too. Flashes, exposure units, and washout gear hold up for years, and there's always a shop upgrading and selling off perfectly good manual iron for a fraction of new. The one place I'd spend on new is the consumables — fresh emulsion, ink, and film just make the learning curve shorter. Used iron, new supplies." },
+
+      { type: "h2", text: "The first skill isn't printing — it's doing it the same way twice" },
+      { type: "p", html: "Anyone can pull one nice print. The business is pulling the seventy-second shirt identical to the first: same registration, same ink deposit, same cure. That consistency is the whole trade, and it takes reps to build. Reclaiming screens cleanly, holding registration on a multi-color job, and hitting cure temperature every time are the things that separate a shop from a hobby." },
+      { type: "callout", title: "Learn on your own money", html: "Print your own designs, your friends' band shirts, whatever — and ruin a stack of blanks doing it — before you take paid work. The learning curve is going to cost you some shirts. Far better those are shirts you bought to practice on than a customer's 100-piece order with a deadline." },
+
+      { type: "h2", text: "Price it right on day one — this is what actually kills new shops" },
+      { type: "p", html: "It's almost never the printing that sinks a new shop. It's the pricing. New printers quote low to win the job, forget to charge for the screens, knock a little off to be friendly, and then can't figure out why a month full of work didn't leave any money behind. Underpricing feels like hustle and it's really just working for free." },
+      { type: "p", html: "A screen print job only has three costs, and you have to charge for all three: the <b>blank</b> (what the shirt costs you), the <b>printing</b> (ink on the shirt, cheaper per piece as the run grows), and the <b>setup</b> (one screen per color, a fixed cost you divide across the run). The setup is the one everyone skips on small orders, and small orders are where new shops live. Charge for it." },
+      { type: "callout", title: "Try it before you quote", html: "The calculator below runs exactly that math — blank cost, colors, quantity, and your markup — and shows the per-shirt price, the order total, and your real margin. Slide the quantity down to 24 and watch what happens if you don't move your price to cover the screens. That drop is the margin new shops give away without noticing." },
+      { type: "calculator", kind: "job" },
+      { type: "p", html: "There's a fuller walkthrough in <a href=\"/blog/how-to-price-a-screen-printing-job\">how to price a screen printing job</a>, but the short version is: run the same three-cost pass on every quote, the same way every time, and price up to the margin you want to keep. Consistency beats cleverness here." },
+
+      { type: "h2", text: "Get your first ten customers" },
+      { type: "p", html: "You don't need a marketing plan to start. You need ten customers, and the first ten almost always come from people you already know and a niche you can speak to. Pick a lane and go deep instead of trying to print for everyone." },
+      { type: "ul", items: [
+        "<b>Local teams and clubs.</b> Little League, the run club, the church group — recurring, forgiving, and they talk to each other.",
+        "<b>Small businesses that need merch.</b> The gym, the coffee shop, the landscaping crew that wants shirts for the guys.",
+        "<b>Other decorators.</b> Embroiderers and printers who get slammed and need overflow — that's steady contract work with no retail hassle.",
+        "<b>Events.</b> A booth at a local market or a band's merch table gets your work on backs where people can see it and ask who made it.",
+      ] },
+      { type: "p", html: "Then do two or three jobs so well that the customer brags about them. Referrals are the entire marketing budget of most small shops, and they only start once your work is worth talking about." },
+
+      { type: "h2", text: "Set up the money side like a real business" },
+      { type: "p", html: "This is the boring part that keeps you out of trouble, and it's easiest to do from day one before there's a mess to untangle." },
+      { type: "ul", items: [
+        "<b>Open a separate bank account.</b> Even as a one-person shop. Mixing shop money with grocery money hides whether you're actually making anything.",
+        "<b>Track every expense.</b> Blanks, ink, screens, the electric bill for the dryer — it's all cost, and it's all deductible. A shoebox works; a spreadsheet works better.",
+        "<b>Figure out sales tax before your first invoice.</b> Whether you collect, and on what, depends on your state — check with your state's revenue department or an accountant. Getting it right early beats fixing it later.",
+        "<b>Keep books in something.</b> Most shops land in QuickBooks eventually. The sooner your invoices and expenses live in one place, the sooner you actually know your numbers.",
+      ] },
+
+      { type: "h2", text: "Know when to stop running it out of your head" },
+      { type: "p", html: "For the first stretch, a notebook and a spreadsheet are genuinely fine. Don't buy software to feel like a real business. The tipping point is real and you'll feel it: when quoting, chasing approvals, and remembering where every order stands starts eating the hours you should be printing, the manual system has become the bottleneck." },
+      { type: "p", html: "That's the itch we built <a href=\"/for-printers\">InkTracker</a> for — quotes that pull live blank prices so you can't accidentally underprice, one production board so nothing falls through, art approval and payment on a single link, and a two-way QuickBooks sync so you're not typing every job in twice. You don't need it on day one. You'll know the day you do, because you'll be too busy to keep it all in your head — and that's a good problem, if the pricing was right on the way up." },
+
+      { type: "p", html: "Starting a screen printing business isn't complicated, but it is a real trade with a real learning curve. Buy modestly, learn to print the same way every time, charge for all three of your costs, and treat the money like a business from the first order. Do that and the busy months actually pay you. That's the whole game." },
+    ],
+    related: [
+      { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a screen printing job" },
+      { href: "/tools/screen-printing-price-calculator", text: "Free screen printing price calculator" },
+      { href: "/blog/how-to-subcontract-print-work", text: "How to take on jobs you can't do in-house" },
+    ],
+    faqs: [
+      {
+        q: "How much money do I need to start a screen printing business?",
+        a: "You can start on a used manual press for a couple thousand dollars; a realistic new starter setup — manual press, flash cure, a way to expose screens, and consumables — usually lands somewhere around $2,000–$5,000, less if you buy used. Budget for the blanks you'll ruin learning, too; that practice stock is a real (and worthwhile) cost.",
+      },
+      {
+        q: "Do I need an LLC to start screen printing?",
+        a: "Many shops start as a sole proprietor and form an LLC as they grow — but that's a call for you and an accountant, not legal advice from a software company. Whatever structure you pick, separate the shop's money from your personal money from day one; it's the single easiest thing to get right early and the most annoying to fix later.",
+      },
+      {
+        q: "Should I start with a manual or automatic press?",
+        a: "Manual, every time. You learn registration, ink deposit, and cure on a manual, and it handles most real jobs a new shop takes. An automatic is a decision you make when your volume is bottlenecked by hand-printing — it's a growth purchase, not a starting one.",
+      },
+      {
+        q: "Can I run a screen printing business from home?",
+        a: "Plenty of shops start in a garage or spare room. The real constraints are space, ventilation, and washing out screens (chemicals plus water need somewhere to go). If customers will come to you, check your local zoning first — that's the part home shops most often overlook.",
+      },
+      {
+        q: "How do I price screen printing so I actually make money?",
+        a: "Cover all three costs on every job — the blank, the printing, and the setup (one screen per color) — then add the margin you want to keep. The setup is the piece new printers skip on small runs, which is exactly where the margin leaks. Use the same formula on every quote so it's boringly consistent, and run a real job through a calculator before you send the number.",
+      },
+    ],
+  },
 ]);
