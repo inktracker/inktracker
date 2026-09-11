@@ -766,4 +766,91 @@ export const POSTS = Object.freeze([
       },
     ],
   },
+
+  // ── Post 12 — Screen printing production workflow ────────────────────────
+  {
+    slug: "screen-printing-production-workflow",
+    title: "The screen printing production workflow, stage by stage",
+    description:
+      "How a job actually moves through a screen printing shop — art approval, ordering goods, pre-press, printing, and shipping — and where each stage quietly goes wrong. The workflow that keeps jobs from falling through the cracks.",
+    category: "Production",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-09-11",
+    updated: "2026-09-11",
+    readMin: 9,
+    ogImage: SITE.logo,
+    cta: true,
+    body: [
+      { type: "p", html: "A job isn't done when it comes off the press. It's done when it's boxed, shipped, and paid for — and everything between the approved quote and that final invoice is where shops either run smooth or quietly bleed time. Busy and profitable aren't the same thing, and the difference is almost always a workflow that everybody runs the same way, every time. Here's the pipeline we run, and more useful than the stage names, where each one goes wrong." },
+
+      { type: "h2", text: "The stages a job actually moves through" },
+      { type: "p", html: "Strip away the shop-specific stuff and every screen print job moves through the same handful of stages. Naming them matters, because a job that's \"in progress\" tells you nothing — a job that's \"in pre-press, waiting on screens\" tells you exactly what's holding it up and who's next." },
+      { type: "ul", items: [
+        "<b>Quote approved.</b> The quote is accepted and it's a real job. Nothing moves until this is true — a verbal \"yeah, sounds good\" is not an approved job.",
+        "<b>Art approval.</b> The customer signs off on the exact mockup — size, placement, colors, spelling. This is the gate everything else waits behind.",
+        "<b>Order goods.</b> Blanks and any supplies get ordered, then counted in when they land.",
+        "<b>Pre-press.</b> Art is separated, films are printed, screens are burned and reclaimed, and the job is staged for the press.",
+        "<b>Printing.</b> Set up, prove one, then run the job.",
+        "<b>Completed.</b> Counted, packed, shipped or picked up, and invoiced. Then — and only then — it's done.",
+      ] },
+      { type: "p", html: "That's the spine. The rest of this is what each stage needs so it doesn't become the bottleneck." },
+
+      { type: "h2", text: "Get art approval in writing before anything else moves" },
+      { type: "p", html: "The single most expensive mistake in a print shop is printing before the art is actually approved. A misspelled name, a logo one size too big, a color the customer \"assumed\" — catch it on a mockup and it's a two-minute edit; catch it on 200 printed shirts and it's a reprint on your dime, plus the blanks, plus the deadline you just blew." },
+      { type: "callout", title: "Approval means a yes you can point to", html: "A screenshot, a reply that says \"approved,\" a signature on the mockup — something you can point back to when a customer decides the print isn't what they wanted. \"I thought you knew what I meant\" is not a position you can eat 200 shirts on. Make approval a hard gate: no films, no screens, no blanks committed until it's in hand." },
+
+      { type: "h2", text: "Order goods the moment it's approved — and count them in" },
+      { type: "p", html: "Blanks are almost always the long pole. The print itself might be an afternoon; the shirts showing up can be a week. So ordering goods is the first thing that happens after approval, not something you get to once pre-press is done. The job's real deadline is set by when the blanks land, so start that clock immediately." },
+      { type: "p", html: "And count them in when they arrive. Suppliers short orders, mis-ship colors, and send the occasional box of the wrong size — you want to find that the day it shows up, while there's still time to fix it, not on press day with the customer waiting." },
+
+      { type: "h2", text: "Pre-press is where the day is won or lost" },
+      { type: "p", html: "Printing is fast. Getting ready to print is where a shop actually spends its time, and it's the stage that rewards being organized. Separations done right, films printed and checked, screens burned and reclaimed, everything staged so press day is just printing — that's a shop that runs. Burning screens while the press sits idle is a shop that's always behind." },
+      { type: "ul", items: [
+        "<b>Separate and film first.</b> Get the art press-ready and the positives printed before you touch a screen.",
+        "<b>Keep screens on a cycle.</b> Burn, reclaim, and re-coat on a rhythm so you're never waiting on a screen with a job already staged.",
+        "<b>Stage the whole job together.</b> Screens, inks, and blanks in one place, so setup is grabbing what's ready instead of hunting for it.",
+      ] },
+
+      { type: "h2", text: "On the press, prove one before you run the run" },
+      { type: "p", html: "Never start a full run on faith. Set up, print one shirt, and check it against the approved mockup — registration tight, colors right, placement where it should be, and the ink actually curing (a wash test or a temp check, not a guess). That one proof shirt is the cheapest insurance in the shop. Find the problem on shirt one, not shirt one hundred." },
+      { type: "p", html: "Once it's dialed in, run it — and keep watching it. Registration drifts, screens clog, and the fiftieth shirt can quietly stop matching the first if nobody's checking along the way." },
+
+      { type: "h2", text: "It's not done until it's shipped and invoiced" },
+      { type: "p", html: "A finished box of shirts in the corner isn't revenue — it's inventory you can't sell. The last stage is the one shops forget to treat as a stage: count the finished pieces against the order, pack them, ship or hand them off, tell the customer, and invoice. Then chase the invoice if it goes quiet. The job isn't closed until the money's in, and a shop that prints beautifully and forgets to collect is just an expensive hobby." },
+
+      { type: "h2", text: "The whole thing only works if everyone can see it" },
+      { type: "p", html: "A workflow that lives in one person's head isn't a workflow — it's a single point of failure that goes home at five o'clock. The jobs that fall through the cracks are almost always the ones only one person knew the status of. The fix is boring: one place the whole shop can look and see every job, what stage it's in, and what it's waiting on." },
+      { type: "p", html: "That's the itch we built <a href=\"/for-printers\">InkTracker</a>'s production board for — every job on one board, moving through these same stages, with a tablet shop-floor mode so the person at the press sees what's next without walking to the office. You don't need software to run a workflow; a whiteboard and some discipline will do it. You need something the whole shop can see. The whiteboard just stops scaling the day you've got more jobs than wall." },
+
+      { type: "p", html: "None of this is complicated. It's the same handful of stages, run the same way every time, with a hard gate on approval and a real finish line at \"shipped and paid.\" Do that and the busy weeks stop turning into dropped jobs and reprints. That consistency — not a faster press — is what a smooth shop is actually made of." },
+    ],
+    related: [
+      { href: "/for-printers", text: "What InkTracker does for print shops" },
+      { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a screen printing job" },
+      { href: "/blog/how-to-subcontract-print-work", text: "When you're maxed out: sending work to another shop" },
+    ],
+    faqs: [
+      {
+        q: "What are the stages of screen printing production?",
+        a: "Quote approved → art approval → order goods → pre-press (separations, films, burning and reclaiming screens) → printing → completed (count, pack, ship, invoice). The exact names vary by shop; what matters is that every job sits in a named stage, so you always know what's holding it and what's next.",
+      },
+      {
+        q: "How do I keep screen printing jobs from falling through the cracks?",
+        a: "Put every job on one board the whole shop can see, each with a clear stage and what it's waiting on. Most dropped jobs are the ones only one person knew the status of. Make art approval and \"shipped + invoiced\" hard gates so nothing skips the front of the line or the finish.",
+      },
+      {
+        q: "When should I order blanks for a print job?",
+        a: "The moment the job is approved, before pre-press. Blanks are usually the longest lead time in the whole job, so they set the real deadline. Order early and count them in when they arrive, so a shortage or mis-ship surfaces with time left to fix it — not on press day.",
+      },
+      {
+        q: "What is a setup or first-article print?",
+        a: "Printing a single shirt and checking it against the approved mockup — registration, colors, placement, and cure — before you run the full order. It's the cheapest insurance in the shop: you catch a problem on one shirt instead of a hundred.",
+      },
+      {
+        q: "How do I make my print shop more efficient?",
+        a: "Efficiency comes from pre-press and consistency, not a faster press. Stage every job so press day is only printing, run the same stages the same way every time, and give the whole shop one view of what's where. The bottleneck is almost never the printing itself.",
+      },
+    ],
+  },
 ]);
