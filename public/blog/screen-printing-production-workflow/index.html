@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The screen printing production workflow, stage by stage — InkTracker</title>
+  <meta name="description" content="How a job actually moves through a screen printing shop — art approval, ordering goods, pre-press, printing, and shipping — and where each stage quietly goes wrong. The workflow that keeps jobs from falling through the cracks." />
+  <link rel="canonical" href="https://www.inktracker.app/blog/screen-printing-production-workflow" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="The screen printing production workflow, stage by stage" />
+  <meta property="og:description" content="How a job actually moves through a screen printing shop — art approval, ordering goods, pre-press, printing, and shipping — and where each stage quietly goes wrong. The workflow that keeps jobs from falling through the cracks." />
+  <meta property="og:url" content="https://www.inktracker.app/blog/screen-printing-production-workflow" />
+  <meta property="og:image" content="https://www.inktracker.app/icon-512.png" />
+  <meta property="article:published_time" content="2026-09-11T08:00:00-07:00" />
+  <meta property="article:modified_time" content="2026-09-11T08:00:00-07:00" />
+  <meta property="article:author" content="Joe" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="The screen printing production workflow, stage by stage" />
+  <meta name="twitter:description" content="How a job actually moves through a screen printing shop — art approval, ordering goods, pre-press, printing, and shipping — and where each stage quietly goes wrong. The workflow that keeps jobs from falling through the cracks." />
+  <meta name="twitter:image" content="https://www.inktracker.app/icon-512.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" />
+  <style>:root{--ink:#0e0e0e;--muted:#6b6b6b;--hair:#e5e5e5;--forest:#2c5840;--forest-dark:#1a3a28}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);background:#fff;font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--forest)}
+.wrap{max-width:820px;margin:0 auto;padding:0 20px}
+header.site{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:2px solid var(--ink)}
+header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px}
+.brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.brand span{color:var(--forest)}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;padding:14px 28px;border-radius:0;white-space:nowrap}
+.nav{display:flex;align-items:center;gap:18px}
+.nav a:not(.cta){font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.nav a:not(.cta):hover{color:var(--forest)}
+.cta:hover{background:var(--forest-dark)}
+nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
+nav.crumbs a{color:var(--muted)}
+h1{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.01em;line-height:1.02;font-size:clamp(2.2rem,6vw,3.6rem);margin:.4em 0 .2em}
+h2{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.02em;font-size:clamp(1.4rem,3.5vw,2rem);margin:1.8em 0 .5em}
+h3{font-size:1.05rem;margin:0 0 .25em}
+.lede{font-size:1.12rem;color:#262626}
+.reviewed{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:6px}
+footer.site{border-top:2px solid var(--ink);margin-top:2em;padding:24px 0;font-size:13px;color:var(--muted)}
+footer.site a{color:var(--muted);margin-right:16px}
+.disclaimer{font-size:12px;color:var(--muted);border-top:1px solid var(--hair);margin-top:3em;padding:18px 0}
+/* blog */
+.cat-tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--forest);border-radius:8px;padding:4px 10px}
+.cat-filter{display:flex;flex-wrap:wrap;gap:8px;margin:1.4em 0 0}
+.cat-filter .chip{font:inherit;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);background:#f2f2f2;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;transition:background .15s,color .15s}
+.cat-filter .chip:hover{background:#e6e6e6}
+.cat-filter .chip.is-active{background:var(--forest);color:#fff}
+.cat-filter .chip:focus-visible{outline:2px solid var(--forest);outline-offset:2px}
+.post-meta{font-size:13px;color:var(--muted);margin-top:10px}
+.post-list{list-style:none;padding:0;margin:1.6em 0;display:grid;gap:16px}
+.post-list li{border:1px solid var(--hair);border-radius:12px;padding:20px 22px;transition:border-color .15s}
+.post-list li:hover{border-color:var(--forest)}
+.post-list h2{font-size:1.35rem;margin:.5em 0 .3em}
+.post-list h2 a{color:var(--ink);text-decoration:none}
+.post-list h2 a:hover{color:var(--forest)}
+.post-list p{margin:.3em 0;color:#333}
+.post-body p{margin:1.05em 0}
+.post-body code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:.92em}
+ul.body-list{margin:1em 0;padding-left:1.25em}
+ul.body-list li{margin:.55em 0}
+.callout{border-left:3px solid var(--forest);background:#f6faf7;border-radius:0 10px 10px 0;padding:14px 18px;margin:1.5em 0}
+.callout h4{margin:0 0 4px;font-size:1rem}
+.callout p{margin:0;color:#333}
+.faq dt{font-weight:700;margin-top:1em}
+.faq dd{margin:.2em 0 0;color:#333}
+.blog-cta{background:var(--ink);color:#fff;border-radius:14px;padding:30px 26px;margin:2.6em 0;text-align:center}
+.blog-cta h3{font-family:"Anton",sans-serif;color:#fff;text-transform:uppercase;font-size:1.6rem;margin:0 0 .45em}
+.blog-cta p{color:#d8d8d8;margin:0 auto 1.3em;max-width:580px}
+.blog-cta .related{margin-top:1.1em;font-size:13px;color:#bdbdbd}
+.blog-cta .related a{color:#eaeaea}
+/* calculator — shared block imported from content/calc.mjs (CALC_CSS) */
+.calc{border:1px solid var(--hair);border-radius:14px;padding:20px;margin:1.6em 0;background:#fafafa}
+.calc-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--hair);flex-wrap:wrap}
+.calc-row:last-of-type{border-bottom:0}
+.calc-label{flex:1 1 210px;min-width:190px}
+.calc-label b{display:block;font-size:14px}
+.calc-label span{font-size:12px;color:var(--muted)}
+.calc-slider{flex:2 1 170px;accent-color:var(--forest);height:22px}
+.calc-val{min-width:64px;text-align:right;font-weight:700;color:var(--forest);font-variant-numeric:tabular-nums}
+.calc-out{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 6px}
+.calc-stat{border:1px solid var(--hair);border-radius:10px;padding:12px;text-align:center;background:#fff}
+.calc-stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.calc-stat .v{font-family:"Anton",sans-serif;font-size:1.55rem;color:var(--forest)}
+.calc-note{font-size:13px;color:#444;margin-top:8px;line-height:1.55}
+.calc-digit{font-size:13px;color:var(--forest);font-weight:600;margin-top:8px}
+.calc-table{width:100%;border-collapse:collapse;margin:14px 0 4px;font-variant-numeric:tabular-nums;font-size:14px}
+.calc-table th{background:var(--forest);color:#fff;padding:8px 10px;text-align:right;font-weight:700}
+.calc-table th:first-child{text-align:left}
+.calc-table td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--hair)}
+.calc-table td.rl{text-align:left;font-weight:700}
+.calc-table tbody tr:nth-child(even){background:#f6faf7}
+.proof{list-style:none;padding:0;margin:1.4em 0;display:grid;gap:12px}
+.proof li{padding:14px 18px 14px 42px;position:relative;border:1px solid var(--hair);border-radius:10px}
+.proof li:before{content:"\2713";position:absolute;left:16px;top:14px;color:var(--forest);font-weight:800}
+@media(min-width:640px){}
+/* Mobile header: at desktop sizes the 26px brand + nav link + CTA fit in
+   72px; on phones they collided (brand jammed against the nav link, CTA
+   wrapping to two lines). Shrink everything and keep the CTA one line. */
+@media(max-width:600px){
+header.site .wrap{height:60px}
+.brand{font-size:19px}
+.nav{gap:10px}
+.nav a:not(.cta){font-size:11px;letter-spacing:.12em}
+.cta{font-size:11px;letter-spacing:.06em;padding:10px 12px}
+}
+@media(max-width:344px){.nav a:not(.cta){display:none}}</style>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "@id": "https://www.inktracker.app/blog/screen-printing-production-workflow#post",
+  "headline": "The screen printing production workflow, stage by stage",
+  "description": "How a job actually moves through a screen printing shop — art approval, ordering goods, pre-press, printing, and shipping — and where each stage quietly goes wrong. The workflow that keeps jobs from falling through the cracks.",
+  "image": "https://www.inktracker.app/icon-512.png",
+  "url": "https://www.inktracker.app/blog/screen-printing-production-workflow",
+  "inLanguage": "en-US",
+  "isPartOf": {
+    "@type": "Blog",
+    "@id": "https://www.inktracker.app/blog#blog"
+  },
+  "articleSection": "Production",
+  "wordCount": 1066,
+  "timeRequired": "PT9M",
+  "datePublished": "2026-09-11T08:00:00-07:00",
+  "dateModified": "2026-09-11T08:00:00-07:00",
+  "author": {
+    "@type": "Person",
+    "name": "Joe",
+    "jobTitle": "Founder, InkTracker",
+    "url": "https://www.inktracker.app"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "InkTracker",
+    "url": "https://www.inktracker.app",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://www.inktracker.app/icon-512.png"
+    }
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://www.inktracker.app/blog/screen-printing-production-workflow"
+  }
+}
+</script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "InkTracker",
+      "item": "https://www.inktracker.app/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Blog",
+      "item": "https://www.inktracker.app/blog"
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "name": "The screen printing production workflow, stage by stage",
+      "item": "https://www.inktracker.app/blog/screen-printing-production-workflow"
+    }
+  ]
+}
+</script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What are the stages of screen printing production?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Quote approved → art approval → order goods → pre-press (separations, films, burning and reclaiming screens) → printing → completed (count, pack, ship, invoice). The exact names vary by shop; what matters is that every job sits in a named stage, so you always know what's holding it and what's next."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I keep screen printing jobs from falling through the cracks?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Put every job on one board the whole shop can see, each with a clear stage and what it's waiting on. Most dropped jobs are the ones only one person knew the status of. Make art approval and \"shipped + invoiced\" hard gates so nothing skips the front of the line or the finish."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "When should I order blanks for a print job?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The moment the job is approved, before pre-press. Blanks are usually the longest lead time in the whole job, so they set the real deadline. Order early and count them in when they arrive, so a shortage or mis-ship surfaces with time left to fix it — not on press day."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is a setup or first-article print?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Printing a single shirt and checking it against the approved mockup — registration, colors, placement, and cure — before you run the full order. It's the cheapest insurance in the shop: you catch a problem on one shirt instead of a hundred."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I make my print shop more efficient?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Efficiency comes from pre-press and consistency, not a faster press. Stage every job so press day is only printing, run the same stages the same way every time, and give the whole shop one view of what's where. The bottleneck is almost never the printing itself."
+      }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="https://www.inktracker.app/">Ink<span>Tracker</span></a>
+  <nav class="nav">
+    <a href="https://www.inktracker.app/resources">Resources</a>
+    <a class="cta" href="https://www.inktracker.app/#pricing">Start free trial</a>
+  </nav>
+</div></header>
+<main class="wrap">
+  <nav class="crumbs"><a href="https://www.inktracker.app/">Home</a> › <a href="https://www.inktracker.app/blog">Blog</a> › Production</nav>
+  <span class="cat-tag">Production</span>
+  <h1>The screen printing production workflow, stage by stage</h1>
+  <p class="post-meta">By Joe, Founder, InkTracker · September 11, 2026 · 9 min read</p>
+  <article class="post-body">
+<p>A job isn't done when it comes off the press. It's done when it's boxed, shipped, and paid for — and everything between the approved quote and that final invoice is where shops either run smooth or quietly bleed time. Busy and profitable aren't the same thing, and the difference is almost always a workflow that everybody runs the same way, every time. Here's the pipeline we run, and more useful than the stage names, where each one goes wrong.</p>
+<h2>The stages a job actually moves through</h2>
+<p>Strip away the shop-specific stuff and every screen print job moves through the same handful of stages. Naming them matters, because a job that's "in progress" tells you nothing — a job that's "in pre-press, waiting on screens" tells you exactly what's holding it up and who's next.</p>
+<ul class="body-list"><li><b>Quote approved.</b> The quote is accepted and it's a real job. Nothing moves until this is true — a verbal "yeah, sounds good" is not an approved job.</li><li><b>Art approval.</b> The customer signs off on the exact mockup — size, placement, colors, spelling. This is the gate everything else waits behind.</li><li><b>Order goods.</b> Blanks and any supplies get ordered, then counted in when they land.</li><li><b>Pre-press.</b> Art is separated, films are printed, screens are burned and reclaimed, and the job is staged for the press.</li><li><b>Printing.</b> Set up, prove one, then run the job.</li><li><b>Completed.</b> Counted, packed, shipped or picked up, and invoiced. Then — and only then — it's done.</li></ul>
+<p>That's the spine. The rest of this is what each stage needs so it doesn't become the bottleneck.</p>
+<h2>Get art approval in writing before anything else moves</h2>
+<p>The single most expensive mistake in a print shop is printing before the art is actually approved. A misspelled name, a logo one size too big, a color the customer "assumed" — catch it on a mockup and it's a two-minute edit; catch it on 200 printed shirts and it's a reprint on your dime, plus the blanks, plus the deadline you just blew.</p>
+<div class="callout"><h4>Approval means a yes you can point to</h4><p>A screenshot, a reply that says "approved," a signature on the mockup — something you can point back to when a customer decides the print isn't what they wanted. "I thought you knew what I meant" is not a position you can eat 200 shirts on. Make approval a hard gate: no films, no screens, no blanks committed until it's in hand.</p></div>
+<h2>Order goods the moment it's approved — and count them in</h2>
+<p>Blanks are almost always the long pole. The print itself might be an afternoon; the shirts showing up can be a week. So ordering goods is the first thing that happens after approval, not something you get to once pre-press is done. The job's real deadline is set by when the blanks land, so start that clock immediately.</p>
+<p>And count them in when they arrive. Suppliers short orders, mis-ship colors, and send the occasional box of the wrong size — you want to find that the day it shows up, while there's still time to fix it, not on press day with the customer waiting.</p>
+<h2>Pre-press is where the day is won or lost</h2>
+<p>Printing is fast. Getting ready to print is where a shop actually spends its time, and it's the stage that rewards being organized. Separations done right, films printed and checked, screens burned and reclaimed, everything staged so press day is just printing — that's a shop that runs. Burning screens while the press sits idle is a shop that's always behind.</p>
+<ul class="body-list"><li><b>Separate and film first.</b> Get the art press-ready and the positives printed before you touch a screen.</li><li><b>Keep screens on a cycle.</b> Burn, reclaim, and re-coat on a rhythm so you're never waiting on a screen with a job already staged.</li><li><b>Stage the whole job together.</b> Screens, inks, and blanks in one place, so setup is grabbing what's ready instead of hunting for it.</li></ul>
+<h2>On the press, prove one before you run the run</h2>
+<p>Never start a full run on faith. Set up, print one shirt, and check it against the approved mockup — registration tight, colors right, placement where it should be, and the ink actually curing (a wash test or a temp check, not a guess). That one proof shirt is the cheapest insurance in the shop. Find the problem on shirt one, not shirt one hundred.</p>
+<p>Once it's dialed in, run it — and keep watching it. Registration drifts, screens clog, and the fiftieth shirt can quietly stop matching the first if nobody's checking along the way.</p>
+<h2>It's not done until it's shipped and invoiced</h2>
+<p>A finished box of shirts in the corner isn't revenue — it's inventory you can't sell. The last stage is the one shops forget to treat as a stage: count the finished pieces against the order, pack them, ship or hand them off, tell the customer, and invoice. Then chase the invoice if it goes quiet. The job isn't closed until the money's in, and a shop that prints beautifully and forgets to collect is just an expensive hobby.</p>
+<h2>The whole thing only works if everyone can see it</h2>
+<p>A workflow that lives in one person's head isn't a workflow — it's a single point of failure that goes home at five o'clock. The jobs that fall through the cracks are almost always the ones only one person knew the status of. The fix is boring: one place the whole shop can look and see every job, what stage it's in, and what it's waiting on.</p>
+<p>That's the itch we built <a href="/for-printers">InkTracker</a>'s production board for — every job on one board, moving through these same stages, with a tablet shop-floor mode so the person at the press sees what's next without walking to the office. You don't need software to run a workflow; a whiteboard and some discipline will do it. You need something the whole shop can see. The whiteboard just stops scaling the day you've got more jobs than wall.</p>
+<p>None of this is complicated. It's the same handful of stages, run the same way every time, with a hard gate on approval and a real finish line at "shipped and paid." Do that and the busy weeks stop turning into dropped jobs and reprints. That consistency — not a faster press — is what a smooth shop is actually made of.</p>
+<h2>Common questions</h2>
+<dl class="faq">
+<dt>What are the stages of screen printing production?</dt><dd>Quote approved → art approval → order goods → pre-press (separations, films, burning and reclaiming screens) → printing → completed (count, pack, ship, invoice). The exact names vary by shop; what matters is that every job sits in a named stage, so you always know what's holding it and what's next.</dd>
+<dt>How do I keep screen printing jobs from falling through the cracks?</dt><dd>Put every job on one board the whole shop can see, each with a clear stage and what it's waiting on. Most dropped jobs are the ones only one person knew the status of. Make art approval and &quot;shipped + invoiced&quot; hard gates so nothing skips the front of the line or the finish.</dd>
+<dt>When should I order blanks for a print job?</dt><dd>The moment the job is approved, before pre-press. Blanks are usually the longest lead time in the whole job, so they set the real deadline. Order early and count them in when they arrive, so a shortage or mis-ship surfaces with time left to fix it — not on press day.</dd>
+<dt>What is a setup or first-article print?</dt><dd>Printing a single shirt and checking it against the approved mockup — registration, colors, placement, and cure — before you run the full order. It's the cheapest insurance in the shop: you catch a problem on one shirt instead of a hundred.</dd>
+<dt>How do I make my print shop more efficient?</dt><dd>Efficiency comes from pre-press and consistency, not a faster press. Stage every job so press day is only printing, run the same stages the same way every time, and give the whole shop one view of what's where. The bottleneck is almost never the printing itself.</dd>
+</dl>
+  </article>
+  <div class="blog-cta">
+    <h3>Stop pricing in a spreadsheet.</h3>
+    <p>InkTracker runs this math on every quote automatically — blanks, colors, quantity breaks, and setup — so every job is priced right before it hits the press.</p>
+    <a class="cta" href="https://www.inktracker.app/?ref=blog&utm_source=blog&utm_medium=content">Start your 14-day free trial</a>
+    <div class="related">Related: <a href="/compare">the honest software buyer's guide</a> · <a href="/for-printers">InkTracker for printers</a></div>
+  </div>
+</main>
+<footer class="site"><div class="wrap">
+  <a href="https://www.inktracker.app/">InkTracker home</a><a href="https://www.inktracker.app/tools">Free Tools</a><a href="https://www.inktracker.app/blog">Blog</a><a href="https://www.inktracker.app/compare">Software guide</a><a href="https://www.inktracker.app/support">Support</a>
+  <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
+</div></footer>
+</body>
+</html>
