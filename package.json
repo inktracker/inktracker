@@ -87,7 +87,7 @@
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-unused-imports": "^4.3.0",
     "globals": "^15.14.0",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "otplib": "^13.4.1",
     "postcss": "^8.5.26",
     "stripe": "^14.25.0",
