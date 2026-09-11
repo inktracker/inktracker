@@ -416,6 +416,85 @@ Short answer: real shop management software runs from roughly $50 to $400+ per m
 
 For a one-to-ten-person shop: $99–$250/month covers the serious options, and the decision is mostly structure. Flat pricing (InkTracker, $99 all-in) stays constant as you add people; per-seat tiers start cheaper and climb as you grow; store-platform pricing (DecoNetwork) is worth it exactly when online stores are revenue, and not before. Run your real numbers through a free trial before believing anyone's pricing page — including ours.
 
+## How to start a screen printing business
+Source: https://www.inktracker.app/blog/how-to-start-a-screen-printing-business
+
+A working printer's honest guide to starting a screen printing business: what to buy first, what to skip, how to price so you actually make money, and how to land your first customers — without spending your whole budget on a press.
+
+Printing shirts is the fun part, and it's about twenty percent of the job. The other eighty is quoting, ordering blanks, chasing approvals, curing right, and making sure the busy month actually left money in the account. I'm not saying that to scare anyone off — we started small and it's a real trade you can build a living on. I'm saying it because the people who make it are the ones who treat it like a business from the first order, and the ones who don't usually quit blaming the printing when the problem was the pricing.
+
+So here's what I'd tell someone starting today, in the order it actually matters.
+
+## Decide what business you're actually starting
+
+"Screen printing business" is three pretty different businesses, and they need different gear and different customers. Pick one to start — you can add the others later, but chasing all three at once is how you end up mediocre at each.
+
+- A side shop. Nights and weekends out of a garage or spare room, printing for local teams and friends-of-friends. Lowest risk, slowest ramp, and a great way to learn on your own dime.
+
+- A contract shop. You print for other brands and decorators — they bring the art and the blanks, you pull the squeegee. Less marketing, more volume, and your customer is another business that knows what it wants.
+
+- Your own brand. You design, print, and sell your own shirts. This is the one everyone romanticizes and it's really two businesses stapled together — printing and retail — so it's the hardest to start cold.
+
+Most shops that last started as a side shop or a contract shop, got good, and grew from there. There's no shame in starting small on purpose.
+
+## Start with a shop package — or build the same list used
+
+The easiest on-ramp is one of the all-in-one shop starter packages the big screen-printing suppliers put together. They bundle a press, a flash, an exposure setup, screens, inks, and all the odds and ends into a single "start here" kit, priced as a package. It costs more up front than piecing it together, but it's curated by people who actually print, so you're not stitching a parts list together off forum threads and hoping it all works. If the budget's there, it's the least painful way to start.
+
+If you'd rather not buy a package, piece it together with equipment you can find used — look at what a package includes and build the same list yourself, buying everything except the supplies secondhand. The one call worth making deliberately is the press: a 6-color / 4-station is ideal if you can swing it, but don't overthink it — a 4/4 ran my shop for five years and handled the large majority of what came through the door. Either way, you do not need an automatic to start; that's a volume decision you make later.
+
+Buy the rest of the hardware used, too. Flashes, exposure units, and washout gear hold up for years, and there's always a shop upgrading and selling off perfectly good manual iron for a fraction of new. The one place I'd spend on new is the consumables — fresh emulsion, ink, and film just make the learning curve shorter. Used iron, new supplies.
+
+## The first skill isn't printing — it's doing it the same way twice
+
+Anyone can pull one nice print. The business is pulling the seventy-second shirt identical to the first: same registration, same ink deposit, same cure. That consistency is the whole trade, and it takes reps to build. Reclaiming screens cleanly, holding registration on a multi-color job, and hitting cure temperature every time are the things that separate a shop from a hobby.
+
+Learn on your own money: Print your own designs, your friends' band shirts, whatever — and ruin a stack of blanks doing it — before you take paid work. The learning curve is going to cost you some shirts. Far better those are shirts you bought to practice on than a customer's 100-piece order with a deadline.
+
+## Price it right on day one — this is what actually kills new shops
+
+It's almost never the printing that sinks a new shop. It's the pricing. New printers quote low to win the job, forget to charge for the screens, knock a little off to be friendly, and then can't figure out why a month full of work didn't leave any money behind. Underpricing feels like hustle and it's really just working for free.
+
+A screen print job only has three costs, and you have to charge for all three: the blank (what the shirt costs you), the printing (ink on the shirt, cheaper per piece as the run grows), and the setup (one screen per color, a fixed cost you divide across the run). The setup is the one everyone skips on small orders, and small orders are where new shops live. Charge for it.
+
+Try it before you quote: The calculator below runs exactly that math — blank cost, colors, quantity, and your markup — and shows the per-shirt price, the order total, and your real margin. Slide the quantity down to 24 and watch what happens if you don't move your price to cover the screens. That drop is the margin new shops give away without noticing.
+
+There's a fuller walkthrough in how to price a screen printing job, but the short version is: run the same three-cost pass on every quote, the same way every time, and price up to the margin you want to keep. Consistency beats cleverness here.
+
+## Get your first ten customers
+
+You don't need a marketing plan to start. You need ten customers, and the first ten almost always come from people you already know and a niche you can speak to. Pick a lane and go deep instead of trying to print for everyone.
+
+- Local teams and clubs. Little League, the run club, the church group — recurring, forgiving, and they talk to each other.
+
+- Small businesses that need merch. The gym, the coffee shop, the landscaping crew that wants shirts for the guys.
+
+- Other decorators. Embroiderers and printers who get slammed and need overflow — that's steady contract work with no retail hassle.
+
+- Events. A booth at a local market or a band's merch table gets your work on backs where people can see it and ask who made it.
+
+Then do two or three jobs so well that the customer brags about them. Referrals are the entire marketing budget of most small shops, and they only start once your work is worth talking about.
+
+## Set up the money side like a real business
+
+This is the boring part that keeps you out of trouble, and it's easiest to do from day one before there's a mess to untangle.
+
+- Open a separate bank account. Even as a one-person shop. Mixing shop money with grocery money hides whether you're actually making anything.
+
+- Track every expense. Blanks, ink, screens, the electric bill for the dryer — it's all cost, and it's all deductible. A shoebox works; a spreadsheet works better.
+
+- Figure out sales tax before your first invoice. Whether you collect, and on what, depends on your state — check with your state's revenue department or an accountant. Getting it right early beats fixing it later.
+
+- Keep books in something. Most shops land in QuickBooks eventually. The sooner your invoices and expenses live in one place, the sooner you actually know your numbers.
+
+## Know when to stop running it out of your head
+
+For the first stretch, a notebook and a spreadsheet are genuinely fine. Don't buy software to feel like a real business. The tipping point is real and you'll feel it: when quoting, chasing approvals, and remembering where every order stands starts eating the hours you should be printing, the manual system has become the bottleneck.
+
+That's the itch we built InkTracker for — quotes that pull live blank prices so you can't accidentally underprice, one production board so nothing falls through, art approval and payment on a single link, and a two-way QuickBooks sync so you're not typing every job in twice. You don't need it on day one. You'll know the day you do, because you'll be too busy to keep it all in your head — and that's a good problem, if the pricing was right on the way up.
+
+Starting a screen printing business isn't complicated, but it is a real trade with a real learning curve. Buy modestly, learn to print the same way every time, charge for all three of your costs, and treat the money like a business from the first order. Do that and the busy months actually pay you. That's the whole game.
+
 ---
 
 # Features
