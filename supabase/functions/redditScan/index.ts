@@ -223,11 +223,10 @@ async function handle(): Promise<Response> {
   return json({ ok: true, usingOAuth, fetched: fetchedIds.length, newLeads: leads.length, emailed: leads.length > 0 });
 }
 
-// Provenance row: "did the scan run, and what did it see?". qb_event_log's
-// status is a constrained enum (success/error/skipped/duplicate/started) and
-// shop_owner + direction are NOT NULL — mirror the systemHealthCheck row shape.
 // True if the most recent scan run in the last 20h was also a Reddit block —
-// used to throttle the "couldn't reach Reddit" alert to ~once/day.
+// used to throttle the "couldn't reach Reddit" alert to ~once/day. A blocked
+// run is logged with status='skipped' (NOT 'error' — 'error' is what the daily
+// QuickBooks error-spike digest counts, and a Reddit block is not a QB error).
 async function recentlyBlocked(db: ReturnType<typeof admin>): Promise<boolean> {
   try {
     const since = new Date(Date.now() - 20 * 3600 * 1000).toISOString();
@@ -235,7 +234,7 @@ async function recentlyBlocked(db: ReturnType<typeof admin>): Promise<boolean> {
       .from("qb_event_log")
       .select("status")
       .eq("action", "reddit_scan_run")
-      .eq("status", "error")
+      .eq("status", "skipped")
       .gte("created_at", since)
       .limit(1);
     return (data?.length ?? 0) > 0;
@@ -244,6 +243,14 @@ async function recentlyBlocked(db: ReturnType<typeof admin>): Promise<boolean> {
   }
 }
 
+// Provenance row: "did the scan run, and what did it see?". qb_event_log's
+// status is a constrained enum (success/error/skipped/duplicate/started) and
+// shop_owner + direction are NOT NULL — mirror the systemHealthCheck row shape.
+// IMPORTANT: a Reddit block logs as 'skipped', NOT 'error'. qbReconcile's daily
+// error-spike digest counts every status='error' row regardless of action, so
+// logging Reddit blocks as 'error' fired a false "QuickBooks error spike" alert
+// (14 hourly blocks > threshold of 5). A scan that couldn't reach Reddit didn't
+// error — it had nothing to do.
 async function logRun(
   db: ReturnType<typeof admin>,
   { status, detail }: { status: "ok" | "reddit_unreachable"; detail: string },
@@ -253,7 +260,7 @@ async function logRun(
       shop_owner: "__system__",
       action: "reddit_scan_run",
       direction: "inbound",
-      status: status === "ok" ? "success" : "error",
+      status: status === "ok" ? "success" : "skipped",
       response_body: { detail },
     });
   } catch (err) {

@@ -832,6 +832,10 @@ async function scanAndAlertQbErrors(adminClient: any): Promise<{ scanned: number
       .from("qb_event_log")
       .select("shop_owner, action, error_message, created_at, status")
       .eq("status", "error")
+      // This is the QUICKBOOKS error digest. qb_event_log is reused by a few
+      // non-QB system jobs (e.g. reddit_scan_run) — exclude them so a Reddit
+      // outage can't masquerade as a QuickBooks error spike.
+      .neq("action", "reddit_scan_run")
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(500);
