@@ -22,6 +22,9 @@ import { SITE, GUIDE } from "./content/comparisons.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
+// Sitemap <lastmod> — honest "last reviewed" marker, synced with the other
+// content generators. Bump on a real content update.
+const CONTENT_LASTMOD = "2026-09-11";
 const OUT_DIR = join(ROOT, "public", "compare");
 
 const esc = (s) =>
@@ -204,7 +207,7 @@ ${siteFooter}
 // ── sitemap sync (managed block) ────────────────────────────────────────────
 function syncSitemap() {
   const path = join(ROOT, "public", "sitemap.xml");
-  const block = `  <!-- compare-pages:start -->\n  <url>\n    <loc>${GUIDE.url}</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.7</priority>\n  </url>\n  <!-- compare-pages:end -->`;
+  const block = `  <!-- compare-pages:start -->\n  <url>\n    <loc>${GUIDE.url}</loc>\n    <lastmod>${CONTENT_LASTMOD}</lastmod>\n    <changefreq>monthly</changefreq>\n    <priority>0.7</priority>\n  </url>\n  <!-- compare-pages:end -->`;
   let xml = readFileSync(path, "utf8");
   if (xml.includes("<!-- compare-pages:start -->")) {
     xml = xml.replace(/  <!-- compare-pages:start -->[\s\S]*?  <!-- compare-pages:end -->/, block);

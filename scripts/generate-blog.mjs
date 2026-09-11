@@ -18,6 +18,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const PUBLIC = join(ROOT, "public");
 
+// Sitemap <lastmod> for pages that don't carry their own content date
+// (features/tools/compare/static). Bump this when those pages get a real
+// content update — it's an honest "last reviewed" marker, not a build stamp,
+// so it doesn't churn every deploy. Kept in sync across the generators.
+const CONTENT_LASTMOD = "2026-09-11";
+
 const esc = (s) =>
   String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -511,6 +517,39 @@ function renderForPrinters() {
   const canonical = `${SITE.baseUrl}/for-printers`;
   const title = "InkTracker — Print Shop Software for Screen Printers & Embroiderers";
   const desc = "Print shop software built by a working printer: quoting with live blank pricing, a shared production board, and two-way QuickBooks sync — all in one place. Start a 14-day free trial.";
+  // Structured data: this is the general product page, so it carries the
+  // SoftwareApplication schema (mirrors the homepage) plus a breadcrumb —
+  // every other static marketing page emits JSON-LD; this one was the gap.
+  const breadcrumb = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "InkTracker", item: `${SITE.baseUrl}/` },
+      { "@type": "ListItem", position: 2, name: "For printers", item: canonical },
+    ],
+  };
+  const softwareApp = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "InkTracker",
+    applicationCategory: "BusinessApplication",
+    applicationSubCategory: "Screen Printing Shop Management Software",
+    operatingSystem: "Web, iOS",
+    url: canonical,
+    description: desc,
+    offers: {
+      "@type": "Offer",
+      price: "99.00",
+      priceCurrency: "USD",
+      description: "$99/month or $999/year. 14-day free trial.",
+    },
+    featureList: [
+      "Quoting with live garment pricing",
+      "Production scheduling and shop-floor board",
+      "Invoicing and payments",
+      "Two-way QuickBooks Online sync",
+    ],
+  };
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -526,6 +565,7 @@ function renderForPrinters() {
   <meta property="og:url" content="${esc(canonical)}" />
   <meta property="og:image" content="${SITE.logo}" />
   <meta name="twitter:card" content="summary" />
+  ${[breadcrumb, softwareApp].map(ldJson).join("\n  ")}
   ${FONTS}
   <style>${CSS}</style>
 </head>
@@ -605,15 +645,22 @@ ${siteFooter}
 // ── sitemap sync (managed block, mirrors the compare pattern) ─────────────────
 function syncSitemap(posts) {
   const path = join(PUBLIC, "sitemap.xml");
+  // lastmod: each post carries its own `updated` date; the /blog index and
+  // /for-printers use the newest post date and the content-review date
+  // respectively. Real dates (not build time) so crawlers get an honest
+  // freshness signal that doesn't churn on every deploy.
+  // Not every post has an explicit `updated`; fall back to its publish date.
+  const modOf = (p) => p.updated || p.date || CONTENT_LASTMOD;
+  const newestUpdated = posts.map(modOf).sort().at(-1) || CONTENT_LASTMOD;
   const urls = [
-    `${SITE.baseUrl}/blog`,
-    ...posts.map((p) => `${SITE.baseUrl}/blog/${p.slug}`),
-    `${SITE.baseUrl}/for-printers`,
+    { loc: `${SITE.baseUrl}/blog`, lastmod: newestUpdated },
+    ...posts.map((p) => ({ loc: `${SITE.baseUrl}/blog/${p.slug}`, lastmod: modOf(p) })),
+    { loc: `${SITE.baseUrl}/for-printers`, lastmod: CONTENT_LASTMOD },
   ];
   const entries = urls
     .map(
-      (u) =>
-        `  <url>\n    <loc>${u}</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.6</priority>\n  </url>`,
+      ({ loc, lastmod }) =>
+        `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>monthly</changefreq>\n    <priority>0.6</priority>\n  </url>`,
     )
     .join("\n");
   const block = `  <!-- blog-pages:start -->\n${entries}\n  <!-- blog-pages:end -->`;

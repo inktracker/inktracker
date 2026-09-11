@@ -39,6 +39,7 @@ InkTracker is designed for small shops (1–10 people) that want opinionated, re
 
 ## Optional
 
+- [Full content (all guides + feature pages as plain text)](https://www.inktracker.app/llms-full.txt): every guide and feature page inlined for one-fetch ingestion
 - [Terms](https://www.inktracker.app/terms)
 - [Privacy](https://www.inktracker.app/privacy)
 - [Made with InkTracker](https://www.inktracker.app/made-with-inktracker)
