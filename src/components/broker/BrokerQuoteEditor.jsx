@@ -53,7 +53,10 @@ function blankQuote() {
     customer_id: "",
     customer_name: "",
     date: tod(),
+    // Auto turnaround default — re-anchors to the approval date at conversion
+    // unless a specific In-Hands date is set (see due_date_requested).
     due_date: addBusinessDays(new Date(), getStandardTurnaroundDays()),
+    due_date_requested: false,
     status: "Draft",
     notes: "",
     rush_rate: 0,
@@ -513,6 +516,9 @@ export default function BrokerQuoteEditor({
                     setQ({
                       ...q,
                       due_date: due,
+                      // A specific date the broker set → requested deadline,
+                      // kept on conversion (clear it to revert to turnaround).
+                      due_date_requested: !!due,
                       rush_rate: autoRate,
                     });
                   }}
@@ -650,6 +656,9 @@ export default function BrokerQuoteEditor({
                         ...q,
                         rush_rate: opt.rate,
                         due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
+                        // A turnaround pick is a turnaround, not a fixed date —
+                        // it re-anchors to the approval date at conversion.
+                        due_date_requested: false,
                       });
                     }}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${

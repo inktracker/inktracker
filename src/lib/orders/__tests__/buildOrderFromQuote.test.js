@@ -172,6 +172,42 @@ describe("buildOrderFromQuote — order defaults", () => {
     expect(order.order_date).toBe("2026-05-12"); // NOW is 2026-05-12T12:00Z
   });
 
+  // ── Due date: turnaround counts from APPROVAL, not from send (2026-09-11) ──
+  it("re-anchors an auto-turnaround due date to the approval date", () => {
+    // Quote sent Mon 5/11 with a Fri 5/15 due (4 business-day turnaround), then
+    // approved weeks later on Mon 6/1 → due becomes 6/1 + 4bd = Fri 6/5.
+    const order = buildOrderFromQuote(
+      baseQuote({ date: "2026-05-11", due_date: "2026-05-15", due_date_requested: false }),
+      { userEmail: "shop@x.com", now: NOW, today: "2026-06-01", approvalDate: "2026-06-01" },
+    );
+    expect(order.due_date).toBe("2026-06-05");
+  });
+
+  it("keeps a customer-requested in-hands date exactly (never pushed out)", () => {
+    const order = buildOrderFromQuote(
+      baseQuote({ date: "2026-05-11", due_date: "2026-05-15", due_date_requested: true }),
+      { userEmail: "shop@x.com", now: NOW, today: "2026-06-01", approvalDate: "2026-06-01" },
+    );
+    expect(order.due_date).toBe("2026-05-15");
+  });
+
+  it("falls back to the conversion date as the anchor when no approvalDate is passed", () => {
+    // No approvalDate → uses `today` (5/12 Tue) + 4bd = Mon 5/18.
+    const order = buildOrderFromQuote(
+      baseQuote({ date: "2026-05-11", due_date: "2026-05-15" }),
+      { userEmail: "shop@x.com", now: NOW, today: "2026-05-12" },
+    );
+    expect(order.due_date).toBe("2026-05-18");
+  });
+
+  it("leaves due_date null when the quote has none", () => {
+    const order = buildOrderFromQuote(
+      baseQuote({ due_date: null }),
+      { userEmail: "shop@x.com", now: NOW, approvalDate: "2026-06-01" },
+    );
+    expect(order.due_date).toBeNull();
+  });
+
   it("carries setup_total forward so the QB invoice doesn't drop the setup fee (NEW-09)", () => {
     const order = buildOrderFromQuote(baseQuote({ setup_total: 45 }), { userEmail: "shop@x.com", now: NOW });
     expect(order.setup_total).toBe(45);

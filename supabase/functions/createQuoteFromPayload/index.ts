@@ -150,6 +150,11 @@ Deno.serve(async (req) => {
     const lineItems = payload.line_items.map((li: any, i: number) => normalizeLineItem(li, i));
 
     const today = new Date().toISOString().split("T")[0];
+    // A customer-provided in-hands date is a HARD deadline the order must keep;
+    // the +14 fallback is just a default turnaround that should re-anchor to the
+    // approval date at conversion. due_date_requested distinguishes them so
+    // buildOrderFromQuote knows which due dates to move and which to preserve.
+    const dueDateRequested = Boolean(payload.in_hands_date || payload.due_date);
     const inHands = payload.in_hands_date || payload.due_date || (() => {
       const d = new Date();
       d.setDate(d.getDate() + 14);
@@ -180,6 +185,7 @@ Deno.serve(async (req) => {
       status: safeStatus,
       date: today,
       due_date: inHands,
+      due_date_requested: dueDateRequested,
       expires_date: expires,
       tax_rate: Math.max(0, Number(payload.tax_rate ?? profile.default_tax_rate ?? 0) || 0),
       line_items: lineItems,
