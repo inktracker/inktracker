@@ -5,6 +5,7 @@ import { lookupStyle, SUPPLIERS } from "@/api/suppliers";
 import { fmtMoney } from "@/components/shared/pricing";
 import { aggregateBlankNeeds, ordersNeedingGoods } from "@/lib/orders/consolidateBlankNeeds";
 import { resolveAcNeedsToItems } from "@/lib/orders/resolveAcPoItems";
+import { buildSsPoItems } from "@/lib/orders/buildSsPoItems";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { Loader2, Truck, AlertCircle, PackageCheck, X } from "lucide-react";
 
@@ -34,7 +35,7 @@ export default function ConsolidateBuyingModal({ user, existingPos, onClose, onC
   const [loading, setLoading] = useState(true);
   const [openOrders, setOpenOrders] = useState([]);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
-  const [creating, setCreating] = useState(false);
+  const [busySupplier, setBusySupplier] = useState(null);
   const [createError, setCreateError] = useState(null);
   const [resolveWarn, setResolveWarn] = useState(null);
 
@@ -72,47 +73,64 @@ export default function ConsolidateBuyingModal({ user, existingPos, onClose, onC
     });
   }
 
+  // Order ids a supplier group covers — so submit ticks every one of them.
+  const coveredIds = (group) => [
+    ...new Set(group.lines.flatMap((l) => l.sourceOrders.map((s) => s.orderId)).filter(Boolean)),
+  ];
+
+  // notes → the supplier's order notes on submit, so keep it supplier-safe:
+  // provenance only, no internal "couldn't resolve" chatter (that's the toast).
+  async function createPo(supplier, items, orderIds) {
+    return base44.entities.PurchaseOrder.create({
+      shop_owner: shopScope(user),
+      supplier,
+      status: "draft",
+      reference: `PO-${new Date().toISOString().slice(0, 10)}`,
+      items,
+      source_order_ids: orderIds,
+      notes: `Consolidated from ${orderIds.length} open order${orderIds.length === 1 ? "" : "s"}.`,
+    });
+  }
+
   async function createAcPo() {
     const group = bySupplier[SUPPLIERS.AC];
-    if (!group || creating) return;
-    setCreating(true);
+    if (!group || busySupplier) return;
+    setBusySupplier(SUPPLIERS.AC);
     setCreateError(null);
     setResolveWarn(null);
     try {
-      const { items, unresolved: unres, lookupErrors } = await resolveAcNeedsToItems(group.lines, {
-        lookup: acLookup,
-      });
+      const { items, unresolved: unres, lookupErrors } = await resolveAcNeedsToItems(group.lines, { lookup: acLookup });
       if (items.length === 0) {
-        setCreateError(
-          "Couldn't resolve any AS Colour items — every style lookup failed or matched no variants. Check the style numbers, or add items manually on the PO.",
-        );
+        setCreateError("Couldn't resolve any AS Colour items — every style lookup failed or matched no variants. Check the style numbers, or add items manually on the PO.");
         return;
       }
-      // Every AS Colour order covered by these items, so submit ticks them all.
-      const coveredOrderIds = [
-        ...new Set(group.lines.flatMap((l) => l.sourceOrders.map((s) => s.orderId)).filter(Boolean)),
-      ];
-      // notes → AS Colour orderNotes on submit, so keep it supplier-safe:
-      // provenance only, no internal "couldn't resolve" chatter (that goes to
-      // the toast / warn banner below).
-      const created = await base44.entities.PurchaseOrder.create({
-        shop_owner: shopScope(user),
-        supplier: SUPPLIERS.AC,
-        status: "draft",
-        reference: `PO-${new Date().toISOString().slice(0, 10)}`,
-        items,
-        source_order_ids: coveredOrderIds,
-        notes: `Consolidated from ${coveredOrderIds.length} open order${coveredOrderIds.length === 1 ? "" : "s"}.`,
-      });
-      if (unres.length || lookupErrors.length) {
-        // Surface but don't block — the draft is created, some lines need a hand.
-        setResolveWarn({ unresolved: unres, lookupErrors });
-      }
+      const created = await createPo(SUPPLIERS.AC, items, coveredIds(group));
+      if (unres.length || lookupErrors.length) setResolveWarn({ unresolved: unres, lookupErrors });
       onCreated?.(created, { unresolved: unres, lookupErrors });
     } catch (err) {
       setCreateError(err?.message || "Couldn't create the consolidated PO.");
     } finally {
-      setCreating(false);
+      setBusySupplier(null);
+    }
+  }
+
+  async function createSsPo() {
+    const group = bySupplier[SUPPLIERS.SS];
+    if (!group || busySupplier) return;
+    setBusySupplier(SUPPLIERS.SS);
+    setCreateError(null);
+    try {
+      const items = buildSsPoItems(group.lines); // S&S resolves real SKUs at submit
+      if (items.length === 0) {
+        setCreateError("No S&S items to order from the selected jobs.");
+        return;
+      }
+      const created = await createPo(SUPPLIERS.SS, items, coveredIds(group));
+      onCreated?.(created, {});
+    } catch (err) {
+      setCreateError(err?.message || "Couldn't create the consolidated S&S PO.");
+    } finally {
+      setBusySupplier(null);
     }
   }
 
@@ -185,22 +203,20 @@ export default function ConsolidateBuyingModal({ user, existingPos, onClose, onC
                       ))}
                     </div>
                     <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100">
-                      {isAc ? (
+                      {isAc || name === SUPPLIERS.SS ? (
                         <button
                           type="button"
-                          onClick={createAcPo}
-                          disabled={creating}
+                          onClick={isAc ? createAcPo : createSsPo}
+                          disabled={!!busySupplier}
                           className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2 rounded-xl disabled:opacity-60"
                         >
-                          {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
-                          {creating ? "Building PO…" : "Create AS Colour draft PO"}
+                          {busySupplier === name ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
+                          {busySupplier === name ? "Building PO…" : `Create ${name} draft PO`}
                         </button>
                       ) : (
                         <div className="text-xs text-slate-500 flex items-center gap-1.5">
                           <AlertCircle className="w-3.5 h-3.5 text-slate-400" />
-                          {name === SUPPLIERS.SS
-                            ? "Order S&S through the Inventory restock cart for now — one-click S&S consolidation is next."
-                            : "Order these directly with the supplier."}
+                          Order these directly with the supplier — {name} ordering isn't wired into InkTracker yet.
                         </div>
                       )}
                     </div>

@@ -133,7 +133,71 @@ export const AC_REFERENCE_MAX = 20;
 // Client-side mirror of supabase/functions/_shared/acOrderLogic.js
 // validateOrderPayload. Returns array of human-readable errors.
 // The server re-validates — this is for UX, not security.
-export function validateForSubmit(po) {
+// Build the payload shape ssPlaceOrder expects (a different contract from AS
+// Colour: poNumber + shipTo + lines; S&S resolves guessed SKUs → real SKUs
+// server-side, so a line only needs style + colour + size + qty).
+export function buildSsSubmitPayload(po) {
+  const sa = po.ship_to || {};
+  const name = sa.company || [sa.firstName, sa.lastName].filter(Boolean).join(" ").trim();
+  return {
+    poNumber: String(po.reference || ""),
+    shipTo: {
+      name: name || "",
+      address1: sa.address1 || "",
+      address2: sa.address2 || "",
+      city: sa.city || "",
+      state: sa.state || "",
+      zip: sa.zip || "",
+      country: sa.countryCode || "US",
+      phone: sa.phone || "",
+      email: sa.email || "",
+    },
+    lines: (po.items || []).map((it) => ({
+      sku: String(it.sku || ""),
+      style: String(it.styleCode || ""),
+      color: String(it.color || ""),
+      size: String(it.size || ""),
+      qty: Number(it.quantity) || 0,
+    })),
+    shippingMethod: String(po.shipping_method || "").trim() || "Ground",
+    warehouse: String(po.warehouse || ""),
+  };
+}
+
+// Supplier-aware pre-submit validation. AS Colour and S&S have different
+// required fields (AS Colour: shipping method, first/last name, country code,
+// 20-char reference cap; S&S: just a complete ship-to + a style/sku per line).
+export function validateForSubmit(po, supplier) {
+  if (!po) return ["nothing to submit"];
+  if (supplier === "S&S Activewear") return validateSsSubmit(po);
+  return validateAcSubmit(po);
+}
+
+function validateSsSubmit(po) {
+  const errors = [];
+  if (!po.reference || !String(po.reference).trim()) errors.push("PO reference is required");
+  const sa = po.ship_to;
+  if (!sa || typeof sa !== "object") {
+    errors.push("Shipping address is required");
+  } else {
+    if (!sa.address1) errors.push("Shipping address: street is required");
+    if (!sa.city) errors.push("Shipping address: city is required");
+    if (!sa.state) errors.push("Shipping address: state is required");
+    if (!sa.zip) errors.push("Shipping address: zip is required");
+  }
+  if (!Array.isArray(po.items) || po.items.length === 0) {
+    errors.push("At least one item is required");
+  } else {
+    po.items.forEach((it, i) => {
+      if (!it?.styleCode && !it?.sku) errors.push(`Item ${i + 1}: style number or SKU is required`);
+      const qty = Number(it?.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) errors.push(`Item ${i + 1}: quantity must be positive`);
+    });
+  }
+  return errors;
+}
+
+function validateAcSubmit(po) {
   const errors = [];
   if (!po) return ["nothing to submit"];
   if (!po.reference || !String(po.reference).trim()) {

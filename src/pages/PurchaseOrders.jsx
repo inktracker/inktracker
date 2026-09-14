@@ -10,6 +10,7 @@ import {
   updateItemQty,
   validateForSubmit,
   buildSubmitPayload,
+  buildSsSubmitPayload,
   mergePOItems,
   mergeableDestinations,
   buildMergedPO,
@@ -286,7 +287,13 @@ export default function PurchaseOrders() {
 
   async function submitSelected() {
     if (!selected || readOnly) return;
-    const errors = validateForSubmit(selected);
+    // SanMar can't be ordered through the API yet — say so instead of a 400
+    // dead-end. The shop places it directly, then "Mark submitted".
+    if (selected.supplier === SUPPLIERS.SANMAR) {
+      setSubmitError("SanMar orders can't be placed through InkTracker yet — order it directly with SanMar, then use “Mark submitted”.");
+      return;
+    }
+    const errors = validateForSubmit(selected, selected.supplier);
     if (errors.length) {
       setSubmitError(errors.join("\n"));
       return;
@@ -298,10 +305,17 @@ export default function PurchaseOrders() {
     setSubmitError(null);
     try {
       // idempotencyKey = the PO's stable UUID, so a double-submit / retry
-      // can't place a second real order (audit INT-02).
-      const payload = { ...buildSubmitPayload(selected), idempotencyKey: selected.id };
+      // can't place a second real order (audit INT-02). Payload shape differs
+      // per supplier (AS Colour vs S&S).
+      const base = selected.supplier === SUPPLIERS.SS
+        ? buildSsSubmitPayload(selected)
+        : buildSubmitPayload(selected);
+      const payload = { ...base, idempotencyKey: selected.id };
       const result = await placeOrder(selected.supplier, payload);
-      const supplierOrderId = result?.order?.id ? String(result.order.id) : null;
+      // AS Colour returns order.id; S&S returns order.orderNumber/OrderNumber/orderId.
+      const o = result?.order || {};
+      const rawId = o.id ?? o.orderNumber ?? o.OrderNumber ?? o.orderId ?? null;
+      const supplierOrderId = rawId != null ? String(rawId) : null;
       await patchSelected({
         status: "submitted",
         supplier_order_id: supplierOrderId,

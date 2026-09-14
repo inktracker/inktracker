@@ -7,6 +7,7 @@ import {
   updateItemQty,
   validateForSubmit,
   buildSubmitPayload,
+  buildSsSubmitPayload,
   mergePOItems,
   mergeableDestinations,
   buildMergedPO,
@@ -628,5 +629,43 @@ describe("applyPOItemsToGoodsProgress", () => {
       .toEqual({ goods_progress: {} });
     expect(applyPOItemsToGoodsProgress(baseOrder, [{}], null, NOW))
       .toEqual({ goods_progress: {} });
+  });
+});
+
+describe("S&S submit path (B1 — non-AC POs were a submit dead-end)", () => {
+  const ssPo = {
+    reference: "PO-2026-09-14",
+    shipping_method: "",
+    ship_to: { company: "My Shop", address1: "1 Ink St", city: "Reno", state: "NV", zip: "89501", countryCode: "US", email: "s@x.com" },
+    warehouse: "",
+    items: [
+      { sku: "3600-BLACK-M", styleCode: "3600", color: "Black", size: "M", quantity: 12, warehouse: "" },
+      { sku: "3600-BLACK-L", styleCode: "3600", color: "Black", size: "L", quantity: 6, warehouse: "" },
+    ],
+  };
+
+  it("buildSsSubmitPayload maps to the ssPlaceOrder shape (poNumber, shipTo, lines) with Ground default", () => {
+    const p = buildSsSubmitPayload(ssPo);
+    expect(p.poNumber).toBe("PO-2026-09-14");
+    expect(p.shippingMethod).toBe("Ground"); // blank → Ground
+    expect(p.shipTo).toMatchObject({ name: "My Shop", address1: "1 Ink St", city: "Reno", state: "NV", zip: "89501", country: "US" });
+    expect(p.lines).toEqual([
+      { sku: "3600-BLACK-M", style: "3600", color: "Black", size: "M", qty: 12 },
+      { sku: "3600-BLACK-L", style: "3600", color: "Black", size: "L", qty: 6 },
+    ]);
+  });
+
+  it("validateForSubmit routes by supplier: S&S needs a complete ship-to + style/sku, NOT AC's shipping method / country / 20-char cap", () => {
+    expect(validateForSubmit(ssPo, "S&S Activewear")).toEqual([]); // valid despite no shipping_method / firstName
+    const bad = validateForSubmit({ ...ssPo, ship_to: { address1: "x" } }, "S&S Activewear");
+    expect(bad).toEqual(expect.arrayContaining([expect.stringMatching(/city/), expect.stringMatching(/state/), expect.stringMatching(/zip/)]));
+    const noStyle = validateForSubmit({ ...ssPo, items: [{ quantity: 3 }] }, "S&S Activewear");
+    expect(noStyle).toEqual(expect.arrayContaining([expect.stringMatching(/style number or SKU/)]));
+  });
+
+  it("still validates AS Colour strictly when supplier is AS Colour (regression)", () => {
+    const acErrors = validateForSubmit({ reference: "P", ship_to: {}, items: [] }, "AS Colour");
+    expect(acErrors.length).toBeGreaterThan(0);
+    expect(acErrors).toEqual(expect.arrayContaining([expect.stringMatching(/Shipping method/)]));
   });
 });
