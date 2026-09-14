@@ -64,6 +64,9 @@ export default function ConsolidateBuyingModal({ user, existingPos, onClose, onC
     [selectedOrders],
   );
   const supplierNames = Object.keys(bySupplier).sort();
+  // Free-freight thresholds per supplier (display-name keyed) — this modal is
+  // FOR pooling jobs to clear a freight minimum, so show how close each batch is.
+  const thresholds = user?.free_freight_thresholds || {};
 
   function toggleOrder(id) {
     setSelectedIds((prev) => {
@@ -182,11 +185,20 @@ export default function ConsolidateBuyingModal({ user, existingPos, onClose, onC
               ) : supplierNames.map((name) => {
                 const g = bySupplier[name];
                 const isAc = name === SUPPLIERS.AC;
+                const threshold = Number(thresholds[name]) || 0;
+                const toFreeFreight = threshold > 0 ? Math.max(0, threshold - g.estSubtotal) : 0;
                 return (
                   <div key={name} className="border border-slate-200 rounded-xl overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100">
                       <div className="font-semibold text-slate-800 text-sm">{name}</div>
-                      <div className="text-xs text-slate-500">{g.totalQty} pc · ~{fmtMoney(g.estSubtotal)}</div>
+                      <div className="text-xs text-slate-500 text-right">
+                        <div>{g.totalQty} pc · ~{fmtMoney(g.estSubtotal)}</div>
+                        {threshold > 0 && (
+                          toFreeFreight > 0
+                            ? <div className="text-amber-600 font-semibold">{fmtMoney(toFreeFreight)} to free freight</div>
+                            : <div className="text-emerald-600 font-semibold">Clears free freight ✓</div>
+                        )}
+                      </div>
                     </div>
                     <div className="divide-y divide-slate-100">
                       {g.lines.map((l, i) => (
