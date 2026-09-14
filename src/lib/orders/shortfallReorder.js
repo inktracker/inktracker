@@ -58,10 +58,11 @@ export function buildShortfallReorderPayloads(order, user) {
   for (const li of order.line_items || []) {
     const shortfall = li?._shortfall || {};
     const supplier = li?.supplier || DEFAULT_SUPPLIER;
+    const style = li.style || li.styleNumber || "";
+    const unitCost = Number(li.garmentCost) || Number(li.casePrice) || 0;
     for (const [size, raw] of Object.entries(shortfall)) {
       const qty = parseInt(raw, 10) || 0;
       if (qty <= 0) continue;
-      const style = li.style || "";
       const color = li.garmentColor || li.color || "";
       const colorClean = String(color)
         .replace(/[^A-Z0-9]/gi, "")
@@ -69,7 +70,12 @@ export function buildShortfallReorderPayloads(order, user) {
         .slice(0, 6);
       const sku = li.sku || (style ? `${style}${colorClean}-${size}` : "");
       const bucket = itemsBySupplier.get(supplier) || [];
-      bucket.push({ sku, qty, color, size, style });
+      // CANONICAL item shape { sku, styleCode, color, size, quantity, unitPrice,
+      // warehouse } — the old { qty, style } shape broke poSubtotal (read
+      // `quantity`), buildSubmitPayload (NaN qty), mergeItem, and the checklist
+      // auto-mark (matched on `styleCode`). Warehouse is blank → falls to the
+      // PO-level default at submit / auto-routes when items are re-looked-up.
+      bucket.push({ sku, styleCode: style, color, size, quantity: qty, unitPrice: unitCost, warehouse: "" });
       itemsBySupplier.set(supplier, bucket);
     }
   }
@@ -82,16 +88,40 @@ export function buildShortfallReorderPayloads(order, user) {
   // resulting POs sort predictably regardless of how line items
   // were ordered upstream.
   const suppliers = [...itemsBySupplier.keys()].sort();
+  // A minimal ship-to so the draft matches a normally-created PO (the operator
+  // completes city/state/zip in the editor before submit). Mirrors
+  // PurchaseOrders.defaultShipTo.
+  const shipTo = {
+    company: user?.shop_name || "",
+    firstName: "",
+    lastName: "",
+    address1: user?.address || "",
+    address2: "",
+    city: "",
+    state: "",
+    zip: "",
+    countryCode: "US",
+    email: user?.email || "",
+    phone: user?.phone || "",
+  };
+  // Reference must fit AS Colour's 20-char cap or the PO can't submit. Use the
+  // order ref (operators recognize it; the PO is also linked via source_order_id)
+  // + a short supplier code when multiple, then hard-cap at 20.
+  const shortSupplier = { "AS Colour": "AC", "S&S Activewear": "SS", SanMar: "SM" };
   return suppliers.map((supplier) => ({
     shop_owner: shopScope(user),
     supplier,
     status: "draft",
-    reference: multiSupplier
-      ? `Reorder — ${orderRef} (${supplier})`
-      : `Reorder — ${orderRef}`,
-    ship_to: "",
+    reference: (multiSupplier
+      ? `${orderRef}-${shortSupplier[supplier] || supplier.slice(0, 4)}`
+      : orderRef
+    ).slice(0, 20),
+    ship_to: shipTo,
     items: itemsBySupplier.get(supplier),
-    source_order_id: order.order_id || order.id,
+    // The UUID column — order.id, NEVER order.order_id (the human ref like
+    // "ORD-2026-XYZ" caused a 22P02 insert failure that broke the whole
+    // Reorder-Shortfall feature). Null-guard rather than fall back to the ref.
+    source_order_id: order.id || null,
   }));
 }
 

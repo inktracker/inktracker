@@ -73,21 +73,30 @@ describe("buildShortfallReorderPayload (single-supplier wrapper)", () => {
     const payload = buildShortfallReorderPayload(order, USER);
     expect(payload.items).toHaveLength(3);
     expect(payload.items).toContainEqual(
-      expect.objectContaining({ style: "1717", color: "Black", size: "S", qty: 1, sku: "1717BLACK-S" }),
+      expect.objectContaining({ styleCode: "1717", color: "Black", size: "S", quantity: 1, sku: "1717BLACK-S" }),
     );
     expect(payload.items).toContainEqual(
-      expect.objectContaining({ style: "5102", color: "White", size: "L", qty: 3, sku: "5102WHITE-L" }),
+      expect.objectContaining({ styleCode: "5102", color: "White", size: "L", quantity: 3, sku: "5102WHITE-L" }),
     );
   });
 
-  it("BR4 — links source_order_id back to the originating order", () => {
-    const payload = buildShortfallReorderPayload(makeOrder(), USER);
-    expect(payload.source_order_id).toBe("ORD-2026-XYZ");
+  it("BR3b — emits the CANONICAL item shape (quantity/styleCode/unitPrice/warehouse), not the old {qty,style}", () => {
+    const order = makeOrder({ line_items: [{ id: "li1", style: "1717", garmentColor: "Black", garmentCost: 4.25, _shortfall: { M: 2 } }] });
+    const it = buildShortfallReorderPayload(order, USER).items[0];
+    expect(it).toEqual({ sku: "1717BLACK-M", styleCode: "1717", color: "Black", size: "M", quantity: 2, unitPrice: 4.25, warehouse: "" });
+    expect(it.qty).toBeUndefined();
+    expect(it.style).toBeUndefined();
   });
 
-  it("BR5 — reference uses the order_id when only one supplier", () => {
+  it("BR4 — links source_order_id to the order UUID (not the human order_id — the B2 insert bug)", () => {
     const payload = buildShortfallReorderPayload(makeOrder(), USER);
-    expect(payload.reference).toBe("Reorder — ORD-2026-XYZ");
+    expect(payload.source_order_id).toBe("uuid-1");
+  });
+
+  it("BR5 — reference is the order ref, ≤20 chars for AS Colour", () => {
+    const payload = buildShortfallReorderPayload(makeOrder(), USER);
+    expect(payload.reference).toBe("ORD-2026-XYZ");
+    expect(payload.reference.length).toBeLessThanOrEqual(20);
   });
 
   it("BR6 — defaults supplier to AS Colour when no supplier set on line items", () => {
@@ -135,7 +144,7 @@ describe("buildShortfallReorderPayloads (multi-supplier)", () => {
     const payloads = buildShortfallReorderPayloads(order, USER);
     expect(payloads).toHaveLength(1);
     expect(payloads[0].supplier).toBe("AS Colour");
-    expect(payloads[0].reference).toBe("Reorder — ORD-2026-XYZ");
+    expect(payloads[0].reference).toBe("ORD-2026-XYZ");
     expect(payloads[0].items).toHaveLength(2);
   });
 
@@ -156,8 +165,8 @@ describe("buildShortfallReorderPayloads (multi-supplier)", () => {
     const ss = payloads.find((p) => p.supplier === "S&S Activewear");
     expect(ac.items).toHaveLength(2);
     expect(ss.items).toHaveLength(1);
-    expect(ac.items.map((i) => i.style).sort()).toEqual(["1717", "5102"]);
-    expect(ss.items[0].style).toBe("G500");
+    expect(ac.items.map((i) => i.styleCode).sort()).toEqual(["1717", "5102"]);
+    expect(ss.items[0].styleCode).toBe("G500");
   });
 
   it("BRM4 — multi-supplier references include supplier suffix", () => {
@@ -169,9 +178,9 @@ describe("buildShortfallReorderPayloads (multi-supplier)", () => {
     });
     const payloads = buildShortfallReorderPayloads(order, USER);
     expect(payloads.find((p) => p.supplier === "AS Colour").reference)
-      .toBe("Reorder — ORD-2026-XYZ (AS Colour)");
+      .toBe("ORD-2026-XYZ-AC");
     expect(payloads.find((p) => p.supplier === "S&S Activewear").reference)
-      .toBe("Reorder — ORD-2026-XYZ (S&S Activewear)");
+      .toBe("ORD-2026-XYZ-SS");
   });
 
   it("BRM5 — line items without supplier default to AS Colour", () => {
