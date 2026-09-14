@@ -2,30 +2,33 @@ import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { claimSupplierOrder, finishSupplierOrder } from "../_shared/supplierIdempotency.js";
 import { canPlaceOrder } from "../_shared/acOrderLogic.js";
+import { loadProfileWithSecrets, loadShopProfileForUser } from "../_shared/profileSecrets.ts";
 
 const SS_BASE = "https://api.ssactivewear.com/v2";
-const SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
-const SS_KEY = Deno.env.get("SS_API_KEY")!;
-const AUTH = btoa(`${SS_ACCOUNT}:${SS_KEY}`);
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-function ssHeaders() {
-  return { Authorization: `Basic ${AUTH}`, Accept: "application/json", "Content-Type": "application/json" };
+// Basic-auth header for a SPECIFIC shop's S&S account. There is intentionally
+// no platform/env fallback here: an order bills whatever S&S account is on the
+// request, so every order MUST use the ordering shop's own account number +
+// API key (resolved strict, below) — never the platform master. Catalog
+// browsing (ssLookupStyle / ssSearchCatalog) still falls back to the platform
+// account, but placing a real-money order never does.
+function ssHeaders(auth: string) {
+  return { Authorization: `Basic ${auth}`, Accept: "application/json", "Content-Type": "application/json" };
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    // Auth is REQUIRED. ssPlaceOrder posts to the real S&S Activewear API
-    // using the platform's master credentials (SS_ACCOUNT_NUMBER / SS_API_KEY
-    // from env). Every order placed costs real money against that account.
-    // Without auth, anonymous attackers could trigger arbitrary orders shipped
-    // to any address they chose.
+    // Auth is REQUIRED. ssPlaceOrder posts a real-money order to the S&S
+    // Activewear API against the ORDERING SHOP'S OWN S&S account (resolved
+    // below). Without auth, anonymous attackers could trigger arbitrary orders
+    // shipped to any address they chose.
     const authHeader = req.headers.get("authorization") || "";
     if (!authHeader.startsWith("Bearer ")) {
       return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
@@ -39,22 +42,44 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
     }
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: profile } = await admin.from("profiles").select("role, email, shop_owner, subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
 
-    // Role gate on the SIGNED-IN user's own profile — same guard acPlaceOrder
-    // uses. ssPlaceOrder posts real-money orders against the platform's master
-    // S&S account, so a broker/employee must never reach it. Subscription state
-    // is NOT an authorization boundary (a team member can inherit an active
-    // owner tier), so role is checked independently and first.
-    if (!canPlaceOrder(profile)) {
+    // Role gate on the SIGNED-IN user's own profile — a broker/employee must
+    // never place real-money orders. Subscription state is NOT an authorization
+    // boundary (a team member inherits the owner's tier), so role is checked
+    // independently and first. Mirrors acPlaceOrder.
+    const callerProfile = await loadProfileWithSecrets(admin, { auth_id: user.id });
+    if (!canPlaceOrder(callerProfile)) {
       return Response.json(
         { error: "Your account role can't place supplier orders. Ask your shop owner or manager." },
         { status: 403, headers: CORS },
       );
     }
 
+    // Resolve the SHOP owner's profile — for owners/managers this is their own,
+    // for a broker it's the assigned shop. Its S&S account is the one billed.
+    const { profile } = await loadShopProfileForUser(admin, user.id);
+
     const blocked = await requireActiveTeamSubscription(admin, profile);
     if (blocked) return blocked;
+
+    // ── STRICT per-shop S&S credentials — NO platform/env fallback ──────
+    // Historically ssPlaceOrder used the platform master account
+    // (SS_ACCOUNT_NUMBER / SS_API_KEY), which meant EVERY shop's S&S order
+    // billed the platform's own account. Order placement charges money to
+    // whatever S&S account is on the request, so it MUST use the ordering
+    // shop's own account. A shop that hasn't entered its S&S account/key is
+    // refused (with a clear pointer to Account → Suppliers) rather than
+    // silently billing someone else. Catalog browsing keeps its env fallback;
+    // only order placement is strict — same posture as acPlaceOrder.
+    const ssAccount = (profile as { ss_account_number?: string | null } | null)?.ss_account_number || "";
+    const ssKey = (profile as { ss_api_key?: string | null } | null)?.ss_api_key || "";
+    if (!ssAccount || !ssKey) {
+      return Response.json(
+        { error: "This shop hasn't connected its S&S Activewear account yet. Add your S&S account number and API key in Account → Suppliers before placing an S&S order." },
+        { status: 400, headers: CORS },
+      );
+    }
+    const auth = btoa(`${ssAccount}:${ssKey}`);
 
     const { poNumber, shipTo, lines, shippingMethod = "Ground", testOrder = false, warehouse = "", idempotencyKey = "" } = await req.json();
 
@@ -118,7 +143,7 @@ Deno.serve(async (req) => {
         try {
           // Step 1: Get styleID from styles search
           const stylesRes = await fetch(`${SS_BASE}/styles?search=${encodeURIComponent(style)}`, {
-            headers: ssHeaders(),
+            headers: ssHeaders(auth),
             signal: AbortSignal.timeout(10000),
           });
           let styleID = "";
@@ -140,7 +165,7 @@ Deno.serve(async (req) => {
             continue;
           }
           const productsRes = await fetch(`${SS_BASE}/products?styleid=${styleID}`, {
-            headers: ssHeaders(),
+            headers: ssHeaders(auth),
             signal: AbortSignal.timeout(15000),
           });
           const productsText = await productsRes.text();
@@ -204,7 +229,7 @@ Deno.serve(async (req) => {
 
     const res = await fetch(`${SS_BASE}/orders/`, {
       method: "POST",
-      headers: ssHeaders(),
+      headers: ssHeaders(auth),
       body: JSON.stringify(ssOrder),
     });
 
