@@ -46,6 +46,11 @@ const NAV = [
   { label: "Floor Mode", page: "ShopFloor" },
   { label: "Customers", page: "Customers" },
   { label: "Inventory", page: "Inventory" },
+  // Purchase Orders lives in the Inventory section (sectionForPage) — same
+  // access gate as Inventory for managers. Previously reachable only by
+  // deep-link from an order; given its own nav door so the PO / consolidate-
+  // buying / receiving flow is discoverable (Joe 2026-09-14).
+  { label: "Purchase Orders", page: "PurchaseOrders" },
   { label: "Invoices", page: "Invoices" },
   // Performance is a READ surface — reports on the shop's own data, nothing to
   // write. Intentionally NOT feature-gated, so a read-only/expired shop can
