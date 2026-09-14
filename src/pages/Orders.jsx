@@ -15,6 +15,7 @@ import HintTip from "../components/shared/HintTip";
 import { useBillingGate, useReadOnly } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
+import { ensurePoDraftsForOrder } from "@/lib/orders/autoPoFromOrder";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { shopScope } from "@/lib/shopScope";
 
@@ -190,6 +191,18 @@ export default function Orders() {
       if (viewing?.id === id) {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
+      }
+      // Auto-create draft PO(s) when the order enters Order Goods (1A/2A).
+      // Idempotent + fire-and-forget; the helper self-checks for an existing PO.
+      if (nextStatus === "Order Goods" && user) {
+        ensurePoDraftsForOrder(updated, user)
+          .then(({ created }) => {
+            if (created?.length) {
+              const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
+              notify.success(`${label} created for ${updated.order_id || "this order"} — review on Purchase Orders.`);
+            }
+          })
+          .catch((e) => console.warn("[autoPO] ensurePoDraftsForOrder failed:", e));
       }
     } catch (err) {
       notify.error("Couldn't update the order status", err);
