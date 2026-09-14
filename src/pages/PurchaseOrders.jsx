@@ -301,6 +301,21 @@ export default function PurchaseOrders() {
     }
   }
 
+  // Supplier changed via the picker dropdown (as opposed to the "Switch to X"
+  // savings button). Clear the stale comparison so the auto-compare re-runs for
+  // the NEW supplier — which also re-prices the lines to that supplier's live
+  // cost (repriceToLive). Without this, the banner kept comparing the old
+  // supplier and the lines kept the old price.
+  async function changeSupplier(newSupplier) {
+    if (!selected || readOnly || newSupplier === selected.supplier) return;
+    setComparison(null);
+    try {
+      await patchSelected({ supplier: newSupplier });
+    } catch (err) {
+      notify.error("Couldn't change supplier", err);
+    }
+  }
+
   // Auto-compare: the moment a draft S&S/SanMar PO with items is opened, price
   // it through both suppliers so the best option is shown WITHOUT a click.
   // Lookups are memoized in sourcingOptions, so re-opening is cheap. Skips AS
@@ -788,6 +803,7 @@ export default function PurchaseOrders() {
               comparing={comparing}
               onCompareSuppliers={compareSuppliers}
               onSwitchSupplier={switchSupplier}
+              onSupplierChange={changeSupplier}
             />
           )}
         </div>
@@ -861,7 +877,7 @@ function defaultShipTo(user) {
   };
 }
 
-function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError, receiving = false, onToggleReceived, onCheckInItem, comparison = null, comparing = false, onCompareSuppliers, onSwitchSupplier }) {
+function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError, receiving = false, onToggleReceived, onCheckInItem, comparison = null, comparing = false, onCompareSuppliers, onSwitchSupplier, onSupplierChange }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
@@ -926,7 +942,7 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
               Supplier:
               <select
                 value={po.supplier}
-                onChange={(e) => onPatch({ supplier: e.target.value })}
+                onChange={(e) => (onSupplierChange ? onSupplierChange(e.target.value) : onPatch({ supplier: e.target.value }))}
                 disabled={editDisabled}
                 title={readOnly ? reason : undefined}
                 className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 disabled:opacity-60 disabled:cursor-not-allowed"

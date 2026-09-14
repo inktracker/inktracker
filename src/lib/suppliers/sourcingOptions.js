@@ -165,14 +165,17 @@ function withFreight(result, threshold) {
   };
 }
 
-// Compare a draft PO's total across its candidate suppliers. Returns
-// { current, alternatives, best } where each entry is a priceThroughSupplier
-// result (sale-aware) annotated with free-freight status from `thresholds`
-// (keyed by supplier display name). `best` is the cheapest supplier that
-// COVERS ALL lines. Only meaningful for S&S/SanMar POs.
+// Compare a draft PO across suppliers. Returns { current, alternatives, best }.
+// COVERAGE is evaluated for ALL THREE suppliers (so the picker can gray out one
+// that doesn't carry a garment — e.g. AS Colour can't carry a Comfort Colors
+// 1717). PRICING/savings, however, is only computed WITHIN the current
+// supplier's catalog family (S&S ↔ SanMar share brand style numbers; AS Colour
+// is its own catalog with unrelated codes), so `best` never compares prices
+// across catalogs where the same number could be a different garment.
 export async function comparePoSuppliers(po, { lookupByStyle, thresholds = {} } = {}) {
   const items = Array.isArray(po?.items) ? po.items : [];
-  const suppliers = candidateSuppliers(po?.supplier);
+  const family = candidateSuppliers(po?.supplier); // comparable-pricing set
+  const allSuppliers = [SUPPLIERS.AC, SUPPLIERS.SS, SUPPLIERS.SANMAR];
   const doLookup = lookupByStyle || defaultLookup;
 
   const cache = new Map();
@@ -183,12 +186,14 @@ export async function comparePoSuppliers(po, { lookupByStyle, thresholds = {} } 
   };
 
   const priced = await Promise.all(
-    suppliers.map((s) => priceThroughSupplier(items, s, getMatch).then((r) => withFreight(r, thresholds[s]))),
+    allSuppliers.map((s) => priceThroughSupplier(items, s, getMatch).then((r) => withFreight(r, thresholds[s]))),
   );
   const current = priced.find((p) => p.supplier === po?.supplier) || null;
   const alternatives = priced.filter((p) => p.supplier !== po?.supplier);
 
-  const eligible = priced.filter((p) => p.coversAll);
+  // Cheapest supplier that covers every line AND is price-comparable to the
+  // current one (same catalog family). Never crown a cross-catalog supplier.
+  const eligible = priced.filter((p) => p.coversAll && family.includes(p.supplier));
   const best = eligible.length
     ? eligible.reduce((a, b) => (b.total < a.total ? b : a))
     : null;
