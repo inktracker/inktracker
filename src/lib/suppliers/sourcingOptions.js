@@ -138,30 +138,56 @@ async function priceThroughSupplier(items, supplier, getMatch) {
   };
 }
 
+// Session-lived memo for the real lookup so auto-comparing on every draft PO
+// open doesn't refetch the same style. Catalog price/stock is stable enough
+// within a session; a shop that wants fresh numbers reloads the page.
+const _lookupMemo = new Map(); // `${supplier}::${style}` -> Promise<{match,product}>
+function defaultLookup(supplier, style) {
+  const key = `${supplier}::${style}`;
+  if (!_lookupMemo.has(key)) {
+    _lookupMemo.set(
+      key,
+      lookupStyle(supplier, { styleCode: style, styleNumber: style }).then(pickMatch).catch(() => ({ match: null, product: null })),
+    );
+  }
+  return _lookupMemo.get(key);
+}
+
+// Annotate a supplier result with free-freight status for `threshold` (0 =
+// unknown/none). clearsFreight null when we have no threshold to judge by.
+function withFreight(result, threshold) {
+  const t = Number(threshold) || 0;
+  return {
+    ...result,
+    threshold: t,
+    clearsFreight: t > 0 ? result.total >= t : null,
+    freightGap: t > 0 ? Math.max(0, Math.round((t - result.total) * 100) / 100) : 0,
+  };
+}
+
 // Compare a draft PO's total across its candidate suppliers. Returns
 // { current, alternatives, best } where each entry is a priceThroughSupplier
-// result. `best` is the cheapest supplier that COVERS ALL lines (so a partial
-// match never masquerades as cheaper). Only meaningful for S&S/SanMar POs.
-export async function comparePoSuppliers(po, { lookupByStyle } = {}) {
+// result (sale-aware) annotated with free-freight status from `thresholds`
+// (keyed by supplier display name). `best` is the cheapest supplier that
+// COVERS ALL lines. Only meaningful for S&S/SanMar POs.
+export async function comparePoSuppliers(po, { lookupByStyle, thresholds = {} } = {}) {
   const items = Array.isArray(po?.items) ? po.items : [];
   const suppliers = candidateSuppliers(po?.supplier);
-  const doLookup =
-    lookupByStyle ||
-    ((supplier, s) => lookupStyle(supplier, { styleCode: s, styleNumber: s }));
+  const doLookup = lookupByStyle || defaultLookup;
 
-  // Memoize (supplier, style) → {match, product}.
   const cache = new Map();
   const getMatch = async (supplier, style) => {
     const key = `${supplier}::${style}`;
-    if (!cache.has(key)) cache.set(key, doLookup(supplier, style).then(pickMatch).catch(() => ({ match: null, product: null })));
+    if (!cache.has(key)) cache.set(key, Promise.resolve(doLookup(supplier, style)).then((r) => (lookupByStyle ? pickMatch(r) : r)));
     return cache.get(key);
   };
 
-  const priced = await Promise.all(suppliers.map((s) => priceThroughSupplier(items, s, getMatch)));
+  const priced = await Promise.all(
+    suppliers.map((s) => priceThroughSupplier(items, s, getMatch).then((r) => withFreight(r, thresholds[s]))),
+  );
   const current = priced.find((p) => p.supplier === po?.supplier) || null;
   const alternatives = priced.filter((p) => p.supplier !== po?.supplier);
 
-  // Cheapest supplier that covers every line (incl. the current one).
   const eligible = priced.filter((p) => p.coversAll);
   const best = eligible.length
     ? eligible.reduce((a, b) => (b.total < a.total ? b : a))

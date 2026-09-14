@@ -239,14 +239,14 @@ export default function PurchaseOrders() {
 
   // Price this draft PO through its candidate suppliers (S&S ↔ SanMar) and
   // stash the result so the detail can show a "you'd save $X through Y" callout.
-  async function compareSuppliers() {
-    if (!selected) return;
+  async function compareSuppliers(po = selected, { silent = false } = {}) {
+    if (!po) return;
     setComparing(true);
     try {
-      const cmp = await comparePoSuppliers(selected, {});
-      setComparison({ forPoId: selected.id, ...cmp, savings: savingsVsCurrent(cmp) });
+      const cmp = await comparePoSuppliers(po, { thresholds });
+      setComparison({ forPoId: po.id, ...cmp, savings: savingsVsCurrent(cmp) });
     } catch (err) {
-      notify.error("Couldn't compare supplier pricing", err);
+      if (!silent) notify.error("Couldn't compare supplier pricing", err);
     } finally {
       setComparing(false);
     }
@@ -265,12 +265,25 @@ export default function PurchaseOrders() {
     const items = repriceItemsForSupplier(selected.items, targetResult, targetSupplier);
     try {
       await patchSelected({ supplier: targetSupplier, items });
-      setComparison(null); // stale after the switch; operator can re-check
+      setComparison(null); // stale after the switch; auto-compare re-fires
       notify.success(`Switched to ${targetSupplier} — re-priced at their cost.`);
     } catch (err) {
       notify.error("Couldn't switch supplier", err);
     }
   }
+
+  // Auto-compare: the moment a draft S&S/SanMar PO with items is opened, price
+  // it through both suppliers so the best option is shown WITHOUT a click.
+  // Lookups are memoized in sourcingOptions, so re-opening is cheap. Skips AS
+  // Colour (no cross-supplier identity) and anything already compared.
+  useEffect(() => {
+    if (!selected || selected.status !== "draft") return;
+    if (!(selected.items?.length > 0)) return;
+    if (candidateSuppliers(selected.supplier).length <= 1) return;
+    if (comparison?.forPoId === selected.id) return;
+    compareSuppliers(selected, { silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, selected?.supplier, selected?.items?.length, comparison?.forPoId]);
 
   // Tick "goods ordered" on EVERY order this PO covers — the scalar
   // source_order_id (single-order PO) AND source_order_ids (consolidated PO
@@ -947,24 +960,29 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
       {/* Items */}
       <div>
         <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Items</div>
-        {/* Cross-supplier price comparison — only for S&S/SanMar drafts with
-            items (they share brand style numbers, so each is a real alternative
-            to the other). One click prices the whole PO through both and, if the
-            other is cheaper, offers a whole-PO switch (keeps it one PO → pooling
-            intact). */}
+        {/* Cross-supplier price comparison — auto-runs for S&S/SanMar drafts
+            with items (they share brand style numbers, so each is a real
+            alternative). Prices the WHOLE PO through both (sale- + freight-
+            aware) and, if the other is a better total, offers a whole-PO switch
+            (keeps it one PO → pooling intact). */}
         {!isLocked && po.items?.length > 0 && candidateSuppliers(po.supplier).length > 1 && (
           <div className="mb-3">
             {!comparison ? (
-              <button
-                type="button"
-                onClick={onCompareSuppliers}
-                disabled={comparing || readOnly}
-                title={readOnly ? reason : undefined}
-                className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-60"
-              >
-                {comparing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Scale className="w-3.5 h-3.5" />}
-                {comparing ? "Pricing through S&S & SanMar…" : "Compare supplier pricing"}
-              </button>
+              comparing ? (
+                <div className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking best price across S&S & SanMar…
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onCompareSuppliers}
+                  disabled={readOnly}
+                  title={readOnly ? reason : undefined}
+                  className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  <Scale className="w-3.5 h-3.5" /> Compare supplier pricing
+                </button>
+              )
             ) : comparison.savings ? (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                 <div className="flex items-start gap-2.5">
@@ -978,6 +996,19 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                       {fmtMoney(comparison.savings.altTotal)} through {comparison.savings.supplier} vs {fmtMoney(comparison.savings.currentTotal)} here ({po.supplier}).
                       {comparison.best?.hasSale && <span className="font-semibold"> {comparison.savings.supplier}&apos;s sale price applied.</span>}
                     </div>
+                    {/* Freight-aware caution: the goods-cheaper supplier might not
+                        clear free freight while the current one does (pooling). */}
+                    {comparison.best?.clearsFreight === false && comparison.current?.clearsFreight === true && (
+                      <div className="text-amber-700 text-xs mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        {comparison.savings.supplier} is {fmtMoney(comparison.best.freightGap)} short of free freight; {po.supplier} clears it — shipping may erase the savings.
+                      </div>
+                    )}
+                    {comparison.best?.clearsFreight === true && (
+                      <div className="text-emerald-700 text-xs mt-1 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Clears free freight at {comparison.savings.supplier}.
+                      </div>
+                    )}
                     {comparison.savings.shortStock?.length > 0 && (
                       <div className="text-amber-700 text-xs mt-1 flex items-center gap-1">
                         <AlertCircle className="w-3.5 h-3.5" />
@@ -1004,6 +1035,8 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                     <> at {fmtMoney(comparison.current.total)}
                       {comparison.current.perPiece > 0 && <span> ({fmtMoney(comparison.current.perPiece)}/pc)</span>}
                       {comparison.current.hasSale && <span className="font-semibold text-emerald-700"> — sale price applied</span>}
+                      {comparison.current.clearsFreight === true && <span className="text-emerald-700"> · clears free freight ✓</span>}
+                      {comparison.current.clearsFreight === false && comparison.current.freightGap > 0 && <span className="text-amber-700"> · {fmtMoney(comparison.current.freightGap)} from free freight</span>}
                     </>
                   )}.
                   {comparison.alternatives?.some((a) => a.coversAll) && (() => {

@@ -134,6 +134,18 @@ describe("comparePoSuppliers + savingsVsCurrent", () => {
     expect(s.shortStock).toHaveLength(1); // 40 in stock < 100 needed
   });
 
+  it("annotates each supplier with free-freight status from thresholds", async () => {
+    const cmp = await comparePoSuppliers(po, {
+      lookupByStyle: lookup({ SanMar: 4.45, "S&S Activewear": 4.15 }),
+      thresholds: { SanMar: 300, "S&S Activewear": 500 },
+    });
+    // SanMar total 445 ≥ 300 → clears; S&S total 415 < 500 → short by 85.
+    expect(cmp.current.clearsFreight).toBe(true);
+    const ss = cmp.alternatives.find((a) => a.supplier === "S&S Activewear");
+    expect(ss.clearsFreight).toBe(false);
+    expect(ss.freightGap).toBeCloseTo(85);
+  });
+
   it("AS Colour PO has no alternatives to compare", async () => {
     const acPo = { supplier: "AS Colour", items: [{ styleCode: "5050", color: "Black", size: "M", quantity: 10 }] };
     const cmp = await comparePoSuppliers(acPo, { lookupByStyle: async () => ({ matches: [{ priceMap: { Black: { piecePrice: 6 } } }] }) });
