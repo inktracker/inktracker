@@ -1057,8 +1057,8 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
             No items yet. Look up a style above, or generate the PO from an order.
           </div>
         ) : (
-          <div className="border border-slate-100 rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="border border-slate-100 rounded-lg overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
               <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                 <tr>
                   <th className="text-left px-3 py-2">SKU</th>
