@@ -436,6 +436,80 @@ export function applyPOItemsToGoodsProgress(order, poItems, supplierOrderId, now
   return { ...(order?.checklist || {}), goods_progress: goodsProgress };
 }
 
+// ── Receiving (two separate checks: PO-level "Received" + per-line "Checked in") ──
+
+// Set the checked-in (counted) quantity on a PO item.
+export function setItemCheckedIn(items, index, count) {
+  if (!Array.isArray(items) || index < 0 || index >= items.length) return items;
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  const next = [...items];
+  next[index] = { ...next[index], checkedIn: n };
+  return next;
+}
+
+// Receiving summary for the PO detail: which lines are checked in, whether the
+// whole PO is, and any under-received lines (ordered vs counted).
+export function poReceivingSummary(po) {
+  const items = Array.isArray(po?.items) ? po.items : [];
+  let checkedInCount = 0;
+  const shortages = [];
+  for (const it of items) {
+    if (it?.checkedIn == null) continue;
+    checkedInCount++;
+    const ordered = Number(it.quantity) || 0;
+    const received = Number(it.checkedIn) || 0;
+    if (received < ordered) {
+      shortages.push({ sku: it.sku, styleCode: it.styleCode, color: it.color, size: it.size, ordered, received, short: ordered - received });
+    }
+  }
+  return {
+    received: !!po?.received_at,
+    checkedInCount,
+    totalItems: items.length,
+    allCheckedIn: items.length > 0 && checkedInCount === items.length,
+    shortages,
+  };
+}
+
+// Apply a PO's checked-in counts to ONE covered order: set matching sizes to
+// 'received' (in hand) on the floor with the counted qty, and — only when this
+// PO covers this single order (computeShortfall) — record any under-receipt as
+// _shortfall on the line so Reorder Shortfall can top it up. Multi-order
+// consolidated POs skip shortfall (which order is short is ambiguous).
+// Returns an order patch { checklist, line_items }.
+export function applyCheckInToOrder(order, poItems, { computeShortfall = true, nowIso = new Date().toISOString() } = {}) {
+  const goodsProgress = { ...(order?.checklist?.goods_progress || {}) };
+  const lineItems = (order?.line_items || []).map((li) => ({ ...li }));
+  const styleOf = (li) => li?.supplierStyleNumber || li?.resolvedStyleNumber || li?.styleNumber || li?.style || "";
+
+  for (const item of poItems || []) {
+    if (item?.checkedIn == null) continue;
+    const poStyle = String(item?.styleCode || "").trim().toUpperCase();
+    const poColor = String(item?.color || "").trim().toUpperCase();
+    const poSize = String(item?.size || "").trim();
+    if (!poStyle || !poSize) continue;
+    const received = Math.max(0, Number(item.checkedIn) || 0);
+    const ordered = Number(item.quantity) || 0;
+
+    const liIdx = lineItems.findIndex((li) =>
+      String(styleOf(li)).trim().toUpperCase() === poStyle &&
+      String(li?.garmentColor || "").trim().toUpperCase() === poColor &&
+      Object.keys(li?.sizes || {}).some((s) => s === poSize));
+    if (liIdx < 0) continue;
+
+    goodsProgress[`${liIdx}-${poSize}`] = { status: "received", qty: received, by: "check-in", at: nowIso };
+
+    if (computeShortfall) {
+      const li = lineItems[liIdx];
+      const short = Math.max(0, ordered - received);
+      const sf = { ...(li._shortfall || {}) };
+      if (short > 0) sf[poSize] = short; else delete sf[poSize];
+      lineItems[liIdx] = { ...li, _shortfall: sf };
+    }
+  }
+  return { checklist: { ...(order?.checklist || {}), goods_progress: goodsProgress }, line_items: lineItems };
+}
+
 // Build the payload shape acPlaceOrder expects (matches the AS Colour
 // /v1/orders contract via _shared/acOrderLogic.buildOrderRequestBody).
 //

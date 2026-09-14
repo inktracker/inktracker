@@ -17,9 +17,12 @@ import {
   combinedReference,
   AC_REFERENCE_MAX,
   applyPOItemsToGoodsProgress,
+  setItemCheckedIn,
+  applyCheckInToOrder,
 } from "@/lib/purchaseOrders";
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
 import ConsolidateBuyingModal from "@/components/purchaseOrders/ConsolidateBuyingModal";
+import POReceivingPanel from "@/components/purchaseOrders/POReceivingPanel";
 import { buildPOCsv, buildPOCsvFilename } from "@/lib/orders/poCsv";
 import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download, PackageCheck } from "lucide-react";
 import { notify } from "@/lib/notify";
@@ -58,6 +61,7 @@ export default function PurchaseOrders() {
   const [submitError, setSubmitError] = useState(null);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [consolidateOpen, setConsolidateOpen] = useState(false);
+  const [receiving, setReceiving] = useState(false);
 
   // Filter + multi-select merge mode (drafts tab only)
   const [supplierFilter, setSupplierFilter] = useState("All");
@@ -314,6 +318,55 @@ export default function PurchaseOrders() {
       notify.error("Merged, but couldn't archive the original", `"${sourceLabel}" is still open — delete it so you don't order twice.`);
     }
     setSelectedId(updated.id);
+  }
+
+  // ── Receiving ──────────────────────────────────────────────────────────
+  // "Received" (PO-level) — the shipment showed up. Separate from check-in.
+  async function toggleReceived(on) {
+    if (!selected || readOnly) return;
+    setReceiving(true);
+    try {
+      await patchSelected({ received_at: on ? new Date().toISOString() : null });
+    } finally {
+      setReceiving(false);
+    }
+  }
+
+  // Reconcile a PO's checked-in counts to every covered order's floor panel:
+  // mark matching sizes 'received' with the count, and (single-order PO only)
+  // record under-receipts as _shortfall so Reorder Shortfall can top them up.
+  async function reconcileCheckIn(po) {
+    const ids = [
+      ...new Set([po.source_order_id, ...(Array.isArray(po.source_order_ids) ? po.source_order_ids : [])]
+        .filter(Boolean)
+        .map(String)),
+    ];
+    const single = ids.length === 1;
+    for (const oid of ids) {
+      try {
+        const order = await base44.entities.Order.get(oid);
+        if (order) await base44.entities.Order.update(oid, applyCheckInToOrder(order, po.items, { computeShortfall: single }));
+      } catch (e) {
+        console.warn("[PO check-in] reconcile failed for order", oid, e);
+      }
+    }
+  }
+
+  // "Checked in" (per line) — count the garments in. Stores the count on the PO
+  // item, then reconciles the covered orders' floor.
+  async function checkInItem(index, count) {
+    if (!selected || readOnly) return;
+    setReceiving(true);
+    try {
+      const items = setItemCheckedIn(selected.items, index, count);
+      const updated = await base44.entities.PurchaseOrder.update(selected.id, { items });
+      setPos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      await reconcileCheckIn(updated);
+    } catch (err) {
+      notify.error("Couldn't check in that line", err);
+    } finally {
+      setReceiving(false);
+    }
   }
 
   async function submitSelected() {
@@ -594,6 +647,9 @@ export default function PurchaseOrders() {
               onSubmit={submitSelected}
               onMarkSubmitted={markSubmittedManually}
               onDismissError={() => setSubmitError(null)}
+              receiving={receiving}
+              onToggleReceived={toggleReceived}
+              onCheckInItem={checkInItem}
             />
           )}
         </div>
@@ -667,7 +723,7 @@ function defaultShipTo(user) {
   };
 }
 
-function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError }) {
+function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError, receiving = false, onToggleReceived, onCheckInItem }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
@@ -959,18 +1015,29 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
 
       {/* Submit / status */}
       {isLocked ? (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 space-y-2">
-          <div className="flex items-start gap-2">
-            <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              Submitted to {po.supplier}
-              {po.supplier_order_id && <> · supplier order ID <code className="font-mono">{po.supplier_order_id}</code></>}
-              {po.submitted_at && <> · {new Date(po.submitted_at).toLocaleString()}</>}
+        <div className="space-y-3">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 space-y-2">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                Submitted to {po.supplier}
+                {po.supplier_order_id && <> · supplier order ID <code className="font-mono">{po.supplier_order_id}</code></>}
+                {po.submitted_at && <> · {new Date(po.submitted_at).toLocaleString()}</>}
+              </div>
+              {po.supplier_order_id && po.supplier === "AS Colour" && (
+                <VerifyOrderButton orderId={po.supplier_order_id} />
+              )}
             </div>
-            {po.supplier_order_id && po.supplier === "AS Colour" && (
-              <VerifyOrderButton orderId={po.supplier_order_id} />
-            )}
           </div>
+          {po.status === "submitted" && (
+            <POReceivingPanel
+              po={po}
+              readOnly={readOnly}
+              busy={receiving}
+              onToggleReceived={onToggleReceived}
+              onCheckInItem={onCheckInItem}
+            />
+          )}
         </div>
       ) : (
         <div className="space-y-2">
