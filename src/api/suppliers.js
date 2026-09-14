@@ -95,9 +95,19 @@ export async function lookupStyle(supplier, { styleNumber, styleCode, ...rest } 
   return invoke(fn, { styleNumber: styleNumber ?? styleCode, ...rest });
 }
 
+// Standard shipping-method options for suppliers that don't expose a live
+// methods endpoint (AS Colour does — acGetShippingMethods; S&S and SanMar
+// don't). These are the common carrier service levels each accepts on an
+// order; the operator can still keep any previously-saved value. If a supplier
+// later rejects a method the shop can pick another — the order response says so.
+const FALLBACK_SHIPPING_METHODS = {
+  [SUPPLIERS.SS]: ["Ground", "3 Day Select", "2nd Day Air", "Next Day Air"],
+  [SUPPLIERS.SANMAR]: ["UPS Ground", "UPS 3 Day Select", "UPS 2nd Day Air", "UPS Next Day Air"],
+};
+
 export async function getShippingMethods(supplier) {
   const fn = FN[supplier]?.shippingMethods;
-  if (!fn) return { methods: [] };
+  if (!fn) return { methods: FALLBACK_SHIPPING_METHODS[supplier] || [] };
   const data = await invoke(fn, {});
   return { methods: Array.isArray(data?.methods) ? data.methods : [] };
 }
