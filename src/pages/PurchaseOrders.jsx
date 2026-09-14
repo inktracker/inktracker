@@ -865,6 +865,28 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
+
+  // Which suppliers can this PO be switched to. A supplier can only carry the
+  // PO's garments if it's in the SAME catalog family (S&S ↔ SanMar share brand
+  // style numbers; AS Colour is its own catalog) AND — for the same-family
+  // alternative — the live comparison confirms it stocks every line. Suppliers
+  // that don't carry the garments are disabled (grayed) in the picker.
+  const hasItems = (po.items?.length || 0) > 0;
+  const supplierFamily = candidateSuppliers(po.supplier);
+  const coverage = {};
+  if (comparison) {
+    for (const r of [comparison.current, ...(comparison.alternatives || [])]) {
+      if (r?.supplier) coverage[r.supplier] = !!r.coversAll;
+    }
+  }
+  function supplierSelectable(s) {
+    if (!hasItems) return true; // fresh PO — choose any supplier to build for
+    if (s === po.supplier) return true; // current is always valid
+    if (!supplierFamily.includes(s)) return false; // different catalog → can't carry
+    if (!comparison) return true; // not compared yet → don't block optimistically
+    return coverage[s] === true; // same family: only if it stocks every line
+  }
+
   // Editing is off when the PO is already submitted (isLocked) OR the
   // shop is read-only. `isLocked` HIDES edit UI (submitted POs); when the
   // shop is merely read-only on a still-editable draft we keep the fields
@@ -912,9 +934,14 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                 title={readOnly ? reason : undefined}
                 className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {Object.values(SUPPLIERS).map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+                {Object.values(SUPPLIERS).map((s) => {
+                  const ok = supplierSelectable(s);
+                  return (
+                    <option key={s} value={s} disabled={!ok}>
+                      {ok ? s : `${s} — doesn't carry these garments`}
+                    </option>
+                  );
+                })}
               </select>
             </label>
           ) : (
