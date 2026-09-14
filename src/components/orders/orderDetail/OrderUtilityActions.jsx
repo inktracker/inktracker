@@ -111,8 +111,8 @@ function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled, readOnly = fa
   if (sourcePO?.status === "submitted") {
     return (
       <Link
-        to={createPageUrl("PurchaseOrders")}
-        title={`Already ordered from AS Colour${sourcePO.supplier_order_id ? ` · ${sourcePO.supplier_order_id}` : ""}`}
+        to={`${createPageUrl("PurchaseOrders")}?po=${sourcePO.id}`}
+        title={`Already ordered from ${sourcePO.supplier || "the supplier"}${sourcePO.supplier_order_id ? ` · ${sourcePO.supplier_order_id}` : ""}`}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition"
       >
         <CheckCircle2 className="w-3.5 h-3.5" /> Ordered
@@ -122,8 +122,8 @@ function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled, readOnly = fa
   if (sourcePO?.status === "draft") {
     return (
       <Link
-        to={createPageUrl("PurchaseOrders")}
-        title="A draft PO exists for this order — open Purchase Orders to review and submit"
+        to={`${createPageUrl("PurchaseOrders")}?po=${sourcePO.id}`}
+        title="A draft PO exists for this order — open it to review and submit"
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 border border-amber-200 bg-amber-50 rounded-lg hover:bg-amber-100 transition"
       >
         <Truck className="w-3.5 h-3.5" /> View Pending PO

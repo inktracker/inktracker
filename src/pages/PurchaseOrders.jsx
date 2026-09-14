@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtMoney } from "@/components/shared/pricing";
@@ -59,6 +60,12 @@ export default function PurchaseOrders() {
   const [tab, setTab] = useState("drafts"); // drafts | history
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
+  // Deep-link: land on a specific PO when arriving from an order's "Create PO"
+  // / "View Pending PO" / "Ordered" button (?po=<id> or ?order=<orderId>), so
+  // there's no hunting for it in the list. Applied once, then the param is
+  // cleared so later manual selection isn't fought.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const appliedDeepLink = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -97,6 +104,34 @@ export default function PurchaseOrders() {
       setLoading(false);
     });
   }, []);
+
+  // Once POs are loaded, honor a ?po=<id> / ?order=<orderId> deep link by
+  // opening that PO (right tab + selected), then strip the param so it's a
+  // one-shot. Runs a single time.
+  useEffect(() => {
+    if (appliedDeepLink.current || loading) return;
+    const poId = searchParams.get("po");
+    const orderId = searchParams.get("order");
+    if (!poId && !orderId) return;
+    let match = poId ? pos.find((p) => p.id === poId) : null;
+    if (!match && orderId) {
+      match = pos.find(
+        (p) =>
+          p.status !== "cancelled" &&
+          (p.source_order_id === orderId ||
+            (Array.isArray(p.source_order_ids) && p.source_order_ids.includes(orderId))),
+      );
+    }
+    if (match) {
+      setTab(match.status === "submitted" ? "history" : "drafts");
+      setSelectedId(match.id);
+    }
+    appliedDeepLink.current = true;
+    const next = new URLSearchParams(searchParams);
+    next.delete("po");
+    next.delete("order");
+    setSearchParams(next, { replace: true });
+  }, [loading, pos, searchParams, setSearchParams]);
 
   // Suppliers actually present on this shop's POs — used to populate
   // the filter pills. Sorted alphabetically so the order is stable as

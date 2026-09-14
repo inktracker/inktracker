@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
 import { CalendarGridSkeleton } from "@/components/shared/Skeletons";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
@@ -386,10 +387,12 @@ export default function Production() {
       });
       if (created.length) {
         patchPoMapWithCreated(created);
-        const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
-        notify.success(`${label} created for ${order.order_id || "this order"} — review on Purchase Orders.`);
+        // Land the operator ON the new PO — no hunting through the list. Multi-
+        // supplier orders open the first draft; the rest sit in the drafts tab.
+        navigate(`${createPageUrl("PurchaseOrders")}?po=${created[0].id}`);
       } else if (skipped) {
-        notify.success("This order already has a PO — open Purchase Orders to review it.");
+        // Already has a PO — take them straight to it rather than a dead toast.
+        navigate(`${createPageUrl("PurchaseOrders")}?order=${order.id}`);
       } else {
         notify.error(
           "Couldn't build a PO from this order",
