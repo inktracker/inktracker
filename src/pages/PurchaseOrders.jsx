@@ -976,6 +976,7 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                     </div>
                     <div className="text-emerald-800 text-xs mt-0.5">
                       {fmtMoney(comparison.savings.altTotal)} through {comparison.savings.supplier} vs {fmtMoney(comparison.savings.currentTotal)} here ({po.supplier}).
+                      {comparison.best?.hasSale && <span className="font-semibold"> {comparison.savings.supplier}&apos;s sale price applied.</span>}
                     </div>
                     {comparison.savings.shortStock?.length > 0 && (
                       <div className="text-amber-700 text-xs mt-1 flex items-center gap-1">
@@ -998,7 +999,17 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
                 <div>
-                  <span className="font-semibold text-slate-700">{po.supplier} is your cheapest option</span> for these items.
+                  <span className="font-semibold text-slate-700">{po.supplier} is your cheapest option</span> for these items
+                  {comparison.current && comparison.current.total > 0 && (
+                    <> at {fmtMoney(comparison.current.total)}
+                      {comparison.current.perPiece > 0 && <span> ({fmtMoney(comparison.current.perPiece)}/pc)</span>}
+                      {comparison.current.hasSale && <span className="font-semibold text-emerald-700"> — sale price applied</span>}
+                    </>
+                  )}.
+                  {comparison.alternatives?.some((a) => a.coversAll) && (() => {
+                    const alt = comparison.alternatives.filter((a) => a.coversAll).sort((a, b) => a.total - b.total)[0];
+                    return alt ? <span className="text-slate-500"> {alt.supplier} would be {fmtMoney(alt.total)}{alt.hasSale ? " (incl. their sale)" : ""}.</span> : null;
+                  })()}
                   {comparison.alternatives?.some((a) => !a.coversAll) && (
                     <span className="text-slate-500"> ({comparison.alternatives.filter((a) => !a.coversAll).map((a) => a.supplier).join(", ")} doesn&apos;t carry every line.)</span>
                   )}

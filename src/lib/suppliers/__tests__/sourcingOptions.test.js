@@ -25,8 +25,8 @@ describe("extractVariant", () => {
     inventoryMap: { White: { M: 420, "2XL": 12 } },
   };
   it("prefers exact per-size price + stock, color case-insensitive", () => {
-    expect(extractVariant(ssMatch, null, "white", "M")).toEqual({ unitPrice: 3.84, stock: 420 });
-    expect(extractVariant(ssMatch, null, "White", "2XL")).toEqual({ unitPrice: 5.5, stock: 12 });
+    expect(extractVariant(ssMatch, null, "white", "M")).toMatchObject({ unitPrice: 3.84, onSale: false, stock: 420 });
+    expect(extractVariant(ssMatch, null, "White", "2XL")).toMatchObject({ unitPrice: 5.5, stock: 12 });
   });
   it("reads AS Colour per-variant price from product.variants[]", () => {
     const product = { variants: [{ colour: "White", size: "M", price: 6.25 }] };
@@ -34,6 +34,25 @@ describe("extractVariant", () => {
   });
   it("stock null (unknown) when inventory absent, not 0", () => {
     expect(extractVariant({ priceMap: { White: { piecePrice: 3 } } }, null, "White", "M").stock).toBeNull();
+  });
+
+  it("uses the per-SIZE sale price when one is running (below standard)", () => {
+    const m = {
+      priceMap: { White: { piecePrice: 3.84 } },
+      sizePriceMap: { White: { M: 3.84 } },
+      colors: [{ colorName: "White", sizeSalePrices: { M: 2.99 } }],
+    };
+    expect(extractVariant(m, null, "White", "M")).toMatchObject({ unitPrice: 2.99, standardPrice: 3.84, onSale: true });
+  });
+
+  it("uses the per-COLOR sale price when no per-size sale is given", () => {
+    const m = { priceMap: { White: { piecePrice: 4, salePrice: 3.5 } } };
+    expect(extractVariant(m, null, "White", "M")).toMatchObject({ unitPrice: 3.5, standardPrice: 4, onSale: true });
+  });
+
+  it("ignores a 'sale' price that isn't actually lower than standard", () => {
+    const m = { priceMap: { White: { piecePrice: 4, salePrice: 4.5 } } };
+    expect(extractVariant(m, null, "White", "M")).toMatchObject({ unitPrice: 4, onSale: false });
   });
 });
 
@@ -91,6 +110,20 @@ describe("comparePoSuppliers + savingsVsCurrent", () => {
     // best must be the current (covers all) — no false savings claim.
     expect(cmp.best.supplier).toBe("SanMar");
     expect(savingsVsCurrent(cmp)).toBeNull();
+  });
+
+  it("counts a running SALE as the buy-now cost — a sale can win the comparison", async () => {
+    // S&S standard 4.60 (pricier than SanMar 4.45) but on sale at 4.10 → S&S wins.
+    const lookupByStyle = async (supplier) =>
+      supplier === "S&S Activewear"
+        ? { matches: [{ sizePriceMap: { White: { M: 4.6 } }, colors: [{ colorName: "White", sizeSalePrices: { M: 4.1 } }] }] }
+        : { matches: [{ sizePriceMap: { White: { M: 4.45 } } }] };
+    const cmp = await comparePoSuppliers(po, { lookupByStyle });
+    const ssAlt = cmp.alternatives.find((a) => a.supplier === "S&S Activewear");
+    expect(ssAlt.hasSale).toBe(true);
+    expect(ssAlt.total).toBeCloseTo(410); // 4.10 × 100, not 4.60
+    expect(cmp.best.supplier).toBe("S&S Activewear");
+    expect(savingsVsCurrent(cmp).totalSaved).toBeCloseTo(35);
   });
 
   it("surfaces low-stock lines on the cheaper supplier", async () => {

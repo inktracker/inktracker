@@ -25,33 +25,54 @@ export function candidateSuppliers(currentSupplier) {
   return [SUPPLIERS.SS, SUPPLIERS.SANMAR];
 }
 
-// Extract { unitPrice, stock } for one color/size from a raw lookup match.
+// Extract { unitPrice, standardPrice, onSale, stock } for one color/size from a
+// raw lookup match. Unlike quote COSTING (which deliberately ignores sales so
+// margins aren't inflated by a temporary promo), a PURCHASE order pays the
+// sale price when one is running — so unitPrice here is the sale-aware BUY-NOW
+// cost, with standardPrice + onSale exposed so the UI can show "was $Y".
 // unitPrice 0 = unpriced/not carried; stock null = unknown, 0 = out of stock.
 export function extractVariant(match, product, color, size) {
-  if (!match) return { unitPrice: 0, stock: null };
+  if (!match) return { unitPrice: 0, standardPrice: 0, onSale: false, stock: null };
   const cKey =
     matchKey(match.priceMap, color) ||
     matchKey(match.inventoryMap, color) ||
     matchKey(match.sizePriceMap, color) ||
     color;
 
-  let unitPrice = 0;
+  // ── standard (list) price ─────────────────────────────────────────
+  let standardPrice = 0;
   const spm = match.sizePriceMap?.[cKey];
   if (spm) {
     const sKey = matchKey(spm, size);
-    if (sKey) unitPrice = Number(spm[sKey]) || 0;
+    if (sKey) standardPrice = Number(spm[sKey]) || 0;
   }
-  if (!unitPrice) {
+  if (!standardPrice) {
+    // AS Colour: real per-variant wholesale price (no sale channel).
     const variants = product?.variants || match.variants || [];
     const v = variants.find(
       (x) => ci(x.colour ?? x.color) === ci(color) && ci(x.size) === ci(size),
     );
-    if (v?.price) unitPrice = Number(v.price) || 0;
+    if (v?.price) standardPrice = Number(v.price) || 0;
   }
-  if (!unitPrice) {
-    unitPrice = Number(match.priceMap?.[cKey]?.piecePrice) || Number(match.piecePrice) || 0;
+  if (!standardPrice) {
+    standardPrice = Number(match.priceMap?.[cKey]?.piecePrice) || Number(match.piecePrice) || 0;
   }
 
+  // ── sale price (per-size on colors[].sizeSalePrices, else per-color
+  //    priceMap[color].salePrice) — only counts when below standard ───
+  let salePrice = 0;
+  const colorObj = (match.colors || []).find((c) => ci(c?.colorName ?? c?.color) === ci(color));
+  const ssm = colorObj?.sizeSalePrices;
+  if (ssm) {
+    const sKey = matchKey(ssm, size);
+    if (sKey) salePrice = Number(ssm[sKey]) || 0;
+  }
+  if (!salePrice) salePrice = Number(match.priceMap?.[cKey]?.salePrice) || 0;
+
+  const onSale = salePrice > 0 && (standardPrice === 0 || salePrice < standardPrice);
+  const unitPrice = onSale ? salePrice : standardPrice;
+
+  // ── stock ─────────────────────────────────────────────────────────
   let stock = null;
   const inv = match.inventoryMap?.[cKey];
   if (inv && typeof inv === "object") {
@@ -61,7 +82,7 @@ export function extractVariant(match, product, color, size) {
       stock = Number.isFinite(n) ? n : null;
     }
   }
-  return { unitPrice, stock };
+  return { unitPrice, standardPrice: standardPrice || unitPrice, onSale, stock };
 }
 
 function pickMatch(res) {
@@ -76,33 +97,41 @@ function pickMatch(res) {
 // by the caller so each style is looked up once per supplier.
 async function priceThroughSupplier(items, supplier, getMatch) {
   const lines = [];
-  let total = 0;
+  let total = 0; // buy-now (sale-aware)
+  let standardTotal = 0; // list price, no sales
   let totalQty = 0;
+  let hasSale = false;
   const missing = []; // can't price (not carried / unpriced)
   const shortStock = []; // priced but stock < qty (stock known)
   for (const it of items || []) {
     const qty = Number(it.quantity) || 0;
     totalQty += qty;
     let unitPrice = 0;
+    let standardPrice = 0;
+    let onSale = false;
     let stock = null;
     try {
       const { match, product } = await getMatch(supplier, norm(it.styleCode));
-      if (match) ({ unitPrice, stock } = extractVariant(match, product, it.color, it.size));
+      if (match) ({ unitPrice, standardPrice, onSale, stock } = extractVariant(match, product, it.color, it.size));
     } catch {
       /* treated as missing below */
     }
     const priced = unitPrice > 0;
     if (!priced) missing.push(it);
     else if (stock != null && stock < qty) shortStock.push(it);
+    if (onSale) hasSale = true;
     total += (priced ? unitPrice : 0) * qty;
-    lines.push({ unitPrice, stock, lineCost: unitPrice * qty });
+    standardTotal += (priced ? standardPrice || unitPrice : 0) * qty;
+    lines.push({ unitPrice, standardPrice, onSale, stock, lineCost: unitPrice * qty });
   }
   return {
     supplier,
     lines,
     total,
+    standardTotal,
     totalQty,
     perPiece: totalQty > 0 ? total / totalQty : 0,
+    hasSale,
     coversAll: missing.length === 0 && items.length > 0,
     missing,
     shortStock,
