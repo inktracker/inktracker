@@ -147,11 +147,22 @@ describe("comparePoSuppliers + savingsVsCurrent", () => {
     expect(ss.freightGap).toBeCloseTo(85);
   });
 
-  it("AS Colour PO has no alternatives to compare", async () => {
+  it("AS Colour PO never crowns a cross-catalog price winner (savings stays within family)", async () => {
     const acPo = { supplier: "AS Colour", items: [{ styleCode: "5050", color: "Black", size: "M", quantity: 10 }] };
+    // Even if S&S/SanMar return a (colliding) match, best/savings stays AS Colour.
     const cmp = await comparePoSuppliers(acPo, { lookupByStyle: async () => ({ matches: [{ priceMap: { Black: { piecePrice: 6 } } }] }) });
-    expect(cmp.alternatives).toHaveLength(0);
+    expect(cmp.best.supplier).toBe("AS Colour");
     expect(savingsVsCurrent(cmp)).toBeNull();
+  });
+
+  it("prices ALL THREE suppliers for coverage so a non-carrying supplier is flagged", async () => {
+    // S&S/SanMar carry 1717; AS Colour returns nothing → coversAll false → grayable.
+    const lookupByStyle = async (supplier) =>
+      supplier === "AS Colour" ? { matches: [] } : { matches: [{ sizePriceMap: { White: { M: 4.4 } } }] };
+    const cmp = await comparePoSuppliers(po, { lookupByStyle });
+    const ac = cmp.alternatives.find((a) => a.supplier === "AS Colour");
+    expect(ac.coversAll).toBe(false); // doesn't carry it → picker grays it
+    expect(cmp.alternatives.find((a) => a.supplier === "S&S Activewear").coversAll).toBe(true);
   });
 });
 
