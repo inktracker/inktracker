@@ -99,7 +99,9 @@ export default function OrderUtilityActions({
 }
 
 // Tri-state button beside Delete in the order footer.
-//   no source PO       → "Order from AS Colour" (opens ACOrderModal)
+//   no source PO       → "Create PO" (supplier-aware: builds a draft per
+//                         supplier of the order's blanks — S&S / AS Colour /
+//                         SanMar — via ensurePoDraftsForOrder)
 //   draft source PO    → "View Pending PO" (links to /PurchaseOrders)
 //   submitted PO       → "✓ Ordered" (links to /PurchaseOrders, read-only feel)
 //
@@ -134,7 +136,7 @@ function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled, readOnly = fa
       disabled={disabled}
       title={readOnly
         ? "Your subscription has ended — reactivate to create a PO."
-        : "Create a draft AS Colour PO from this order's line items"}
+        : "Create a draft PO from this order's line items (one per supplier)"}
       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-600 border border-teal-200 rounded-lg hover:bg-teal-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
     >
       <Truck className="w-3.5 h-3.5" /> Create PO
