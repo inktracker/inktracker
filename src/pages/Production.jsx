@@ -191,12 +191,23 @@ export default function Production() {
         (c || []).forEach((cust) => (map[cust.id] = cust));
         setCustomers(map);
         setQuotes(q || []);
-        // Last-write-wins per source_order_id; if a shop genuinely has
-        // multiple POs for the same order, the latest one drives the
-        // button state (cleanest single-PO assumption for v1).
+        // Map each order id → the PO covering it, so the order's PO button
+        // reflects "ordered" instead of re-prompting a duplicate. Covers both
+        // the single-order link (source_order_id) and consolidated POs that
+        // batch several orders (source_order_ids). A SUBMITTED PO wins over a
+        // draft for the same order (a submitted consolidated PO shouldn't be
+        // masked by a leftover per-order draft).
         const poMap = {};
+        const assign = (oid, po) => {
+          if (!oid) return;
+          const existing = poMap[oid];
+          if (!existing || (po.status === "submitted" && existing.status !== "submitted")) {
+            poMap[oid] = po;
+          }
+        };
         for (const po of pos || []) {
-          if (po.source_order_id) poMap[po.source_order_id] = po;
+          assign(po.source_order_id, po);
+          for (const oid of Array.isArray(po.source_order_ids) ? po.source_order_ids : []) assign(oid, po);
         }
         setPoByOrderId(poMap);
       } catch (err) {

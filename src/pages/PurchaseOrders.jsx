@@ -18,8 +18,9 @@ import {
   applyPOItemsToGoodsProgress,
 } from "@/lib/purchaseOrders";
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
+import ConsolidateBuyingModal from "@/components/purchaseOrders/ConsolidateBuyingModal";
 import { buildPOCsv, buildPOCsvFilename } from "@/lib/orders/poCsv";
-import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download } from "lucide-react";
+import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download, PackageCheck } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
 import { useReadOnly } from "@/lib/billing-gate";
@@ -55,6 +56,7 @@ export default function PurchaseOrders() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [consolidateOpen, setConsolidateOpen] = useState(false);
 
   // Filter + multi-select merge mode (drafts tab only)
   const [supplierFilter, setSupplierFilter] = useState("All");
@@ -186,6 +188,30 @@ export default function PurchaseOrders() {
     setPos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   }
 
+  // Tick "goods ordered" on EVERY order this PO covers — the scalar
+  // source_order_id (single-order PO) AND source_order_ids (consolidated PO
+  // batching several jobs). applyPOItemsToGoodsProgress matches each order's own
+  // line items, so an order is only marked for the sizes it actually contributed.
+  // Best-effort per order — a failure just leaves that Floor panel un-ticked.
+  async function markGoodsOrderedOnSourceOrders(po, supplierOrderId) {
+    const ids = new Set();
+    if (po?.source_order_id) ids.add(String(po.source_order_id));
+    for (const oid of Array.isArray(po?.source_order_ids) ? po.source_order_ids : []) {
+      if (oid) ids.add(String(oid));
+    }
+    for (const oid of ids) {
+      try {
+        const sourceOrder = await base44.entities.Order.get(oid);
+        if (sourceOrder) {
+          const newChecklist = applyPOItemsToGoodsProgress(sourceOrder, po.items, supplierOrderId);
+          await base44.entities.Order.update(oid, { checklist: newChecklist });
+        }
+      } catch (autoMarkErr) {
+        console.warn("[PO submit] goods auto-mark failed for order", oid, autoMarkErr);
+      }
+    }
+  }
+
   async function deleteSelected() {
     if (!selected || readOnly) return;
     if (!confirm(`Delete "${selected.reference}"? This cannot be undone.`)) return;
@@ -282,24 +308,10 @@ export default function PurchaseOrders() {
         submit_response: result ?? null,
         submitted_at: new Date().toISOString(),
       });
-      // Auto-mark matching sizes as "ordered" on the source order's
-      // Floor Mode panel. Non-fatal — if the lookup or patch fails the
-      // operator can still toggle manually, so we just warn.
-      if (selected.source_order_id) {
-        try {
-          const sourceOrder = await base44.entities.Order.get(selected.source_order_id);
-          if (sourceOrder) {
-            const newChecklist = applyPOItemsToGoodsProgress(
-              sourceOrder,
-              selected.items,
-              supplierOrderId,
-            );
-            await base44.entities.Order.update(selected.source_order_id, { checklist: newChecklist });
-          }
-        } catch (autoMarkErr) {
-          console.warn("[PO submit] goods auto-mark failed:", autoMarkErr);
-        }
-      }
+      // Auto-mark matching sizes as "ordered" on every covered order's Floor
+      // Mode panel (single-order and consolidated). Non-fatal — the operator
+      // can still toggle manually if a patch fails.
+      await markGoodsOrderedOnSourceOrders(selected, supplierOrderId);
     } catch (err) {
       setSubmitError(err?.message || "Order submission failed");
     } finally {
@@ -330,17 +342,7 @@ export default function PurchaseOrders() {
         submitted_at: new Date().toISOString(),
         submit_response: { manual: true },
       });
-      if (selected.source_order_id) {
-        try {
-          const sourceOrder = await base44.entities.Order.get(selected.source_order_id);
-          if (sourceOrder) {
-            const newChecklist = applyPOItemsToGoodsProgress(sourceOrder, selected.items, null);
-            await base44.entities.Order.update(selected.source_order_id, { checklist: newChecklist });
-          }
-        } catch (autoMarkErr) {
-          console.warn("[PO manual submit] goods auto-mark failed:", autoMarkErr);
-        }
-      }
+      await markGoodsOrderedOnSourceOrders(selected, null);
     } catch (err) {
       setSubmitError(err?.message || "Couldn't mark as submitted");
     } finally {
@@ -381,6 +383,14 @@ export default function PurchaseOrders() {
             </button>
           )}
           <ReactivateLink show={readOnly} href={reactivateHref} />
+          <button
+            onClick={() => setConsolidateOpen(true)}
+            disabled={readOnly}
+            title={readOnly ? reason : "Order blanks for all open jobs in one PO per supplier"}
+            className="flex items-center gap-1.5 border border-teal-600 text-teal-700 hover:bg-teal-50 text-sm font-semibold px-3 py-2 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <PackageCheck className="w-4 h-4" /> Consolidate buying
+          </button>
           <button
             onClick={createDraft}
             disabled={creating || readOnly}
@@ -570,6 +580,27 @@ export default function PurchaseOrders() {
             Merge {mergeSelection.size >= 2 ? mergeSelection.size : ""}
           </button>
         </div>
+      )}
+
+      {consolidateOpen && (
+        <ConsolidateBuyingModal
+          user={user}
+          existingPos={pos}
+          onClose={() => setConsolidateOpen(false)}
+          onCreated={(created, info = {}) => {
+            setPos((prev) => [created, ...prev]);
+            setSelectedId(created.id);
+            setTab("drafts");
+            setConsolidateOpen(false);
+            const missing = (info.unresolved?.length || 0) + (info.lookupErrors?.length || 0);
+            notify.success(
+              "Consolidated draft PO created",
+              missing
+                ? `${created.items.length} line(s) added. ${missing} item(s) didn't resolve — add them on the PO.`
+                : "Review and submit it below.",
+            );
+          }}
+        />
       )}
     </div>
   );
