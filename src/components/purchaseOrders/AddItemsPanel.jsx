@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { lookupStyle } from "@/api/suppliers";
+import { normalizeAddItemsProduct } from "@/lib/suppliers/sourcingOptions";
 import { mergeItem, routeWarehouseForSku } from "@/lib/purchaseOrders";
 import { Search, Plus, Loader2, AlertCircle } from "lucide-react";
 import { fmtMoney } from "@/components/shared/pricing";
@@ -27,9 +28,10 @@ export default function AddItemsPanel({ supplier, defaultWarehouse = "CA", onAdd
     setProduct(null);
     try {
       const result = await lookupStyle(supplier, { styleNumber: trimmed, styleCode: trimmed });
-      const matches = result?.matches || result?.results || result?.items || result?.products || [];
-      const first = matches[0] || result?.product || result;
-      if (!first || !first.variants) {
+      // Supplier-aware: AS Colour ships variants[]; S&S/SanMar return colors[]
+      // and are synthesized into the same variants shape here.
+      const first = normalizeAddItemsProduct(result, supplier);
+      if (!first || !first.variants?.length) {
         setError("Style not found.");
         return;
       }

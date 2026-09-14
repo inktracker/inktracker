@@ -222,6 +222,45 @@ function guessedSku(style, color, size) {
     .toUpperCase();
 }
 
+// Normalize a lookup response into a uniform product with a variants[] array
+// ({ sku, colour, size, price, stock }) so the PO "Add items" panel works for
+// EVERY supplier. AS Colour already ships variants + stockBySkuWarehouse, so
+// it's passed through untouched (keeps its warehouse routing). S&S / SanMar
+// return colors[] instead, so we synthesize variants from them — sale-aware
+// price + per-size stock — with a guessed SKU (resolved server-side at submit).
+export function normalizeAddItemsProduct(result, supplier) {
+  const match = (Array.isArray(result?.matches) ? result.matches : [])[0] || result?.product || null;
+  if (!match) return null;
+
+  if (supplier === SUPPLIERS.AC) {
+    const product = result?.product || null;
+    if (product?.variants?.length) return product;
+    if (match?.variants?.length) return match;
+    return null;
+  }
+
+  const styleCode = match.styleNumber || match.resolvedStyleNumber || match.id || "";
+  const title = match.resolvedTitle || match.title || styleCode;
+  const primaryImage = match.styleImage || (match.colors || []).find((c) => c?.imageUrl)?.imageUrl || "";
+  const variants = [];
+  for (const color of match.colors || []) {
+    const colorName = color?.colorName || color?.color || "";
+    const sizeKeys = Object.keys(color?.sizePrices || {});
+    const sizeList = sizeKeys.length ? sizeKeys : (Array.isArray(match.sizes) ? match.sizes : []);
+    for (const size of sizeList) {
+      const { unitPrice, stock } = extractVariant(match, null, colorName, size);
+      variants.push({
+        sku: guessedSku(styleCode, colorName, size),
+        colour: colorName,
+        size,
+        price: unitPrice,
+        stock,
+      });
+    }
+  }
+  return variants.length ? { styleCode, title, primaryImage, variants } : null;
+}
+
 // Re-stamp a PO's items for a whole-PO supplier switch: new unit prices from
 // the target supplier's pricing result (aligned to items order) and a fresh
 // SKU (guessed for S&S/SanMar; blank for AS Colour, which needs its real SKU).
