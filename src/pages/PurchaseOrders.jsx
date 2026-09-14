@@ -24,6 +24,7 @@ import {
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
 import ConsolidateBuyingModal from "@/components/purchaseOrders/ConsolidateBuyingModal";
 import POReceivingPanel from "@/components/purchaseOrders/POReceivingPanel";
+import SupplierConnectionBanner from "@/components/purchaseOrders/SupplierConnectionBanner";
 import { buildPOCsv, buildPOCsvFilename } from "@/lib/orders/poCsv";
 import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download, PackageCheck } from "lucide-react";
 import { notify } from "@/lib/notify";
@@ -1057,6 +1058,7 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
         </div>
       ) : (
         <div className="space-y-2">
+          <SupplierConnectionBanner supplier={po.supplier} />
           {submitError && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
