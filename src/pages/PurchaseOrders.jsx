@@ -245,10 +245,39 @@ export default function PurchaseOrders() {
     try {
       const cmp = await comparePoSuppliers(po, { thresholds });
       setComparison({ forPoId: po.id, ...cmp, savings: savingsVsCurrent(cmp) });
+      // Refresh the draft's stored line prices to the current supplier's LIVE
+      // (sale-aware) cost, so the subtotal is what you'll actually pay — not a
+      // stale quote-time estimate. Only when that supplier prices every line.
+      if (po.status === "draft" && !readOnly && cmp.current?.coversAll) {
+        await repriceToLive(po, cmp.current);
+      }
     } catch (err) {
       if (!silent) notify.error("Couldn't compare supplier pricing", err);
     } finally {
       setComparing(false);
+    }
+  }
+
+  // Persist live unit prices onto a draft PO's items (only lines that actually
+  // changed, never overwriting with a 0/unknown price). Silent — it just keeps
+  // the number honest.
+  async function repriceToLive(po, currentResult) {
+    const lines = currentResult?.lines || [];
+    let changed = false;
+    const items = (po.items || []).map((it, i) => {
+      const live = Number(lines[i]?.unitPrice) || 0;
+      if (live > 0 && Math.abs(live - (Number(it.unitPrice) || 0)) > 0.005) {
+        changed = true;
+        return { ...it, unitPrice: live };
+      }
+      return it;
+    });
+    if (!changed) return;
+    try {
+      const updated = await base44.entities.PurchaseOrder.update(po.id, { items });
+      setPos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    } catch (e) {
+      console.warn("[reprice] couldn't refresh live prices:", e);
     }
   }
 
