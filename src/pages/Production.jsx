@@ -31,6 +31,7 @@ import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete"
 import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink";
 import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
 import { shopScope } from "@/lib/shopScope";
+import { ensurePoDraftsForOrder } from "@/lib/orders/autoPoFromOrder";
 
 // Mirrors STATUS_COLORS in src/pages/Calendar.jsx — each step gets a
 // visually distinct hue so the production board reads as a progress
@@ -340,6 +341,35 @@ export default function Production() {
     }
   }
 
+  // Auto-create draft PO(s) when an order enters "Order Goods" (1A/2A: full
+  // quantity, one draft per supplier, never submitted, idempotent). Fire-and-
+  // forget so it never blocks the status change; a toast confirms, and
+  // poByOrderId is patched so the order's PO button flips to "View Pending PO".
+  async function autoCreatePoOnOrderGoods(order) {
+    if (!user || !order?.id || poByOrderId[order.id]) return;
+    try {
+      const { created, warnings } = await ensurePoDraftsForOrder(order, user, {
+        existingPos: Object.values(poByOrderId),
+      });
+      if (created.length) {
+        setPoByOrderId((prev) => {
+          const next = { ...prev };
+          for (const po of created) {
+            for (const oid of [po.source_order_id, ...(po.source_order_ids || [])].filter(Boolean)) {
+              if (!next[oid] || (po.status === "submitted" && next[oid].status !== "submitted")) next[oid] = po;
+            }
+          }
+          return next;
+        });
+        const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
+        notify.success(`${label} created for ${order.order_id || "this order"} — review on Purchase Orders.`);
+      }
+      if (warnings?.some((w) => w.error)) console.warn("[autoPO] some suppliers failed:", warnings);
+    } catch (err) {
+      console.warn("[autoPO] ensurePoDraftsForOrder failed:", err);
+    }
+  }
+
   async function handleAdvance(id) {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
@@ -366,6 +396,7 @@ export default function Production() {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
       }
+      if (nextStatus === "Order Goods") autoCreatePoOnOrderGoods(updated);
     } catch (err) {
       notify.error("Couldn't update the order status", err);
     }
@@ -569,6 +600,13 @@ export default function Production() {
       }
     }
     setOrders((prev) => prev.map((o) => updatedById[o.id] || o));
+    // Same auto-PO trigger as single advance — for every order this bulk move
+    // pushed INTO Order Goods. Idempotent + fire-and-forget.
+    if (bulkStatus === "Order Goods") {
+      for (const o of Object.values(updatedById)) {
+        if (o?.status === "Order Goods") autoCreatePoOnOrderGoods(o);
+      }
+    }
     setSelectedIds(new Set());
     setBulkStatus("");
     if (failed.length > 0) {
