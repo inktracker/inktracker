@@ -102,9 +102,11 @@ export default function PurchaseOrders() {
   }, [pos]);
 
   const visible = useMemo(() => {
+    // History shows only SUBMITTED orders; "cancelled" (archived merge sources)
+    // stay in the DB for the record but don't clutter either list.
     let list = tab === "drafts"
       ? pos.filter((p) => p.status === "draft")
-      : pos.filter((p) => p.status !== "draft");
+      : pos.filter((p) => p.status === "submitted");
     if (supplierFilter !== "All") {
       list = list.filter((p) => p.supplier === supplierFilter);
     }
@@ -243,19 +245,31 @@ export default function PurchaseOrders() {
     try {
       const payload = buildMergedPO(sources);
       const created = await base44.entities.PurchaseOrder.create(payload);
-      // Delete sources in parallel; if one fails the rest still go.
-      await Promise.all(
-        sources.map((s) =>
-          base44.entities.PurchaseOrder.delete(s.id).catch((err) => {
-            console.error(`Failed to delete merged source ${s.id}:`, err);
-          }),
-        ),
+      // CANCEL the sources rather than delete them (audit B7): no data loss,
+      // and a cancelled PO can't be submitted — so a partial failure can never
+      // leave the merged draft AND a still-submittable original, which would
+      // place a DUPLICATE supplier order. Only remove the ones that actually
+      // cancelled from the list; report any that didn't so the shop can clear
+      // them by hand.
+      const results = await Promise.allSettled(
+        sources.map((s) => base44.entities.PurchaseOrder.update(s.id, { status: "cancelled" })),
       );
-      const sourceIds = new Set(sources.map((s) => s.id));
-      setPos((prev) => [created, ...prev.filter((p) => !sourceIds.has(p.id))]);
+      const cancelledIds = new Set();
+      const failedRefs = [];
+      sources.forEach((s, i) => {
+        if (results[i].status === "fulfilled") cancelledIds.add(s.id);
+        else failedRefs.push(s.reference || s.id);
+      });
+      setPos((prev) => [created, ...prev.filter((p) => !cancelledIds.has(p.id))]);
       setSelectedId(created.id);
       setMergeMode(false);
       setMergeSelection(new Set());
+      if (failedRefs.length) {
+        notify.error(
+          "Merged, but couldn't archive some originals",
+          `Still open: ${failedRefs.join(", ")}. Delete them so you don't order twice.`,
+        );
+      }
     } catch (err) {
       notify.error("Merge failed", err);
     } finally {
@@ -273,15 +287,32 @@ export default function PurchaseOrders() {
     if (!confirm(
       `Merge "${sourceLabel}" into "${destLabel}"?\n\n` +
       `${selected.items?.length || 0} item(s) will move into "${destLabel}". ` +
-      `Duplicate SKUs are summed. "${sourceLabel}" will be deleted afterwards.`,
+      `Duplicate SKUs are summed. "${sourceLabel}" is archived afterwards.`,
     )) return;
     setMergeOpen(false);
     const mergedItems = mergePOItems(selected.items, targetPO.items);
-    const updated = await base44.entities.PurchaseOrder.update(targetPO.id, { items: mergedItems });
-    await base44.entities.PurchaseOrder.delete(selected.id);
-    setPos((prev) => prev
-      .filter((p) => p.id !== selected.id)
-      .map((p) => (p.id === updated.id ? updated : p)));
+    // Carry the SOURCE's order linkage into the target too (B7 dropped it), so
+    // the target still ticks every covered order on submit. Union both sides'
+    // scalar + array links.
+    const mergedOrderIds = [...new Set([
+      ...(targetPO.source_order_id ? [String(targetPO.source_order_id)] : []),
+      ...(Array.isArray(targetPO.source_order_ids) ? targetPO.source_order_ids.map(String) : []),
+      ...(selected.source_order_id ? [String(selected.source_order_id)] : []),
+      ...(Array.isArray(selected.source_order_ids) ? selected.source_order_ids.map(String) : []),
+    ].filter(Boolean))];
+    const updated = await base44.entities.PurchaseOrder.update(targetPO.id, {
+      items: mergedItems,
+      source_order_ids: mergedOrderIds,
+    });
+    // Cancel (not delete) the source — no data loss, and a cancelled PO can't be
+    // submitted, so it can't become a duplicate of the merged order (B7).
+    try {
+      await base44.entities.PurchaseOrder.update(selected.id, { status: "cancelled" });
+      setPos((prev) => prev.filter((p) => p.id !== selected.id).map((p) => (p.id === updated.id ? updated : p)));
+    } catch {
+      setPos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      notify.error("Merged, but couldn't archive the original", `"${sourceLabel}" is still open — delete it so you don't order twice.`);
+    }
     setSelectedId(updated.id);
   }
 
