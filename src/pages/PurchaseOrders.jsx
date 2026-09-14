@@ -4,6 +4,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtMoney } from "@/components/shared/pricing";
 import { placeOrder, getShippingMethods, SUPPLIERS } from "@/api/suppliers";
+import { comparePoSuppliers, savingsVsCurrent, repriceItemsForSupplier, candidateSuppliers } from "@/lib/suppliers/sourcingOptions";
 import {
   poSubtotal,
   freightProgress,
@@ -27,7 +28,7 @@ import ConsolidateBuyingModal from "@/components/purchaseOrders/ConsolidateBuyin
 import POReceivingPanel from "@/components/purchaseOrders/POReceivingPanel";
 import SupplierConnectionBanner from "@/components/purchaseOrders/SupplierConnectionBanner";
 import { buildPOCsv, buildPOCsvFilename } from "@/lib/orders/poCsv";
-import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download, PackageCheck } from "lucide-react";
+import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download, PackageCheck, TrendingDown, Scale } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
 import { useReadOnly } from "@/lib/billing-gate";
@@ -70,6 +71,10 @@ export default function PurchaseOrders() {
   const [submitError, setSubmitError] = useState(null);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [consolidateOpen, setConsolidateOpen] = useState(false);
+  // Cross-supplier price comparison for the selected draft PO. Keyed by PO id
+  // so a stale result never bleeds onto a different PO.
+  const [comparison, setComparison] = useState(null); // { forPoId, current, alternatives, best, savings }
+  const [comparing, setComparing] = useState(false);
   const [receiving, setReceiving] = useState(false);
 
   // Filter + multi-select merge mode (drafts tab only)
@@ -230,6 +235,41 @@ export default function PurchaseOrders() {
     if (!selected || readOnly) return;
     const updated = await base44.entities.PurchaseOrder.update(selected.id, patch);
     setPos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  }
+
+  // Price this draft PO through its candidate suppliers (S&S ↔ SanMar) and
+  // stash the result so the detail can show a "you'd save $X through Y" callout.
+  async function compareSuppliers() {
+    if (!selected) return;
+    setComparing(true);
+    try {
+      const cmp = await comparePoSuppliers(selected, {});
+      setComparison({ forPoId: selected.id, ...cmp, savings: savingsVsCurrent(cmp) });
+    } catch (err) {
+      notify.error("Couldn't compare supplier pricing", err);
+    } finally {
+      setComparing(false);
+    }
+  }
+
+  // Move the WHOLE PO to another supplier — re-prices every line at the target's
+  // cost and re-stamps SKUs. Keeps it one PO, so pooling is preserved.
+  async function switchSupplier(targetSupplier) {
+    if (!selected || readOnly || !comparison || comparison.forPoId !== selected.id) return;
+    const targetResult =
+      comparison.best?.supplier === targetSupplier
+        ? comparison.best
+        : comparison.alternatives?.find((a) => a.supplier === targetSupplier);
+    if (!targetResult) return;
+    if (!confirm(`Switch this PO from ${selected.supplier} to ${targetSupplier}?\n\nEvery line is re-priced at ${targetSupplier}'s cost.`)) return;
+    const items = repriceItemsForSupplier(selected.items, targetResult, targetSupplier);
+    try {
+      await patchSelected({ supplier: targetSupplier, items });
+      setComparison(null); // stale after the switch; operator can re-check
+      notify.success(`Switched to ${targetSupplier} — re-priced at their cost.`);
+    } catch (err) {
+      notify.error("Couldn't switch supplier", err);
+    }
   }
 
   // Tick "goods ordered" on EVERY order this PO covers — the scalar
@@ -702,6 +742,10 @@ export default function PurchaseOrders() {
               receiving={receiving}
               onToggleReceived={toggleReceived}
               onCheckInItem={checkInItem}
+              comparison={comparison?.forPoId === selected.id ? comparison : null}
+              comparing={comparing}
+              onCompareSuppliers={compareSuppliers}
+              onSwitchSupplier={switchSupplier}
             />
           )}
         </div>
@@ -775,7 +819,7 @@ function defaultShipTo(user) {
   };
 }
 
-function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError, receiving = false, onToggleReceived, onCheckInItem }) {
+function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError, receiving = false, onToggleReceived, onCheckInItem, comparison = null, comparing = false, onCompareSuppliers, onSwitchSupplier }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
@@ -903,6 +947,67 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
       {/* Items */}
       <div>
         <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Items</div>
+        {/* Cross-supplier price comparison — only for S&S/SanMar drafts with
+            items (they share brand style numbers, so each is a real alternative
+            to the other). One click prices the whole PO through both and, if the
+            other is cheaper, offers a whole-PO switch (keeps it one PO → pooling
+            intact). */}
+        {!isLocked && po.items?.length > 0 && candidateSuppliers(po.supplier).length > 1 && (
+          <div className="mb-3">
+            {!comparison ? (
+              <button
+                type="button"
+                onClick={onCompareSuppliers}
+                disabled={comparing || readOnly}
+                title={readOnly ? reason : undefined}
+                className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-60"
+              >
+                {comparing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Scale className="w-3.5 h-3.5" />}
+                {comparing ? "Pricing through S&S & SanMar…" : "Compare supplier pricing"}
+              </button>
+            ) : comparison.savings ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                <div className="flex items-start gap-2.5">
+                  <TrendingDown className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
+                  <div className="flex-1 text-sm text-emerald-900">
+                    <div className="font-bold">
+                      Order through {comparison.savings.supplier} and save {fmtMoney(comparison.savings.totalSaved)}
+                      {comparison.savings.perPiece > 0 && <span className="font-semibold"> ({fmtMoney(comparison.savings.perPiece)}/pc)</span>}
+                    </div>
+                    <div className="text-emerald-800 text-xs mt-0.5">
+                      {fmtMoney(comparison.savings.altTotal)} through {comparison.savings.supplier} vs {fmtMoney(comparison.savings.currentTotal)} here ({po.supplier}).
+                    </div>
+                    {comparison.savings.shortStock?.length > 0 && (
+                      <div className="text-amber-700 text-xs mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        {comparison.savings.shortStock.length} line{comparison.savings.shortStock.length === 1 ? "" : "s"} may be low/out of stock at {comparison.savings.supplier} — check before switching.
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onSwitchSupplier(comparison.savings.supplier)}
+                    disabled={readOnly}
+                    className="shrink-0 inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                  >
+                    <Truck className="w-3.5 h-3.5" /> Switch to {comparison.savings.supplier}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-semibold text-slate-700">{po.supplier} is your cheapest option</span> for these items.
+                  {comparison.alternatives?.some((a) => !a.coversAll) && (
+                    <span className="text-slate-500"> ({comparison.alternatives.filter((a) => !a.coversAll).map((a) => a.supplier).join(", ")} doesn&apos;t carry every line.)</span>
+                  )}
+                  <button type="button" onClick={onCompareSuppliers} disabled={comparing} className="ml-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-60">re-check</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {!po.items?.length ? (
           <div className="text-sm text-slate-500 border border-dashed border-slate-200 rounded-lg p-6 text-center">
             No items yet. Add them from the AS Colour catalog or inventory.
