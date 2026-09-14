@@ -27,12 +27,15 @@ const FN = {
     placeOrder: "acPlaceOrder",
     shippingMethods: "acGetShippingMethods",
   },
-  // SanMar has no keyword-search or (yet) order-placement API — exact
-  // style-number lookup only. PO integration is a separate SanMar
-  // onboarding phase; placeOrder stays absent so placeOrder() throws
-  // the standard "place directly with the supplier" message.
+  // SanMar has no keyword-search API — exact style-number lookup only.
+  // smPlaceOrder EXISTS but is DORMANT: the edge function is hard-gated by the
+  // SANMAR_PO_ENABLED secret and returns { needsManual: true } until the shop's
+  // SanMar account is confirmed authorized + the submitPO schema is verified.
+  // Callers handle needsManual by keeping the "place directly, then Mark
+  // submitted" flow. See supabase/functions/smPlaceOrder + _shared/sanmar.ts.
   [SUPPLIERS.SANMAR]: {
     lookup: "smLookupStyle",
+    placeOrder: "smPlaceOrder",
   },
 };
 

@@ -11,6 +11,9 @@ import {
   buildMatchFromEntries,
   buildInventoryEnvelope,
   parseInventoryResponse,
+  buildSubmitPoEnvelope,
+  parseSubmitPoResponse,
+  SM_PO_SPEC,
 } from "../sanmar.ts";
 
 // Fixture XML lifted from the SanMar Web Services Integration Guide v24.3
@@ -416,5 +419,88 @@ describe("buildMatchFromEntries — per-size prices (2XL+ upcharges)", () => {
     const match = buildMatchFromEntries(entries, []);
     expect(match.colors[0].piecePrice).toBe(8.62);
     expect(match.colors[0].salePrice).toBe(6.34);
+  });
+});
+
+describe("PO submission — buildSubmitPoEnvelope", () => {
+  const creds = { customerNumber: "12345", username: "shop", password: "p<w&d" };
+  const po = {
+    poNumber: "ORD-2026-XYZ",
+    shipTo: {
+      name: "Summit Screen & Print",
+      address1: "100 Main St",
+      address2: "Ste 4",
+      city: "Reno",
+      state: "NV",
+      zip: "89501",
+      country: "US",
+    },
+    shipMethod: "UPS Ground",
+    notes: "leave at dock",
+    lines: [
+      { inventoryKey: "11803", sizeIndex: "3", quantity: 12, style: "PC61", catalogColor: "White", size: "M" },
+      { inventoryKey: "11804", sizeIndex: "4", quantity: 6, style: "PC61", catalogColor: "White", size: "L" },
+    ],
+  };
+
+  it("wraps the documented submitPO operation and namespace (from SM_PO_SPEC)", () => {
+    const env = buildSubmitPoEnvelope(creds, po);
+    expect(env).toContain(`<${SM_PO_SPEC.namespacePrefix}:${SM_PO_SPEC.operation}>`);
+    expect(env).toContain(SM_PO_SPEC.namespace);
+  });
+
+  it("carries the PO number, ship-to, and auth in arg1", () => {
+    const env = buildSubmitPoEnvelope(creds, po);
+    expect(env).toContain("<poNum>ORD-2026-XYZ</poNum>");
+    expect(env).toContain("<shipToName>Summit Screen &amp; Print</shipToName>");
+    expect(env).toContain("<shipToZip>89501</shipToZip>");
+    expect(env).toContain("<shipMethod>UPS Ground</shipMethod>");
+    expect(env).toContain("<sanMarCustomerNumber>12345</sanMarCustomerNumber>");
+    expect(env).toContain("<sanMarUserPassword>p&lt;w&amp;d</sanMarUserPassword>");
+  });
+
+  it("emits one lineItem per resolved variant with inventoryKey+sizeIndex+quantity", () => {
+    const env = buildSubmitPoEnvelope(creds, po);
+    expect(env.match(/<lineItem>/g)).toHaveLength(2);
+    expect(env).toContain("<inventoryKey>11803</inventoryKey>");
+    expect(env).toContain("<sizeIndex>3</sizeIndex>");
+    expect(env).toContain("<quantity>12</quantity>");
+  });
+
+  it("drops lines missing inventoryKey/sizeIndex (caller must resolve first)", () => {
+    const env = buildSubmitPoEnvelope(creds, {
+      ...po,
+      lines: [
+        { inventoryKey: "11803", sizeIndex: "3", quantity: 12 },
+        { style: "PC61", size: "XL", quantity: 4 }, // unresolved → excluded
+      ],
+    });
+    expect(env.match(/<lineItem>/g)).toHaveLength(1);
+  });
+
+  it("escapes special characters in notes", () => {
+    const env = buildSubmitPoEnvelope(creds, { ...po, notes: "a & b <tag>" });
+    expect(env).toContain("<notesToSanMar>a &amp; b &lt;tag&gt;</notesToSanMar>");
+  });
+});
+
+describe("PO submission — parseSubmitPoResponse", () => {
+  it("reports success and echoes the PO number", () => {
+    const xml = `<S:Envelope><S:Body><return><errorOccured>false</errorOccured><poNum>ORD-2026-XYZ</poNum><message>Accepted</message></return></S:Body></S:Envelope>`;
+    const r = parseSubmitPoResponse(xml);
+    expect(r.success).toBe(true);
+    expect(r.poNumber).toBe("ORD-2026-XYZ");
+    expect(r.message).toBe("Accepted");
+  });
+
+  it("reports failure when errorOccured is true", () => {
+    const xml = `<S:Envelope><S:Body><return><errorOccured>true</errorOccured><message>Invalid inventoryKey</message></return></S:Body></S:Envelope>`;
+    const r = parseSubmitPoResponse(xml);
+    expect(r.success).toBe(false);
+    expect(r.message).toBe("Invalid inventoryKey");
+  });
+
+  it("handles an empty body without throwing", () => {
+    expect(parseSubmitPoResponse("")).toMatchObject({ success: false });
   });
 });

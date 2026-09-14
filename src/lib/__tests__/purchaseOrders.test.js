@@ -8,6 +8,7 @@ import {
   validateForSubmit,
   buildSubmitPayload,
   buildSsSubmitPayload,
+  buildSmSubmitPayload,
   mergePOItems,
   mergeableDestinations,
   buildMergedPO,
@@ -668,6 +669,54 @@ describe("S&S submit path (B1 — non-AC POs were a submit dead-end)", () => {
     const acErrors = validateForSubmit({ reference: "P", ship_to: {}, items: [] }, "AS Colour");
     expect(acErrors.length).toBeGreaterThan(0);
     expect(acErrors).toEqual(expect.arrayContaining([expect.stringMatching(/Shipping method/)]));
+  });
+});
+
+describe("SanMar submit path (#4 — dormant until authorized/verified)", () => {
+  const smPo = {
+    reference: "ORD-2026-XYZ",
+    shipping_method: "UPS Ground",
+    notes: "dock delivery",
+    ship_to: { company: "My Shop", address1: "1 Ink St", city: "Reno", state: "NV", zip: "89501", countryCode: "US", email: "s@x.com" },
+    items: [
+      { sku: "PC61-WHITE-M", styleCode: "PC61", color: "White", size: "M", quantity: 12 },
+      { sku: "PC61-WHITE-L", styleCode: "PC61", color: "White", size: "L", quantity: 6 },
+    ],
+  };
+
+  it("buildSmSubmitPayload emits style/color/size per line (SanMar resolves inventoryKey server-side)", () => {
+    const p = buildSmSubmitPayload(smPo);
+    expect(p.poNumber).toBe("ORD-2026-XYZ");
+    expect(p.shippingMethod).toBe("UPS Ground");
+    expect(p.notes).toBe("dock delivery");
+    expect(p.shipTo).toMatchObject({ name: "My Shop", city: "Reno", state: "NV", zip: "89501", country: "US" });
+    expect(p.lines).toEqual([
+      { style: "PC61", color: "White", size: "M", qty: 12 },
+      { style: "PC61", color: "White", size: "L", qty: 6 },
+    ]);
+  });
+
+  it("validateForSubmit(SanMar) requires style + color + size per line (all three needed to resolve a variant)", () => {
+    expect(validateForSubmit(smPo, "SanMar")).toEqual([]);
+    const missing = validateForSubmit(
+      { ...smPo, items: [{ styleCode: "PC61", quantity: 3 }] },
+      "SanMar",
+    );
+    expect(missing).toEqual(expect.arrayContaining([
+      expect.stringMatching(/color is required/),
+      expect.stringMatching(/size is required/),
+    ]));
+  });
+
+  it("validateForSubmit(SanMar) flags an incomplete ship-to and non-positive qty", () => {
+    const errs = validateForSubmit(
+      { ...smPo, ship_to: { address1: "x" }, items: [{ styleCode: "PC61", color: "White", size: "M", quantity: 0 }] },
+      "SanMar",
+    );
+    expect(errs).toEqual(expect.arrayContaining([
+      expect.stringMatching(/city/),
+      expect.stringMatching(/quantity must be positive/),
+    ]));
   });
 });
 

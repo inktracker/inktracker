@@ -494,3 +494,140 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     piecePrice: pieces.length ? Math.min(...pieces) : 0,
   };
 }
+
+// --- Purchase Order submission (SanMar Standard PO SOAP service) ---------------
+//
+// ⚠️  SPEC-PENDING — VERIFY AGAINST THE WSDL SANMAR RETURNS.
+//     As of this writing the shop's SanMar account was NOT yet confirmed
+//     authorized for the PO web service (request emailed to
+//     sanmarintegrations@sanmar.com, 2026-09-14). Everything in THIS section
+//     is built to the documented Standard Purchase Order service in the
+//     Integration Guide, but the exact operation name, element names, and
+//     response shape MUST be reconciled with the WSDL / sample payloads SanMar
+//     provides before this is trusted with a real order. The identifiers that
+//     need confirming are collected in SM_PO_SPEC below so there's ONE place to
+//     fix. Until then the smPlaceOrder edge function is hard-gated OFF by the
+//     SANMAR_PO_ENABLED secret and never posts to SanMar.
+//
+// SanMar identifies a garment variant for ordering by inventoryKey + sizeIndex
+// (NOT by a human style/color/size). smPlaceOrder resolves those via the
+// Product Info service before building the envelope, same way ssPlaceOrder
+// resolves real S&S SKUs.
+
+// The handful of spec-dependent identifiers, isolated so finalizing against the
+// WSDL is a one-spot edit. Names below are the documented Standard PO service;
+// confirm each against SanMar's actual WSDL.
+export const SM_PO_SPEC = {
+  // Endpoint port (joined onto smBase()). Lookup services use
+  // SanMarProductInfoServicePort / SanMarPricingServicePort / SanMarWebServicePort.
+  servicePort: "SanMarPOServicePort",
+  // SOAP operation + its namespace.
+  operation: "submitPO",
+  namespace: "http://webservice.integration.sanmar.com/",
+  namespacePrefix: "web",
+  // The response element that carries a success flag / assigned PO number.
+  // (Errors still ride the shared errorOccured/message channel that
+  // smSoapCall already detects.)
+  responseTag: "return",
+} as const;
+
+export interface SmPoShipTo {
+  name: string;
+  address1: string;
+  address2?: string;
+  city: string;
+  state: string;
+  zip: string;
+  country?: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface SmPoLine {
+  // Preferred SanMar identifiers (resolved server-side from style/color/size).
+  inventoryKey?: string;
+  sizeIndex?: string;
+  // Human fallbacks (kept for logging / when a variant couldn't be resolved).
+  style?: string;
+  catalogColor?: string;
+  size?: string;
+  quantity: number;
+}
+
+export interface SmPoRequest {
+  poNumber: string;
+  shipTo: SmPoShipTo;
+  shipMethod?: string;
+  notes?: string;
+  lines: SmPoLine[];
+}
+
+/**
+ * Build the submitPO SOAP envelope. SPEC-PENDING (see SM_PO_SPEC): the element
+ * names here follow the documented Standard PO service and must be reconciled
+ * with the WSDL SanMar returns. Only lines carrying a resolved inventoryKey +
+ * sizeIndex are emitted — the caller is responsible for resolving them first
+ * and rejecting the order if any line is unresolved (an ambiguous variant must
+ * never silently drop from a real order).
+ */
+export function buildSubmitPoEnvelope(creds: SmCreds, po: SmPoRequest): string {
+  const p = SM_PO_SPEC.namespacePrefix;
+  const s = po.shipTo;
+  const lineXml = po.lines
+    .filter((l) => l.inventoryKey && l.sizeIndex)
+    .map(
+      (l) => `        <lineItem>
+          <inventoryKey>${xmlEscape(l.inventoryKey!)}</inventoryKey>
+          <sizeIndex>${xmlEscape(l.sizeIndex!)}</sizeIndex>
+          <quantity>${Number(l.quantity) || 0}</quantity>
+        </lineItem>`,
+    )
+    .join("\n");
+  return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:${p}="${SM_PO_SPEC.namespace}">
+  <soapenv:Header />
+  <soapenv:Body>
+    <${p}:${SM_PO_SPEC.operation}>
+      <arg0>
+        <poNum>${xmlEscape(po.poNumber)}</poNum>
+        <shipToName>${xmlEscape(s.name)}</shipToName>
+        <shipTo1>${xmlEscape(s.address1)}</shipTo1>
+        <shipTo2>${xmlEscape(s.address2 || "")}</shipTo2>
+        <shipToCity>${xmlEscape(s.city)}</shipToCity>
+        <shipToState>${xmlEscape(s.state)}</shipToState>
+        <shipToZip>${xmlEscape(s.zip)}</shipToZip>
+        <shipToCountry>${xmlEscape(s.country || "US")}</shipToCountry>
+        <shipMethod>${xmlEscape(po.shipMethod || "")}</shipMethod>
+        <notesToSanMar>${xmlEscape(po.notes || "")}</notesToSanMar>
+${lineXml}
+      </arg0>
+      <arg1>
+        <sanMarCustomerNumber>${xmlEscape(creds.customerNumber)}</sanMarCustomerNumber>
+        <sanMarUserName>${xmlEscape(creds.username)}</sanMarUserName>
+        <sanMarUserPassword>${xmlEscape(creds.password)}</sanMarUserPassword>
+      </arg1>
+    </${p}:${SM_PO_SPEC.operation}>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+}
+
+export interface SmPoResult {
+  success: boolean;
+  poNumber: string;
+  message: string;
+}
+
+/**
+ * Parse the submitPO response. SPEC-PENDING: SanMar's application-level errors
+ * ride the shared errorOccured/message channel (already caught by smSoapCall),
+ * so a response that reaches here is presumed accepted; we surface any assigned
+ * PO number and message. Reconcile the tag names with the real WSDL.
+ */
+export function parseSubmitPoResponse(xml: string): SmPoResult {
+  if (!xml) return { success: false, poNumber: "", message: "Empty response from SanMar" };
+  const ret = xmlBlocks(xml, SM_PO_SPEC.responseTag)[0] ?? xml;
+  const errFlag = xmlText(xml, "errorOccured") || xmlText(xml, "errorOccurred");
+  const message = xmlText(ret, "message") || xmlText(xml, "message") || "";
+  // SanMar echoes back the PO number (or an assigned one) on success.
+  const poNumber = xmlText(ret, "poNum") || xmlText(ret, "poNumber") || "";
+  return { success: errFlag !== "true", poNumber, message };
+}
