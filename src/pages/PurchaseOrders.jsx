@@ -866,13 +866,12 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
 
-  // Which suppliers can this PO be switched to. A supplier can only carry the
-  // PO's garments if it's in the SAME catalog family (S&S ↔ SanMar share brand
-  // style numbers; AS Colour is its own catalog) AND — for the same-family
-  // alternative — the live comparison confirms it stocks every line. Suppliers
-  // that don't carry the garments are disabled (grayed) in the picker.
+  // Gray out a supplier in the picker ONLY when the live comparison has
+  // POSITIVE evidence it doesn't stock every line (coversAll === false) — never
+  // on a guess. A supplier we haven't actually checked (e.g. one outside the
+  // priced set, or before the comparison loads) stays selectable, so we never
+  // falsely tell you a supplier can't carry a garment it actually does.
   const hasItems = (po.items?.length || 0) > 0;
-  const supplierFamily = candidateSuppliers(po.supplier);
   const coverage = {};
   if (comparison) {
     for (const r of [comparison.current, ...(comparison.alternatives || [])]) {
@@ -882,9 +881,7 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
   function supplierSelectable(s) {
     if (!hasItems) return true; // fresh PO — choose any supplier to build for
     if (s === po.supplier) return true; // current is always valid
-    if (!supplierFamily.includes(s)) return false; // different catalog → can't carry
-    if (!comparison) return true; // not compared yet → don't block optimistically
-    return coverage[s] === true; // same family: only if it stocks every line
+    return coverage[s] !== false; // disable only on confirmed non-coverage
   }
 
   // Editing is off when the PO is already submitted (isLocked) OR the
