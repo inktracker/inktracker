@@ -5,6 +5,7 @@ import {
   comparePoSuppliers,
   savingsVsCurrent,
   repriceItemsForSupplier,
+  normalizeAddItemsProduct,
 } from "../sourcingOptions";
 
 describe("candidateSuppliers", () => {
@@ -151,6 +152,36 @@ describe("comparePoSuppliers + savingsVsCurrent", () => {
     const cmp = await comparePoSuppliers(acPo, { lookupByStyle: async () => ({ matches: [{ priceMap: { Black: { piecePrice: 6 } } }] }) });
     expect(cmp.alternatives).toHaveLength(0);
     expect(savingsVsCurrent(cmp)).toBeNull();
+  });
+});
+
+describe("normalizeAddItemsProduct", () => {
+  it("synthesizes variants from colors[] for S&S/SanMar (guessed SKU, sale-aware price, stock)", () => {
+    const result = {
+      matches: [{
+        styleNumber: "1717",
+        title: "Comfort Colors 1717",
+        colors: [{ colorName: "White", sizePrices: { M: 6.53, L: 6.53 }, sizeSalePrices: { M: 6.34 }, sizeQuantities: { M: 900, L: 40 } }],
+        sizePriceMap: { White: { M: 6.53, L: 6.53 } },
+        priceMap: { White: { piecePrice: 6.53 } },
+        inventoryMap: { White: { M: 900, L: 40 } },
+      }],
+    };
+    const p = normalizeAddItemsProduct(result, "S&S Activewear");
+    expect(p.styleCode).toBe("1717");
+    expect(p.variants).toHaveLength(2);
+    const m = p.variants.find((v) => v.size === "M");
+    expect(m).toMatchObject({ sku: "1717-WHITE-M", colour: "White", price: 6.34, stock: 900 }); // sale price
+    expect(p.variants.find((v) => v.size === "L").price).toBe(6.53); // no sale on L
+  });
+
+  it("passes AS Colour through untouched (keeps its variants)", () => {
+    const result = { product: { styleCode: "5050", variants: [{ sku: "5050-BLK-M", colour: "Black", size: "M", price: 6 }] } };
+    expect(normalizeAddItemsProduct(result, "AS Colour").variants[0].sku).toBe("5050-BLK-M");
+  });
+
+  it("returns null when nothing was found", () => {
+    expect(normalizeAddItemsProduct({ matches: [] }, "S&S Activewear")).toBeNull();
   });
 });
 

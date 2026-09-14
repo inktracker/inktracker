@@ -1054,7 +1054,7 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
         )}
         {!po.items?.length ? (
           <div className="text-sm text-slate-500 border border-dashed border-slate-200 rounded-lg p-6 text-center">
-            No items yet. Add them from the AS Colour catalog or inventory.
+            No items yet. Look up a style above, or generate the PO from an order.
           </div>
         ) : (
           <div className="border border-slate-100 rounded-lg overflow-hidden">
