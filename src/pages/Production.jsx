@@ -18,7 +18,6 @@ import OrderDetailModal from "../components/orders/OrderDetailModal";
 import OrderNotesIcon, { orderNotesTooltip } from "../components/orders/OrderNotesIcon";
 import { canSeeMoney } from "@/lib/managerPermissions";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
-import ACOrderModal from "../components/orders/ACOrderModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { orderHasMethod, availableMethods } from "../lib/production/orderMethods";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
@@ -117,7 +116,6 @@ export default function Production() {
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState(null);
-  const [acOrderTarget, setAcOrderTarget] = useState(null);
   // Map of order.id → PO row (the PO created from that order, if any).
   // Drives the OrderDetailModal's tri-state Order from AS Colour button.
   const [poByOrderId, setPoByOrderId] = useState({});
@@ -341,10 +339,23 @@ export default function Production() {
     }
   }
 
+  // Fold newly-created PO(s) into poByOrderId so each covered order's button
+  // flips to "View Pending PO" without a reload. Submitted wins over draft.
+  function patchPoMapWithCreated(created) {
+    setPoByOrderId((prev) => {
+      const next = { ...prev };
+      for (const po of created) {
+        for (const oid of [po.source_order_id, ...(po.source_order_ids || [])].filter(Boolean)) {
+          if (!next[oid] || (po.status === "submitted" && next[oid].status !== "submitted")) next[oid] = po;
+        }
+      }
+      return next;
+    });
+  }
+
   // Auto-create draft PO(s) when an order enters "Order Goods" (1A/2A: full
   // quantity, one draft per supplier, never submitted, idempotent). Fire-and-
-  // forget so it never blocks the status change; a toast confirms, and
-  // poByOrderId is patched so the order's PO button flips to "View Pending PO".
+  // forget so it never blocks the status change; a toast confirms.
   async function autoCreatePoOnOrderGoods(order) {
     if (!user || !order?.id || poByOrderId[order.id]) return;
     try {
@@ -352,21 +363,42 @@ export default function Production() {
         existingPos: Object.values(poByOrderId),
       });
       if (created.length) {
-        setPoByOrderId((prev) => {
-          const next = { ...prev };
-          for (const po of created) {
-            for (const oid of [po.source_order_id, ...(po.source_order_ids || [])].filter(Boolean)) {
-              if (!next[oid] || (po.status === "submitted" && next[oid].status !== "submitted")) next[oid] = po;
-            }
-          }
-          return next;
-        });
+        patchPoMapWithCreated(created);
         const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
         notify.success(`${label} created for ${order.order_id || "this order"} — review on Purchase Orders.`);
       }
       if (warnings?.some((w) => w.error)) console.warn("[autoPO] some suppliers failed:", warnings);
     } catch (err) {
       console.warn("[autoPO] ensurePoDraftsForOrder failed:", err);
+    }
+  }
+
+  // Manual "Create PO" from an order's footer — supplier-aware (builds a draft
+  // for whatever supplier(s) the order's line items actually use: S&S, AS
+  // Colour, or SanMar), unlike the old AS-Colour-only modal. Reuses the same
+  // helper as auto-PO, so it also works for orders already sitting in Order
+  // Goods from before auto-PO shipped.
+  async function handleCreatePoForOrder(order) {
+    if (!user || !order?.id) return;
+    try {
+      const { created, skipped, warnings } = await ensurePoDraftsForOrder(order, user, {
+        existingPos: Object.values(poByOrderId),
+      });
+      if (created.length) {
+        patchPoMapWithCreated(created);
+        const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
+        notify.success(`${label} created for ${order.order_id || "this order"} — review on Purchase Orders.`);
+      } else if (skipped) {
+        notify.success("This order already has a PO — open Purchase Orders to review it.");
+      } else {
+        notify.error(
+          "Couldn't build a PO from this order",
+          "Its line items have no garment supplier or style number set. Set the supplier on the order, then try again.",
+        );
+      }
+      if (warnings?.some((w) => w.error)) console.warn("[createPO] some suppliers failed:", warnings);
+    } catch (err) {
+      notify.error("Couldn't create the PO", err);
     }
   }
 
@@ -1594,7 +1626,7 @@ export default function Production() {
           onComplete={handleComplete}
           onDelete={handleDelete}
           onTogglePaid={handleTogglePaid}
-          onOrderFromAC={(order) => setAcOrderTarget(order)}
+          onOrderFromAC={handleCreatePoForOrder}
           sourcePO={poByOrderId[viewing.id]}
           onShowInvoice={(invoice) => setViewingInvoice(invoice)}
           onUpdated={(u) => setOrders((prev) => prev.map((o) => (o.id === u.id ? { ...o, ...u } : o)))}
@@ -1618,16 +1650,6 @@ export default function Production() {
         />
       )}
 
-      {acOrderTarget && (
-        <ACOrderModal
-          order={acOrderTarget}
-          user={user}
-          onClose={() => setAcOrderTarget(null)}
-          onPOCreated={(po) => {
-            setPoByOrderId((prev) => ({ ...prev, [acOrderTarget.id]: po }));
-          }}
-        />
-      )}
     </div>
   );
 }
