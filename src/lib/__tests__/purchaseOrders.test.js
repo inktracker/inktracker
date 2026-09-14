@@ -356,10 +356,11 @@ describe("buildMergedPO", () => {
   });
 
   it("joins source references via combinedReference", () => {
+    // S&S so the join is tested without AS Colour's 20-char truncation.
     const out = buildMergedPO([
-      make({ id: "1", reference: "PO-001" }),
-      make({ id: "2", reference: "PO-002" }),
-      make({ id: "3", reference: "PO-003" }),
+      make({ id: "1", supplier: "S&S Activewear", reference: "PO-001" }),
+      make({ id: "2", supplier: "S&S Activewear", reference: "PO-002" }),
+      make({ id: "3", supplier: "S&S Activewear", reference: "PO-003" }),
     ]);
     // No common prefix at a space boundary — plain comma join.
     expect(out.reference).toBe("PO-001, PO-002, PO-003");
@@ -367,8 +368,8 @@ describe("buildMergedPO", () => {
 
   it("dedupes the 'PO for ORD-...' prefix when merging order-derived POs", () => {
     const out = buildMergedPO([
-      make({ id: "1", reference: "PO for ORD-2026-0WCV9" }),
-      make({ id: "2", reference: "PO for ORD-2026-0EVS3" }),
+      make({ id: "1", supplier: "S&S Activewear", reference: "PO for ORD-2026-0WCV9" }),
+      make({ id: "2", supplier: "S&S Activewear", reference: "PO for ORD-2026-0EVS3" }),
     ]);
     expect(out.reference).toBe("PO for ORD-2026-0WCV9, ORD-2026-0EVS3");
   });
@@ -667,5 +668,35 @@ describe("S&S submit path (B1 — non-AC POs were a submit dead-end)", () => {
     const acErrors = validateForSubmit({ reference: "P", ship_to: {}, items: [] }, "AS Colour");
     expect(acErrors.length).toBeGreaterThan(0);
     expect(acErrors).toEqual(expect.arrayContaining([expect.stringMatching(/Shipping method/)]));
+  });
+});
+
+describe("buildMergedPO — B7/B11 (linkage preserved, AS Colour ref capped)", () => {
+  const src = (over) => ({ supplier: "AS Colour", shop_owner: "s@x.com", status: "draft", items: [], reference: "PO", ...over });
+
+  it("unions every source's order linkage (scalar + array) so the merged PO covers them all", () => {
+    const merged = buildMergedPO([
+      src({ source_order_id: "o1" }),
+      src({ source_order_ids: ["o2", "o3"] }),
+      src({ source_order_id: "o1", source_order_ids: ["o3"] }), // dupes collapse
+    ]);
+    expect([...merged.source_order_ids].sort()).toEqual(["o1", "o2", "o3"]);
+  });
+
+  it("caps the AS Colour reference at 20 chars (was un-submittable after merge)", () => {
+    const merged = buildMergedPO([
+      src({ reference: "PO-2026-09-14-alpha" }),
+      src({ reference: "PO-2026-09-14-bravo" }),
+    ]);
+    expect(merged.reference.length).toBeLessThanOrEqual(20);
+    expect(merged.reference).not.toMatch(/[,\s]$/); // no dangling separator
+  });
+
+  it("does NOT cap an S&S reference (no 20-char limit there)", () => {
+    const merged = buildMergedPO([
+      src({ supplier: "S&S Activewear", reference: "PO-2026-09-14-alpha" }),
+      src({ supplier: "S&S Activewear", reference: "PO-2026-09-14-bravo" }),
+    ]);
+    expect(merged.reference.length).toBeGreaterThan(20);
   });
 });

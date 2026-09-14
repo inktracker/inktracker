@@ -331,7 +331,26 @@ export function buildMergedPO(sources) {
   }
   let items = [];
   for (const s of sources) items = mergePOItems(s.items, items);
-  const reference = combinedReference(sources.map((s) => s.reference));
+  let reference = combinedReference(sources.map((s) => s.reference));
+  // AS Colour caps the reference at 20 chars — a merged "ref1, ref2, …" almost
+  // always blows past it, which made the merged PO un-submittable (audit B11).
+  // Truncate for AS Colour (the operator can rename); leave S&S alone.
+  if (supplier === "AS Colour" && reference.length > AC_REFERENCE_MAX) {
+    reference = reference.slice(0, AC_REFERENCE_MAX).replace(/[,\s]+$/, "");
+  }
+  // Preserve the order linkage of EVERY source (audit B7 dropped it), so the
+  // merged PO still ticks all covered orders' checklists on submit. Union the
+  // scalar source_order_id and any source_order_ids arrays.
+  const source_order_ids = [
+    ...new Set(
+      sources
+        .flatMap((s) => [
+          ...(s.source_order_id ? [String(s.source_order_id)] : []),
+          ...(Array.isArray(s.source_order_ids) ? s.source_order_ids.map(String) : []),
+        ])
+        .filter(Boolean),
+    ),
+  ];
   const first = sources[0];
   return {
     shop_owner: shopOwner,
@@ -343,6 +362,7 @@ export function buildMergedPO(sources) {
     notes: first.notes || null,
     courier_instructions: first.courier_instructions || null,
     items,
+    source_order_ids,
   };
 }
 
