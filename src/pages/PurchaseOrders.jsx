@@ -777,6 +777,28 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
               {(po.reference || "").length}/{AC_REFERENCE_MAX} (AS Colour limit)
             </div>
           )}
+          {/* Supplier — editable while the PO is a draft so one "New PO" can
+              target any supplier (defaults to AS Colour on create). Locked
+              once submitted. Changing it re-evaluates the connection banner
+              and the supplier's shipping methods. */}
+          {!isLocked ? (
+            <label className="flex items-center gap-1.5 mt-1.5 text-xs font-semibold text-slate-500">
+              Supplier:
+              <select
+                value={po.supplier}
+                onChange={(e) => onPatch({ supplier: e.target.value })}
+                disabled={editDisabled}
+                title={readOnly ? reason : undefined}
+                className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {Object.values(SUPPLIERS).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="mt-1 text-xs font-semibold text-slate-500">{po.supplier}</div>
+          )}
         </div>
         {!isLocked && (
           <div className="flex items-center gap-1 relative">
