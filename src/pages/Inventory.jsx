@@ -27,6 +27,7 @@ import { matchLinesToItems, buildStockUpdates } from "@/lib/inventory/stockAddit
 import { shopScope } from "@/lib/shopScope";
 import { useReadOnly } from "@/lib/billing-gate";
 import ReactivateLink from "@/components/shared/ReactivateLink";
+import SupplierConnectionBanner from "@/components/purchaseOrders/SupplierConnectionBanner";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -1196,6 +1197,9 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user, 
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 space-y-3">
+          {cart.length > 0 && !orderResult && (
+            <SupplierConnectionBanner supplier="S&S Activewear" />
+          )}
           {cart.length > 0 && !orderResult && (
             <>
               <button onClick={handlePlaceOrder} disabled={readOnly || ordering}
