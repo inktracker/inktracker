@@ -11,6 +11,7 @@ import {
   validateForSubmit,
   buildSubmitPayload,
   buildSsSubmitPayload,
+  buildSmSubmitPayload,
   mergePOItems,
   mergeableDestinations,
   buildMergedPO,
@@ -371,9 +372,14 @@ export default function PurchaseOrders() {
 
   async function submitSelected() {
     if (!selected || readOnly) return;
-    // SanMar can't be ordered through the API yet — say so instead of a 400
-    // dead-end. The shop places it directly, then "Mark submitted".
-    if (selected.supplier === SUPPLIERS.SANMAR) {
+    // SanMar PO submission ships DORMANT: the smPlaceOrder edge function is
+    // hard-gated by the SANMAR_PO_ENABLED secret and the submitPO schema is
+    // still being verified against SanMar's WSDL. Until the frontend flag
+    // (VITE_SANMAR_PO_ENABLED) is turned on, keep the current UX exactly —
+    // an immediate "place it directly, then Mark submitted" note, no dialog.
+    // The edge function is the real safety gate (returns needsManual); this
+    // flag just avoids a misleading confirm during the pending window.
+    if (selected.supplier === SUPPLIERS.SANMAR && import.meta.env.VITE_SANMAR_PO_ENABLED !== "true") {
       setSubmitError("SanMar orders can't be placed through InkTracker yet — order it directly with SanMar, then use “Mark submitted”.");
       return;
     }
@@ -390,15 +396,25 @@ export default function PurchaseOrders() {
     try {
       // idempotencyKey = the PO's stable UUID, so a double-submit / retry
       // can't place a second real order (audit INT-02). Payload shape differs
-      // per supplier (AS Colour vs S&S).
-      const base = selected.supplier === SUPPLIERS.SS
-        ? buildSsSubmitPayload(selected)
-        : buildSubmitPayload(selected);
+      // per supplier (AS Colour vs S&S vs SanMar).
+      let base;
+      if (selected.supplier === SUPPLIERS.SS) base = buildSsSubmitPayload(selected);
+      else if (selected.supplier === SUPPLIERS.SANMAR) base = buildSmSubmitPayload(selected);
+      else base = buildSubmitPayload(selected);
       const payload = { ...base, idempotencyKey: selected.id };
       const result = await placeOrder(selected.supplier, payload);
-      // AS Colour returns order.id; S&S returns order.orderNumber/OrderNumber/orderId.
+      // Defense in depth: even with the frontend flag on, the edge function
+      // returns { needsManual: true } while its own SANMAR_PO_ENABLED secret
+      // is off. Treat that as "nothing was placed" — show the note, don't
+      // mark the PO submitted.
+      if (result?.needsManual) {
+        setSubmitError(result.message || "This supplier order must be placed directly, then marked submitted.");
+        return;
+      }
+      // AS Colour returns order.id; S&S returns order.orderNumber/OrderNumber/orderId;
+      // SanMar returns order.poNumber.
       const o = result?.order || {};
-      const rawId = o.id ?? o.orderNumber ?? o.OrderNumber ?? o.orderId ?? null;
+      const rawId = o.id ?? o.orderNumber ?? o.OrderNumber ?? o.orderId ?? o.poNumber ?? null;
       const supplierOrderId = rawId != null ? String(rawId) : null;
       await patchSelected({
         status: "submitted",

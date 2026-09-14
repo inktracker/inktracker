@@ -164,13 +164,76 @@ export function buildSsSubmitPayload(po) {
   };
 }
 
+// SanMar submit payload — shape consumed by the smPlaceOrder edge function,
+// which resolves each line's style/color/size to a SanMar inventoryKey +
+// sizeIndex server-side before building the SOAP envelope. Mirrors the S&S
+// payload's ship-to shape; SanMar needs a real style/color/size per line
+// (SKU alone can't be resolved to a SanMar variant).
+export function buildSmSubmitPayload(po) {
+  const sa = po.ship_to || {};
+  const name = sa.company || [sa.firstName, sa.lastName].filter(Boolean).join(" ").trim();
+  return {
+    poNumber: String(po.reference || ""),
+    shipTo: {
+      name: name || "",
+      address1: sa.address1 || "",
+      address2: sa.address2 || "",
+      city: sa.city || "",
+      state: sa.state || "",
+      zip: sa.zip || "",
+      country: sa.countryCode || "US",
+      phone: sa.phone || "",
+      email: sa.email || "",
+    },
+    shippingMethod: String(po.shipping_method || "").trim(),
+    notes: String(po.notes || ""),
+    lines: (po.items || []).map((it) => ({
+      style: String(it.styleCode || ""),
+      color: String(it.color || ""),
+      size: String(it.size || ""),
+      qty: Number(it.quantity) || 0,
+    })),
+  };
+}
+
 // Supplier-aware pre-submit validation. AS Colour and S&S have different
 // required fields (AS Colour: shipping method, first/last name, country code,
-// 20-char reference cap; S&S: just a complete ship-to + a style/sku per line).
+// 20-char reference cap; S&S: just a complete ship-to + a style/sku per line;
+// SanMar: complete ship-to + a style/color/size per line so the variant can be
+// resolved to inventoryKey/sizeIndex server-side).
 export function validateForSubmit(po, supplier) {
   if (!po) return ["nothing to submit"];
   if (supplier === "S&S Activewear") return validateSsSubmit(po);
+  if (supplier === "SanMar") return validateSmSubmit(po);
   return validateAcSubmit(po);
+}
+
+function validateSmSubmit(po) {
+  const errors = [];
+  if (!po.reference || !String(po.reference).trim()) errors.push("PO reference is required");
+  const sa = po.ship_to;
+  if (!sa || typeof sa !== "object") {
+    errors.push("Shipping address is required");
+  } else {
+    if (!sa.address1) errors.push("Shipping address: street is required");
+    if (!sa.city) errors.push("Shipping address: city is required");
+    if (!sa.state) errors.push("Shipping address: state is required");
+    if (!sa.zip) errors.push("Shipping address: zip is required");
+  }
+  if (!Array.isArray(po.items) || po.items.length === 0) {
+    errors.push("At least one item is required");
+  } else {
+    po.items.forEach((it, i) => {
+      // SanMar resolves the variant from style + color + size — a SKU alone
+      // can't be matched, so all three are required.
+      if (!it?.styleCode) errors.push(`Item ${i + 1}: style number is required`);
+      if (!it?.color) errors.push(`Item ${i + 1}: color is required`);
+      if (!it?.size) errors.push(`Item ${i + 1}: size is required`);
+      const qty = Number(it?.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) errors.push(`Item ${i + 1}: quantity must be positive`);
+    });
+  }
+  return errors;
 }
 
 function validateSsSubmit(po) {
