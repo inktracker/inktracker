@@ -55,6 +55,25 @@ describe("extractVariant", () => {
     const m = { priceMap: { White: { piecePrice: 4, salePrice: 4.5 } } };
     expect(extractVariant(m, null, "White", "M")).toMatchObject({ unitPrice: 4, onSale: false });
   });
+
+  it("does NOT apply the color-level sale to a size that has its own (higher) standard price", () => {
+    // Real promo shape: S–XL on sale, 2XL full price. priceMap.salePrice is the
+    // cheapest-size sale (3.50); 2XL has a per-size standard (5.50) and NO
+    // per-size sale entry → must price at 5.50, not 3.50.
+    const m = {
+      priceMap: { White: { piecePrice: 3.84, salePrice: 3.5 } },
+      sizePriceMap: { White: { M: 3.84, "2XL": 5.5 } },
+      colors: [{ colorName: "White", sizeSalePrices: { M: 3.5 } }], // sale on M only
+    };
+    expect(extractVariant(m, null, "White", "2XL")).toMatchObject({ unitPrice: 5.5, standardPrice: 5.5, onSale: false });
+    // M still gets its real per-size sale.
+    expect(extractVariant(m, null, "White", "M")).toMatchObject({ unitPrice: 3.5, onSale: true });
+  });
+
+  it("still applies a color-level sale when the style has NO per-size standard", () => {
+    const m = { priceMap: { White: { piecePrice: 4, salePrice: 3.5 } } };
+    expect(extractVariant(m, null, "White", "M")).toMatchObject({ unitPrice: 3.5, onSale: true });
+  });
 });
 
 // A SanMar PO for 100 White M @ style 1717 — cheaper at S&S.

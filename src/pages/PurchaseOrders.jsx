@@ -118,7 +118,7 @@ export default function PurchaseOrders() {
     const poId = searchParams.get("po");
     const orderId = searchParams.get("order");
     if (!poId && !orderId) return;
-    let match = poId ? pos.find((p) => p.id === poId) : null;
+    let match = poId ? pos.find((p) => p.id === poId && p.status !== "cancelled") : null;
     if (!match && orderId) {
       match = pos.find(
         (p) =>
@@ -172,13 +172,18 @@ export default function PurchaseOrders() {
   // methods if we haven't already. Skip on locked POs (their saved
   // method is already a string, no need to populate the dropdown).
   useEffect(() => {
+    // Reset loading/error FIRST, before any early return — these are global
+    // (not per-PO), so a cache-hit or non-draft PO must clear a prior PO's
+    // "Loading…"/error, otherwise the dropdown stays stuck or shows a stale
+    // "configure your AS Colour keys" message under an unrelated supplier.
+    setShippingMethodsLoading(false);
+    setShippingMethodsError(null);
     if (!selectedId) return;
     const sel = pos.find((p) => p.id === selectedId);
     if (!sel || sel.status !== "draft") return;
     if (shippingMethodsBySupplier[sel.supplier]) return;
     let cancelled = false;
     setShippingMethodsLoading(true);
-    setShippingMethodsError(null);
     getShippingMethods(sel.supplier)
       .then(({ methods }) => {
         if (cancelled) return;
@@ -475,14 +480,19 @@ export default function PurchaseOrders() {
         .filter(Boolean)
         .map(String)),
     ];
-    const single = ids.length === 1;
-    for (const oid of ids) {
-      try {
-        const order = await base44.entities.Order.get(oid);
-        if (order) await base44.entities.Order.update(oid, applyCheckInToOrder(order, po.items, { computeShortfall: single }));
-      } catch (e) {
-        console.warn("[PO check-in] reconcile failed for order", oid, e);
-      }
+    // Only a SINGLE-order PO can reconcile to the floor: on a consolidated PO
+    // the checked-in count is a shared pool across several jobs, so we can't
+    // attribute what each order actually received — blanket-marking every
+    // covered order 'received' off one short shipment would green-light jobs
+    // with no goods. Consolidated POs keep their PO-level received/checkedIn
+    // record; the operator receives each order manually.
+    if (ids.length !== 1) return;
+    const oid = ids[0];
+    try {
+      const order = await base44.entities.Order.get(oid);
+      if (order) await base44.entities.Order.update(oid, applyCheckInToOrder(order, po.items, { computeShortfall: true }));
+    } catch (e) {
+      console.warn("[PO check-in] reconcile failed for order", oid, e);
     }
   }
 
@@ -505,6 +515,10 @@ export default function PurchaseOrders() {
 
   async function submitSelected() {
     if (!selected || readOnly) return;
+    // Only a DRAFT can be submitted. Guards against re-submitting an already-
+    // submitted PO (distinct idempotency key = a second real order) and against
+    // submitting a cancelled merge-source alongside the merged PO.
+    if (selected.status !== "draft") return;
     // SanMar PO submission ships DORMANT: the smPlaceOrder edge function is
     // hard-gated by the SANMAR_PO_ENABLED secret and the submitPO schema is
     // still being verified against SanMar's WSDL. Until the frontend flag
@@ -547,7 +561,11 @@ export default function PurchaseOrders() {
       // AS Colour returns order.id; S&S returns order.orderNumber/OrderNumber/orderId;
       // SanMar returns order.poNumber.
       const o = result?.order || {};
-      const rawId = o.id ?? o.orderNumber ?? o.OrderNumber ?? o.orderId ?? o.poNumber ?? null;
+      // Prefer the supplier's explicit order-number fields over a generic `id`
+      // (S&S's raw response can carry an unrelated `id`; its real order number
+      // is `orderNumber`, matching the server-side extractor). AS Colour has no
+      // orderNumber and falls through to `id`.
+      const rawId = o.orderNumber ?? o.OrderNumber ?? o.orderId ?? o.poNumber ?? o.id ?? null;
       const supplierOrderId = rawId != null ? String(rawId) : null;
       await patchSelected({
         status: "submitted",
@@ -1044,7 +1062,7 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
               ) : (
                 <button
                   type="button"
-                  onClick={onCompareSuppliers}
+                  onClick={() => onCompareSuppliers()}
                   disabled={readOnly}
                   title={readOnly ? reason : undefined}
                   className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-60"
@@ -1115,7 +1133,7 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                   {comparison.alternatives?.some((a) => !a.coversAll) && (
                     <span className="text-slate-500"> ({comparison.alternatives.filter((a) => !a.coversAll).map((a) => a.supplier).join(", ")} doesn&apos;t carry every line.)</span>
                   )}
-                  <button type="button" onClick={onCompareSuppliers} disabled={comparing} className="ml-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-60">re-check</button>
+                  <button type="button" onClick={() => onCompareSuppliers()} disabled={comparing} className="ml-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-60">re-check</button>
                 </div>
               </div>
             )}

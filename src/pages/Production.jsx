@@ -200,6 +200,10 @@ export default function Production() {
         const poMap = {};
         const assign = (oid, po) => {
           if (!oid) return;
+          // A cancelled PO (archived merge source, or an operator-cancelled
+          // draft) does NOT cover an order — it must not block auto-PO
+          // regeneration or show as the order's "View Pending PO".
+          if (po.status === "cancelled") return;
           const existing = poMap[oid];
           if (!existing || (po.status === "submitted" && existing.status !== "submitted")) {
             poMap[oid] = po;
@@ -367,8 +371,15 @@ export default function Production() {
         patchPoMapWithCreated(created);
         const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
         notify.success(`${label} created for ${order.order_id || "this order"} — review on Purchase Orders.`);
+      } else if (warnings?.some((w) => w.unresolved?.length || w.lookupErrors?.length || w.error)) {
+        // Nothing got created but there WERE problems (AS Colour styles didn't
+        // resolve to live SKUs, or a create failed). Don't leave the order in
+        // Order Goods with no PO and no signal.
+        notify.error(
+          `Couldn't auto-build the PO for ${order.order_id || "this order"}`,
+          "Some garments didn't resolve to a live supplier SKU. Open Purchase Orders and build it via Consolidate buying or New PO.",
+        );
       }
-      if (warnings?.some((w) => w.error)) console.warn("[autoPO] some suppliers failed:", warnings);
     } catch (err) {
       console.warn("[autoPO] ensurePoDraftsForOrder failed:", err);
     }
@@ -393,13 +404,18 @@ export default function Production() {
       } else if (skipped) {
         // Already has a PO — take them straight to it rather than a dead toast.
         navigate(`${createPageUrl("PurchaseOrders")}?order=${order.id}`);
+      } else if (warnings?.some((w) => w.unresolved?.length || w.lookupErrors?.length || w.error)) {
+        // Had garments but they didn't resolve to live SKUs (AS Colour lookup).
+        notify.error(
+          "Couldn't build the PO — garments didn't resolve",
+          "Some styles didn't match a live supplier SKU. Try Consolidate buying, or add the items manually on a New PO.",
+        );
       } else {
         notify.error(
           "Couldn't build a PO from this order",
           "Its line items have no garment supplier or style number set. Set the supplier on the order, then try again.",
         );
       }
-      if (warnings?.some((w) => w.error)) console.warn("[createPO] some suppliers failed:", warnings);
     } catch (err) {
       notify.error("Couldn't create the PO", err);
     }

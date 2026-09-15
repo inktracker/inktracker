@@ -97,7 +97,10 @@ export default function POReceivingPanel({ po, readOnly = false, busy = false, o
           <div className="px-4 py-3 text-sm text-slate-400">No items on this PO.</div>
         ) : (
           items.map((it, i) => (
-            <LineRow key={it.sku || i} item={it} index={i} busy={busy} readOnly={readOnly} onCheckIn={onCheckInItem} />
+            // Key by sku+warehouse+index: mergeItem allows the same SKU on two
+            // warehouses (AS Colour routing), so sku alone collides and bleeds
+            // the counted-qty input state between rows.
+            <LineRow key={`${it.sku || ""}-${it.warehouse ?? ""}-${i}`} item={it} index={i} busy={busy} readOnly={readOnly} onCheckIn={onCheckInItem} />
           ))
         )}
       </div>

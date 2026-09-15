@@ -40,11 +40,20 @@ export function extractVariant(match, product, color, size) {
     color;
 
   // ── standard (list) price ─────────────────────────────────────────
+  // Track whether we found a PER-SIZE standard: the per-color salePrice is the
+  // cheapest sale ACROSS the color's sizes and is documented server-side as
+  // display-only, so it must NEVER be applied to a specific size that has its
+  // own (possibly higher, un-discounted) per-size standard — doing so
+  // understated e.g. a full-price 2XL to the S-XL sale price.
   let standardPrice = 0;
+  let perSizeStandard = false;
   const spm = match.sizePriceMap?.[cKey];
   if (spm) {
     const sKey = matchKey(spm, size);
-    if (sKey) standardPrice = Number(spm[sKey]) || 0;
+    if (sKey) {
+      standardPrice = Number(spm[sKey]) || 0;
+      if (standardPrice) perSizeStandard = true;
+    }
   }
   if (!standardPrice) {
     // AS Colour: real per-variant wholesale price (no sale channel).
@@ -52,14 +61,21 @@ export function extractVariant(match, product, color, size) {
     const v = variants.find(
       (x) => ci(x.colour ?? x.color) === ci(color) && ci(x.size) === ci(size),
     );
-    if (v?.price) standardPrice = Number(v.price) || 0;
+    if (v?.price) {
+      standardPrice = Number(v.price) || 0;
+      if (standardPrice) perSizeStandard = true;
+    }
   }
   if (!standardPrice) {
+    // Color-level fallback (no per-size data for this size).
     standardPrice = Number(match.priceMap?.[cKey]?.piecePrice) || Number(match.piecePrice) || 0;
   }
 
-  // ── sale price (per-size on colors[].sizeSalePrices, else per-color
-  //    priceMap[color].salePrice) — only counts when below standard ───
+  // ── sale price ────────────────────────────────────────────────────
+  // Per-size sale (colors[].sizeSalePrices) is authoritative for that size.
+  // The per-color salePrice fallback applies ONLY when this size had no
+  // per-size standard — i.e. genuinely color-level pricing — so it can't drag
+  // an un-discounted size down to another size's sale.
   let salePrice = 0;
   const colorObj = (match.colors || []).find((c) => ci(c?.colorName ?? c?.color) === ci(color));
   const ssm = colorObj?.sizeSalePrices;
@@ -67,7 +83,7 @@ export function extractVariant(match, product, color, size) {
     const sKey = matchKey(ssm, size);
     if (sKey) salePrice = Number(ssm[sKey]) || 0;
   }
-  if (!salePrice) salePrice = Number(match.priceMap?.[cKey]?.salePrice) || 0;
+  if (!salePrice && !perSizeStandard) salePrice = Number(match.priceMap?.[cKey]?.salePrice) || 0;
 
   const onSale = salePrice > 0 && (standardPrice === 0 || salePrice < standardPrice);
   const unitPrice = onSale ? salePrice : standardPrice;
