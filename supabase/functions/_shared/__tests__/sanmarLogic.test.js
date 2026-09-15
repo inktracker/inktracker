@@ -287,12 +287,15 @@ describe("inventory: envelope + parse + mapping", () => {
   </S:Body>
 </S:Envelope>`;
 
-  it("parses sku rows and sums quantities across warehouses", () => {
+  it("parses sku rows and sums quantities across warehouses (+ keeps per-DC breakdown)", () => {
     const rows = parseInventoryResponse(INVENTORY_XML);
-    expect(rows).toEqual([
+    expect(rows).toMatchObject([
       { catalogColor: "BAY", size: "S", qty: 2343 },
       { catalogColor: "BAY", size: "2XL", qty: 362 },
     ]);
+    // Per-warehouse breakdown is now retained alongside the summed qty.
+    expect(Array.isArray(rows[0].warehouses)).toBe(true);
+    expect(rows[0].warehouses.reduce((a, w) => a + w.qty, 0)).toBe(2343);
   });
 
   it("error responses parse to an empty list", () => {

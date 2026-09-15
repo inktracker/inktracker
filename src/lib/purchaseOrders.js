@@ -158,6 +158,8 @@ export function buildSsSubmitPayload(po) {
       color: String(it.color || ""),
       size: String(it.size || ""),
       qty: Number(it.quantity) || 0,
+      // Pinned S&S warehouse for this line ("" = let S&S auto-route).
+      warehouse: String(it.warehouse || ""),
     })),
     shippingMethod: String(po.shipping_method || "").trim() || "Ground",
     warehouse: String(po.warehouse || ""),

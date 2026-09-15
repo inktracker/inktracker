@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
     };
 
     // Resolve real S&S SKUs — our cart stores style+color+size but S&S needs internal SKU IDs
-    const resolvedLines: { Identifier: string; Qty: number }[] = [];
+    const resolvedLines: { Identifier: string; Qty: number; Warehouse?: string }[] = [];
     const skuCache: Record<string, Record<string, string>> = {}; // style -> {colorSize -> sku}
     // Any line we can't resolve to a REAL S&S SKU. We refuse the whole order
     // rather than submit a guessed identifier (which could map to a different
@@ -203,7 +203,9 @@ Deno.serve(async (req) => {
       const realSku = skuCache[style]?.[key];
       console.error(`[ssPlaceOrder] Lookup: style=${style} key=${key} → ${realSku || "MISS"}`);
       if (realSku) {
-        resolvedLines.push({ Identifier: realSku, Qty: l.qty });
+        // Carry the line's pinned warehouse (S&S abbr like "TX"/"GA"); "" lets
+        // S&S auto-route.
+        resolvedLines.push({ Identifier: realSku, Qty: l.qty, Warehouse: String(l.warehouse || "").trim() });
       } else {
         // Could not resolve to a real S&S SKU — refuse rather than guess.
         unresolved.push(describe(l));
@@ -240,7 +242,12 @@ Deno.serve(async (req) => {
         Phone: shipTo.phone ?? "",
         Email: shipTo.email ?? "",
       },
-      Lines: resolvedLines.map(l => warehouse ? { ...l, Warehouse: warehouse } : l),
+      // Per-line pinned warehouse wins; fall back to the PO-level warehouse; if
+      // neither, omit Warehouse so S&S auto-routes.
+      Lines: resolvedLines.map((l) => {
+        const wh = l.Warehouse || warehouse || "";
+        return wh ? { Identifier: l.Identifier, Qty: l.Qty, Warehouse: wh } : { Identifier: l.Identifier, Qty: l.Qty };
+      }),
     };
 
     // Don't log the full payload — it carries customer shipping PII (name,
