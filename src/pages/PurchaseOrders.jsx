@@ -1180,7 +1180,8 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                 return (
                   // Stacks on mobile (SKU row, then a wrapping meta row); inline
                   // columns on desktop. No horizontal scroll needed.
-                  <div key={`${it.sku}-${it.warehouse ?? ""}-${i}`} className="px-3 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                  <div key={`${it.sku}-${it.warehouse ?? ""}-${i}`} className="px-3 py-2.5">
+                   <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                     {/* SKU — full width on mobile, flex-1 on desktop */}
                     <div className="sm:flex-1 sm:min-w-0">
                       {isLocked ? (
@@ -1194,41 +1195,6 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                           className="w-full font-mono text-xs text-slate-700 border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300 disabled:opacity-60 disabled:cursor-not-allowed"
                           placeholder="Style-color-size"
                         />
-                      )}
-                      {whInfo.length > 0 && (
-                        isLocked ? (
-                          <div className="mt-1 text-[11px] text-slate-500 truncate" title={whInfo.map((w) => `${w.code}: ${w.qty}`).join(" · ")}>
-                            {it.warehouse
-                              ? <>Ships from <span className="font-semibold text-slate-700">{it.warehouse}</span></>
-                              : <>In stock: {whInfo.slice(0, 3).map((w) => `${w.code}·${w.qty}`).join("  ")}{whInfo.length > 3 ? " …" : ""}</>}
-                          </div>
-                        ) : (
-                          <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500 min-w-0">
-                            <label className="flex items-center gap-1 shrink-0">
-                              <span>Ship from:</span>
-                              <select
-                                value={it.warehouse || ""}
-                                onChange={(e) => {
-                                  const next = [...po.items];
-                                  next[i] = { ...next[i], warehouse: e.target.value };
-                                  onPatch({ items: next });
-                                }}
-                                disabled={editDisabled}
-                                title={readOnly ? reason : "Ship this line from a specific warehouse (Auto = supplier picks the nearest with stock)"}
-                                className={`max-w-[150px] text-[11px] font-semibold rounded px-1 py-0.5 border disabled:opacity-60 ${it.warehouse ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-700"}`}
-                              >
-                                <option value="">Auto</option>
-                                {whInfo.map((w) => <option key={w.code} value={w.code}>{w.code} ({w.qty})</option>)}
-                                {it.warehouse && !whInfo.some((w) => w.code === it.warehouse) && <option value={it.warehouse}>{it.warehouse}</option>}
-                              </select>
-                            </label>
-                            {!it.warehouse && (
-                              <span className="truncate min-w-0" title={whInfo.map((w) => `${w.code}: ${w.qty}`).join(" · ")}>
-                                in stock: {whInfo.slice(0, 3).map((w) => `${w.code}·${w.qty}`).join("  ")}{whInfo.length > 3 ? " …" : ""}
-                              </span>
-                            )}
-                          </div>
-                        )
                       )}
                     </div>
                     {/* Meta row: color/size · WH · qty · unit · line · remove */}
@@ -1287,6 +1253,44 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                         )}
                       </span>
                     </div>
+                   </div>
+                   {/* Warehouse: full-width line below the columns so it never
+                       makes the row uneven. S&S/SanMar only. */}
+                   {whInfo.length > 0 && (
+                     isLocked ? (
+                       <div className="mt-1.5 text-[11px] text-slate-500 truncate" title={whInfo.map((w) => `${w.code}: ${w.qty}`).join(" · ")}>
+                         {it.warehouse
+                           ? <>Ships from <span className="font-semibold text-slate-700">{it.warehouse}</span></>
+                           : <>In stock: {whInfo.slice(0, 4).map((w) => `${w.code}·${w.qty}`).join("  ")}{whInfo.length > 4 ? " …" : ""}</>}
+                       </div>
+                     ) : (
+                       <div className="mt-1.5 flex items-center gap-2 text-[11px] text-slate-500 min-w-0">
+                         <label className="flex items-center gap-1 shrink-0">
+                           <span>Ship from:</span>
+                           <select
+                             value={it.warehouse || ""}
+                             onChange={(e) => {
+                               const next = [...po.items];
+                               next[i] = { ...next[i], warehouse: e.target.value };
+                               onPatch({ items: next });
+                             }}
+                             disabled={editDisabled}
+                             title={readOnly ? reason : "Ship this line from a specific warehouse (Auto = supplier picks the nearest with stock)"}
+                             className={`max-w-[160px] text-[11px] font-semibold rounded px-1 py-0.5 border disabled:opacity-60 ${it.warehouse ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-700"}`}
+                           >
+                             <option value="">Auto</option>
+                             {whInfo.map((w) => <option key={w.code} value={w.code}>{w.code} ({w.qty})</option>)}
+                             {it.warehouse && !whInfo.some((w) => w.code === it.warehouse) && <option value={it.warehouse}>{it.warehouse}</option>}
+                           </select>
+                         </label>
+                         {!it.warehouse && (
+                           <span className="truncate min-w-0" title={whInfo.map((w) => `${w.code}: ${w.qty}`).join(" · ")}>
+                             in stock: {whInfo.slice(0, 4).map((w) => `${w.code}·${w.qty}`).join("  ")}{whInfo.length > 4 ? " …" : ""}
+                           </span>
+                         )}
+                       </div>
+                     )
+                   )}
                   </div>
                 );
               })}
