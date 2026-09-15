@@ -32,22 +32,43 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
   const avgPpp = hasOverride ? pppOverride : suggestedPpp;
   const displayTotal = hasOverride ? (pppOverride * qty) : r.lineTotal;
 
-  // Partner sourcing (Phase 2b): if this line is done by a partner, show what
-  // it COSTS you (their rate) and your MARGIN (retail − cost). Retail above is
-  // unchanged. Reuses the trade-price engine. Prefer the partner's live sheet;
-  // fall back to the cost SNAPSHOTTED at save when the sheet is no longer
-  // readable (e.g. the partnership ended) so a saved quote keeps its number
-  // instead of falsely reading "no rates".
+  // Cost & margin block.
+  //
+  // PARTNER line (partnerLabel set): cost = what the partner charges at their
+  // trade rates. Prefer the live sheet; fall back to the cost SNAPSHOTTED at
+  // save when the sheet is no longer readable (e.g. the partnership ended) so
+  // a saved quote keeps its number instead of falsely reading "no rates".
+  // A live total of 0 means the sheet has no rate for this line's technique —
+  // that's "unknown", never "free", so it falls through to the snapshot/notice.
+  //
+  // IN-HOUSE line: cost = raw blank cost (pre-markup) — labeled ESTIMATED,
+  // because ink, screens and labor aren't costed per line. Hidden when no
+  // garment cost is set (customer-supplied blanks) — a $0 cost would read as
+  // 100% margin, which is exactly the misleading readout this replaces.
+  //
+  // Gotcha (2026-09-15): the save path stamps `_partner_cost: null` on
+  // in-house lines, and Number(null) === 0 is finite — so reopened in-house
+  // quotes showed "Your cost () $0.00 / 100% margin". Null/undefined must be
+  // treated as ABSENT before coercing.
+  const isPartner = !!partnerLabel;
   const configHasRates = !!(partnerConfig && (
     Object.keys(partnerConfig.firstPrint || {}).length ||
     partnerConfig.embroidery?.pricing ||
     Object.keys(partnerConfig.custom_techniques || {}).length
   ));
-  const liveCost = configHasRates ? computeTradeTotal([li], partnerConfig) : null;
-  const snapCost = Number.isFinite(Number(li?._partner_cost)) ? Number(li._partner_cost) : null;
-  const partnerCost = liveCost != null ? liveCost : snapCost;
-  const partnerMargin = partnerCost != null ? Math.round((displayTotal - partnerCost) * 100) / 100 : null;
-  const marginPct = partnerCost != null && displayTotal > 0 ? Math.round((partnerMargin / displayTotal) * 100) : null;
+  const liveCostRaw = isPartner && configHasRates ? computeTradeTotal([li], partnerConfig) : null;
+  const liveCost = liveCostRaw != null && liveCostRaw > 0 ? liveCostRaw : null;
+  const snapRaw = li?._partner_cost;
+  const snapCost = isPartner && snapRaw != null && Number.isFinite(Number(snapRaw)) && Number(snapRaw) > 0
+    ? Number(snapRaw)
+    : null;
+  const partnerCost = isPartner ? (liveCost != null ? liveCost : snapCost) : null;
+  const inHouseCost = !isPartner && Number(r.gWholesale) > 0 ? Number(r.gWholesale) : null;
+  const costBasis = partnerCost != null ? partnerCost : inHouseCost;
+  const costLabel = isPartner ? `Your cost (${partnerLabel})` : "Est. cost (blanks)";
+  const marginLabel = isPartner ? "Your margin" : "Est. margin";
+  const margin = costBasis != null ? Math.round((displayTotal - costBasis) * 100) / 100 : null;
+  const marginPct = costBasis != null && displayTotal > 0 ? Math.round((margin / displayTotal) * 100) : null;
 
   return (
     <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
@@ -175,23 +196,30 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
         <div className="text-2xl font-bold text-white">{fmtMoney(displayTotal)}</div>
       </div>
 
-      {partnerLabel && partnerCost == null && (
+      {isPartner && partnerCost == null && (
         <div className="bg-amber-950/40 border-t border-amber-900/50 px-4 py-2.5 text-xs text-amber-300">
-          {partnerLabel} hasn&rsquo;t published rates — set the price manually above; margin isn&rsquo;t tracked.
+          {partnerLabel} hasn&rsquo;t published rates for this line — set the price manually above; margin isn&rsquo;t tracked.
         </div>
       )}
-      {partnerCost != null && (
-        <div className="bg-slate-950 border-t border-slate-800 px-4 py-3 grid grid-cols-2 gap-3">
-          <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Your cost ({partnerLabel})</div>
-            <div className="text-white font-semibold text-lg">{fmtMoney(partnerCost)}</div>
-            <div className="text-slate-500 text-xs">{fmtMoney(qty > 0 ? partnerCost / qty : 0)}/pc</div>
+      {costBasis != null && (
+        <div className="bg-slate-950 border-t border-slate-800 px-4 py-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{costLabel}</div>
+              <div className="text-white font-semibold text-lg">{fmtMoney(costBasis)}</div>
+              <div className="text-slate-500 text-xs">{fmtMoney(qty > 0 ? costBasis / qty : 0)}/pc</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{marginLabel}</div>
+              <div className={`font-semibold text-lg ${margin >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(margin)}</div>
+              <div className="text-slate-500 text-xs">{marginPct != null ? `${marginPct}%` : ""}</div>
+            </div>
           </div>
-          <div className="text-right">
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Your margin</div>
-            <div className={`font-semibold text-lg ${partnerMargin >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(partnerMargin)}</div>
-            <div className="text-slate-500 text-xs">{marginPct != null ? `${marginPct}%` : ""}</div>
-          </div>
+          {!isPartner && (
+            <div className="text-[10px] text-slate-600 mt-2">
+              Estimated — blank cost only. Ink, screens and labor aren&rsquo;t included.
+            </div>
+          )}
         </div>
       )}
     </div>

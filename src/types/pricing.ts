@@ -110,6 +110,8 @@ export interface LinePriceResult {
   twoXL: number;
   printCost: number;
   gCost: number;
+  /** Raw blank cost × qty BEFORE garment markup (what the shop pays). */
+  gWholesale: number;
   extraCost: number;
   baseSubtotal: number;
   rushFee: number;

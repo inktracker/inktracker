@@ -193,6 +193,7 @@ export function computeLinkedLinePrice(
 
   const sizeBreakdown: Record<string, SizeBreakdownEntry> = {};
   let gCost = 0;
+  let gWholesale = 0;
   const twoXL = deps.BIG_SIZES.reduce((sum, sz) => sum + (parseInt(String((li.sizes || {})[sz]), 10) || 0), 0);
 
   Object.entries(li.sizes || {}).forEach(([sz, count]) => {
@@ -205,6 +206,7 @@ export function computeLinkedLinePrice(
     const totalPpp = Math.round((printExtraPpp + garmentPpp) * 100) / 100;
     sizeBreakdown[sz] = { qty: n, garmentPpp, totalPpp };
     gCost += Math.round(garmentPpp * n * 100) / 100;
+    gWholesale += Math.round(wholesaleCost * n * 100) / 100;
   });
 
   let baseSubtotal = 0;
@@ -234,6 +236,7 @@ export function computeLinkedLinePrice(
     twoXL,
     printCost: roundedPrintCost,
     gCost: Math.round(gCost * 100) / 100,
+    gWholesale: Math.round(gWholesale * 100) / 100,
     extraCost,
     baseSubtotal: Math.round(baseSubtotal * 100) / 100,
     rushFee,
