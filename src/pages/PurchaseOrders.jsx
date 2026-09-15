@@ -964,20 +964,22 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
               once submitted. Changing it re-evaluates the connection banner
               and the supplier's shipping methods. */}
           {!isLocked ? (
-            <label className="flex items-center gap-1.5 mt-1.5 text-xs font-semibold text-slate-500">
-              Supplier:
+            <label className="flex items-center gap-1.5 mt-1.5 text-xs font-semibold text-slate-500 min-w-0">
+              <span className="shrink-0">Supplier:</span>
               <select
                 value={po.supplier}
                 onChange={(e) => (onSupplierChange ? onSupplierChange(e.target.value) : onPatch({ supplier: e.target.value }))}
                 disabled={editDisabled}
                 title={readOnly ? reason : undefined}
-                className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="min-w-0 max-w-[220px] text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {Object.values(SUPPLIERS).map((s) => {
                   const ok = supplierSelectable(s);
+                  // Keep the label short so the native <select> (which widths to
+                  // its widest option) doesn't blow off the right edge on mobile.
                   return (
                     <option key={s} value={s} disabled={!ok}>
-                      {ok ? s : `${s} — doesn't carry these garments`}
+                      {ok ? s : `${s} (n/a)`}
                     </option>
                   );
                 })}
@@ -1080,9 +1082,10 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
               )
             ) : comparison.savings ? (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                <div className="flex items-start gap-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-start gap-2.5">
+                  <div className="flex items-start gap-2.5 flex-1 min-w-0">
                   <TrendingDown className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
-                  <div className="flex-1 text-sm text-emerald-900">
+                  <div className="flex-1 min-w-0 text-sm text-emerald-900">
                     <div className="font-bold">
                       Order through {comparison.savings.supplier} and save {fmtMoney(comparison.savings.totalSaved)}
                       {comparison.savings.perPiece > 0 && <span className="font-semibold"> ({fmtMoney(comparison.savings.perPiece)}/pc)</span>}
@@ -1111,11 +1114,12 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                       </div>
                     )}
                   </div>
+                  </div>
                   <button
                     type="button"
                     onClick={() => onSwitchSupplier(comparison.savings.supplier)}
                     disabled={readOnly}
-                    className="shrink-0 inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                    className="shrink-0 w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60"
                   >
                     <Truck className="w-3.5 h-3.5" /> Switch to {comparison.savings.supplier}
                   </button>

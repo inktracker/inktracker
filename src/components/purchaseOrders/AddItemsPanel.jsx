@@ -74,12 +74,12 @@ export default function AddItemsPanel({ supplier, defaultWarehouse = "CA", onAdd
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder="Style code (e.g. 5050)"
-          className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2"
+          className="flex-1 min-w-0 text-sm border border-slate-200 rounded-lg px-3 py-2"
         />
         <button
           type="submit"
           disabled={loading}
-          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-60"
+          className="shrink-0 flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-60 whitespace-nowrap"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
           Look up
