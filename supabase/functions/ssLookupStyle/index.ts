@@ -163,6 +163,7 @@ function groupRowsByBrand(rows: any[]): any[] {
       sizeQuantities: Record<string, number>;
       sizePrices: Record<string, number>;
       sizeSalePrices: Record<string, number>;
+      sizeWarehouses: Record<string, { code: string; qty: number }[]>;
     }> = {};
 
     for (const row of brandRows) {
@@ -184,6 +185,10 @@ function groupRowsByBrand(rows: any[]): any[] {
           sizeQuantities: {},
           sizePrices: {} as Record<string, number>,
           sizeSalePrices: {} as Record<string, number>,
+          // Per-size, per-warehouse stock: { [size]: [{ code, qty }] }. S&S
+          // returns a `warehouses` array on each product row; we keep it so the
+          // PO can show/pin which warehouse a line ships from.
+          sizeWarehouses: {} as Record<string, { code: string; qty: number }[]>,
         };
       }
 
@@ -198,6 +203,15 @@ function groupRowsByBrand(rows: any[]): any[] {
       const sizeName = row.sizeName ?? row.size ?? "";
       if (sizeName) {
         colorMap[colorName].sizeQuantities[sizeName] = Number(row.qty ?? 0);
+        // Per-warehouse breakdown for this size (S&S `warehouses` array).
+        const whRows = Array.isArray(row.warehouses) ? row.warehouses : [];
+        const wh = whRows
+          .map((w: Record<string, unknown>) => ({
+            code: String(w.warehouseAbbr ?? w.warehouse ?? w.warehouseID ?? "").trim(),
+            qty: Number(w.qty ?? 0) || 0,
+          }))
+          .filter((w: { code: string; qty: number }) => w.code && w.qty > 0);
+        if (wh.length) colorMap[colorName].sizeWarehouses[sizeName] = wh;
         const rowPrice = sanitizeSupplierPrice(row.piecePrice ?? row.piece_price);
         if (rowPrice > 0) colorMap[colorName].sizePrices[sizeName] = rowPrice;
         // Per-size active sale — lets "click the sale price" keep the real
@@ -209,6 +223,7 @@ function groupRowsByBrand(rows: any[]): any[] {
     const colors = Object.values(colorMap);
 
     const inventoryMap: Record<string, Record<string, number>> = {};
+    const warehouseMap: Record<string, Record<string, { code: string; qty: number }[]>> = {};
     const priceMap: Record<string, { piecePrice: number; casePrice: number }> = {};
     const sizePriceMap: Record<string, Record<string, number>> = {};
     for (const c of colors) {
@@ -224,6 +239,7 @@ function groupRowsByBrand(rows: any[]): any[] {
         if (!(sp > 0 && std > 0 && sp < std)) delete c.sizeSalePrices[sz];
       }
       inventoryMap[c.colorName] = c.sizeQuantities;
+      if (c.sizeWarehouses && Object.keys(c.sizeWarehouses).length) warehouseMap[c.colorName] = c.sizeWarehouses;
       priceMap[c.colorName]     = {
         piecePrice: c.piecePrice,
         casePrice: c.casePrice,
@@ -262,6 +278,7 @@ function groupRowsByBrand(rows: any[]): any[] {
       colors,
       images,
       inventoryMap,
+      warehouseMap,
       priceMap,
       sizePriceMap,
       piecePrice: prices.length     ? Math.min(...prices)     : 0,

@@ -37,6 +37,21 @@ describe("extractVariant", () => {
     expect(extractVariant({ priceMap: { White: { piecePrice: 3 } } }, null, "White", "M").stock).toBeNull();
   });
 
+  it("returns per-warehouse breakdown sorted most-stock-first", () => {
+    const m = {
+      priceMap: { White: { piecePrice: 4 } },
+      warehouseMap: { White: { M: [{ code: "GA", qty: 200 }, { code: "TX", qty: 500 }, { code: "NV", qty: 0 }] } },
+    };
+    expect(extractVariant(m, null, "White", "M").warehouses).toEqual([
+      { code: "TX", qty: 500 },
+      { code: "GA", qty: 200 },
+    ]); // NV (0) dropped, sorted desc
+  });
+
+  it("warehouses is [] when the supplier gives none", () => {
+    expect(extractVariant({ priceMap: { White: { piecePrice: 4 } } }, null, "White", "M").warehouses).toEqual([]);
+  });
+
   it("uses the per-SIZE sale price when one is running (below standard)", () => {
     const m = {
       priceMap: { White: { piecePrice: 3.84 } },

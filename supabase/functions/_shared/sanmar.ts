@@ -205,16 +205,30 @@ export function buildInventoryEnvelope(creds: SmCreds, style: string, color = ""
 </soapenv:Envelope>`;
 }
 
+// SanMar distribution-center id → short label. Best-effort for the common DCs;
+// unknown ids fall back to "WH <id>" so we never assert a wrong location.
+// VERIFY against SanMar's current DC list when PO submission goes live.
+export const SM_WAREHOUSES: Record<string, string> = {
+  "1": "Seattle WA", "2": "Cincinnati OH", "3": "Dallas TX", "4": "Reno NV",
+  "5": "Robbinsville NJ", "6": "Jacksonville FL", "7": "Minneapolis MN",
+  "8": "Phoenix AZ", "12": "Richmond VA", "31": "Kansas City KS",
+};
+export function smWarehouseLabel(id: string): string {
+  return SM_WAREHOUSES[String(id)] || `WH ${id}`;
+}
+
 export interface SmInventoryRow {
   catalogColor: string;
   size: string;
   qty: number; // summed across all warehouses (each capped at 3000 by SanMar)
+  warehouses: { code: string; qty: number }[]; // per-DC breakdown (code = label)
 }
 
 /**
  * Parse the by-style inventory response: skus/sku blocks, each carrying
  * the CATALOG color + size + a per-warehouse qty list. Returns the total
- * across warehouses per (catalogColor, size). Error responses → [].
+ * across warehouses per (catalogColor, size) PLUS the per-DC breakdown.
+ * Error responses → [].
  */
 export function parseInventoryResponse(xml: string): SmInventoryRow[] {
   if (!xml) return [];
@@ -226,11 +240,15 @@ export function parseInventoryResponse(xml: string): SmInventoryRow[] {
     const size = xmlText(sku, "size");
     if (!catalogColor || !size) continue;
     let qty = 0;
+    const warehouses: { code: string; qty: number }[] = [];
     for (const whse of xmlBlocks(sku, "whse")) {
       const q = Number(xmlText(whse, "qty"));
-      if (Number.isFinite(q) && q > 0) qty += q;
+      if (Number.isFinite(q) && q > 0) {
+        qty += q;
+        warehouses.push({ code: smWarehouseLabel(xmlText(whse, "whseID")), qty: q });
+      }
     }
-    rows.push({ catalogColor, size, qty });
+    rows.push({ catalogColor, size, qty, warehouses });
   }
   return rows;
 }
@@ -419,9 +437,11 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     if (e.catalogColor && e.color && !(e.catalogColor in catalogToName)) catalogToName[e.catalogColor] = e.color;
   }
   const invByColorName: Record<string, Record<string, number>> = {};
+  const warehouseMap: Record<string, Record<string, { code: string; qty: number }[]>> = {};
   for (const r of inventory) {
     const name = catalogToName[r.catalogColor] || r.catalogColor;
     (invByColorName[name] ??= {})[r.size] = r.qty;
+    if (r.warehouses?.length) (warehouseMap[name] ??= {})[r.size] = r.warehouses;
   }
 
   const priceMap: Record<string, { piecePrice: number; casePrice: number }> = {};
@@ -486,6 +506,7 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     styleImage: first.productImage || colors.find((c) => c.imageUrl)?.imageUrl || "",
     colors,
     inventoryMap: invByColorName,
+    warehouseMap,
     sizes: sizeOrder,
     availableSizes: first.availableSizes,
     specSheet: first.specSheet,

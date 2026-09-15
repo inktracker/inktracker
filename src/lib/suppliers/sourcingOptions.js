@@ -98,7 +98,24 @@ export function extractVariant(match, product, color, size) {
       stock = Number.isFinite(n) ? n : null;
     }
   }
-  return { unitPrice, standardPrice: standardPrice || unitPrice, onSale, stock };
+
+  // ── per-warehouse breakdown ───────────────────────────────────────
+  // [{ code, qty }] sorted most-stock-first, so the PO can show/pin which
+  // warehouse a line ships from. Empty when the supplier gave none.
+  let warehouses = [];
+  const whMap = match.warehouseMap?.[cKey] || match.warehouseMap?.[matchKey(match.warehouseMap, color)];
+  if (whMap && typeof whMap === "object") {
+    const sKey = matchKey(whMap, size);
+    const arr = sKey != null ? whMap[sKey] : null;
+    if (Array.isArray(arr)) {
+      warehouses = arr
+        .map((w) => ({ code: String(w?.code ?? "").trim(), qty: Number(w?.qty) || 0 }))
+        .filter((w) => w.code && w.qty > 0)
+        .sort((a, b) => b.qty - a.qty);
+    }
+  }
+
+  return { unitPrice, standardPrice: standardPrice || unitPrice, onSale, stock, warehouses };
 }
 
 function pickMatch(res) {
@@ -126,9 +143,10 @@ async function priceThroughSupplier(items, supplier, getMatch) {
     let standardPrice = 0;
     let onSale = false;
     let stock = null;
+    let warehouses = [];
     try {
       const { match, product } = await getMatch(supplier, norm(it.styleCode));
-      if (match) ({ unitPrice, standardPrice, onSale, stock } = extractVariant(match, product, it.color, it.size));
+      if (match) ({ unitPrice, standardPrice, onSale, stock, warehouses } = extractVariant(match, product, it.color, it.size));
     } catch {
       /* treated as missing below */
     }
@@ -138,7 +156,7 @@ async function priceThroughSupplier(items, supplier, getMatch) {
     if (onSale) hasSale = true;
     total += (priced ? unitPrice : 0) * qty;
     standardTotal += (priced ? standardPrice || unitPrice : 0) * qty;
-    lines.push({ unitPrice, standardPrice, onSale, stock, lineCost: unitPrice * qty });
+    lines.push({ unitPrice, standardPrice, onSale, stock, warehouses: warehouses || [], lineCost: unitPrice * qty });
   }
   return {
     supplier,

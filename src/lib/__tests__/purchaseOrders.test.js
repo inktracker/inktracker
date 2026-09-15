@@ -652,8 +652,8 @@ describe("S&S submit path (B1 — non-AC POs were a submit dead-end)", () => {
     expect(p.shippingMethod).toBe("Ground"); // blank → Ground
     expect(p.shipTo).toMatchObject({ name: "My Shop", address1: "1 Ink St", city: "Reno", state: "NV", zip: "89501", country: "US" });
     expect(p.lines).toEqual([
-      { sku: "3600-BLACK-M", style: "3600", color: "Black", size: "M", qty: 12 },
-      { sku: "3600-BLACK-L", style: "3600", color: "Black", size: "L", qty: 6 },
+      { sku: "3600-BLACK-M", style: "3600", color: "Black", size: "M", qty: 12, warehouse: "" },
+      { sku: "3600-BLACK-L", style: "3600", color: "Black", size: "L", qty: 6, warehouse: "" },
     ]);
   });
 
