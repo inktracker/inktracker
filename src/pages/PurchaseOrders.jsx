@@ -1156,70 +1156,70 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
             No items yet. Look up a style above, or generate the PO from an order.
           </div>
         ) : (
-          <div className="border border-slate-100 rounded-lg overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
-              <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                <tr>
-                  <th className="text-left px-3 py-2">SKU</th>
-                  <th className="text-left px-3 py-2">Color / Size</th>
-                  <th className="text-center px-2 py-2">WH</th>
-                  <th className="text-right px-3 py-2">Qty</th>
-                  <th className="text-right px-3 py-2">Unit</th>
-                  <th className="text-right px-3 py-2">Line</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {po.items.map((it, i) => (
-                  <tr key={`${it.sku}-${it.warehouse ?? ""}-${i}`}>
-                    <td className="px-3 py-2 font-mono text-xs">
+          <div className="border border-slate-100 rounded-lg overflow-hidden text-sm">
+            {/* Column header — desktop only; the mobile cards are self-labeling. */}
+            <div className="hidden sm:flex items-center gap-3 px-3 py-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              <div className="flex-1 min-w-0">SKU</div>
+              <div className="w-24">Color / Size</div>
+              <div className="w-12 text-center">WH</div>
+              <div className="w-16 text-right">Qty</div>
+              <div className="w-16 text-right">Unit</div>
+              <div className="w-20 text-right">Line</div>
+              <div className="w-6" />
+            </div>
+            <div className="divide-y divide-slate-100">
+              {po.items.map((it, i) => {
+                const line = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
+                const isAc = po.supplier === SUPPLIERS.AC;
+                return (
+                  // Stacks on mobile (SKU row, then a wrapping meta row); inline
+                  // columns on desktop. No horizontal scroll needed.
+                  <div key={`${it.sku}-${it.warehouse ?? ""}-${i}`} className="px-3 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                    {/* SKU — full width on mobile, flex-1 on desktop */}
+                    <div className="sm:flex-1 sm:min-w-0">
                       {isLocked ? (
-                        <span className="text-slate-700">{it.sku}</span>
+                        <span className="font-mono text-xs text-slate-700 break-all">{it.sku}</span>
                       ) : (
                         <input
                           value={it.sku || ""}
                           onChange={(e) => onItemSku(i, e.target.value)}
                           disabled={editDisabled}
                           title={readOnly ? reason : undefined}
-                          className="w-full font-mono text-xs text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 disabled:opacity-60 disabled:cursor-not-allowed"
-                          placeholder="e.g. 5102-WHI_M-H-M"
+                          className="w-full font-mono text-xs text-slate-700 border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                          placeholder="Style-color-size"
                         />
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">{[it.color, it.size].filter(Boolean).join(" · ")}</td>
-                    <td className="px-2 py-2 text-center">
-                      {isLocked ? (
-                        <span className="text-[10px] font-bold text-slate-600">{it.warehouse || defaultWarehouse}</span>
-                      ) : (
-                        <select
-                          value={it.warehouse || defaultWarehouse}
-                          onChange={(e) => {
-                            const next = [...po.items];
-                            next[i] = { ...next[i], warehouse: e.target.value };
-                            onPatch({ items: next });
-                          }}
-                          disabled={editDisabled}
-                          className={`text-[10px] font-bold rounded px-1 py-0.5 border disabled:opacity-60 disabled:cursor-not-allowed ${
-                            it.warehouse && it.warehouse !== defaultWarehouse
-                              ? "border-amber-300 bg-amber-50 text-amber-700"
-                              : "border-slate-200 bg-white text-slate-700"
-                          }`}
-                          title={
-                            readOnly
-                              ? reason
-                              : it.warehouse && it.warehouse !== defaultWarehouse
-                                ? `Routed to ${it.warehouse} (default is ${defaultWarehouse})`
-                                : `Default warehouse ${defaultWarehouse}`
-                          }
-                        >
-                          <option value="CA">CA</option>
-                          <option value="NC">NC</option>
-                        </select>
+                    </div>
+                    {/* Meta row: color/size · WH · qty · unit · line · remove */}
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <span className="text-slate-600 sm:w-24 flex-1 sm:flex-none min-w-0 truncate">{[it.color, it.size].filter(Boolean).join(" · ") || "—"}</span>
+                      {isAc && (
+                        isLocked ? (
+                          <span className="w-12 text-center text-[10px] font-bold text-slate-600">{it.warehouse || defaultWarehouse}</span>
+                        ) : (
+                          <select
+                            value={it.warehouse || defaultWarehouse}
+                            onChange={(e) => {
+                              const next = [...po.items];
+                              next[i] = { ...next[i], warehouse: e.target.value };
+                              onPatch({ items: next });
+                            }}
+                            disabled={editDisabled}
+                            className={`w-12 text-[10px] font-bold rounded px-1 py-1 border disabled:opacity-60 disabled:cursor-not-allowed ${
+                              it.warehouse && it.warehouse !== defaultWarehouse
+                                ? "border-amber-300 bg-amber-50 text-amber-700"
+                                : "border-slate-200 bg-white text-slate-700"
+                            }`}
+                            title={readOnly ? reason : it.warehouse && it.warehouse !== defaultWarehouse ? `Routed to ${it.warehouse} (default ${defaultWarehouse})` : `Default warehouse ${defaultWarehouse}`}
+                          >
+                            <option value="CA">CA</option>
+                            <option value="NC">NC</option>
+                          </select>
+                        )
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
+                      {!isAc && <span className="hidden sm:block w-12" />}
                       {isLocked ? (
-                        it.quantity
+                        <span className="w-16 text-right tabular-nums">{it.quantity}</span>
                       ) : (
                         <input
                           type="number"
@@ -1228,37 +1228,34 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                           onChange={(e) => onItemQty(i, e.target.value)}
                           disabled={editDisabled}
                           title={readOnly ? reason : undefined}
-                          className="w-16 text-right border border-slate-200 rounded px-1.5 py-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                          aria-label="Quantity"
+                          className="w-16 text-right tabular-nums border border-slate-200 rounded px-1.5 py-1 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-right text-slate-600">{fmtMoney(it.unitPrice || 0)}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-800">
-                      {fmtMoney((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0))}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {!isLocked && (
-                        <button
-                          onClick={() => onItemRemove(i)}
-                          disabled={readOnly}
-                          title={readOnly ? reason : undefined}
-                          className="text-slate-300 hover:text-red-500 p-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-slate-50 text-sm font-semibold">
-                <tr>
-                  <td colSpan={5} className="px-3 py-2 text-right text-slate-500">Subtotal</td>
-                  <td className="px-3 py-2 text-right text-slate-800">{fmtMoney(subtotal)}</td>
-                  <td></td>
-                </tr>
-              </tfoot>
-            </table>
+                      <span className="w-16 text-right text-slate-500 tabular-nums">{fmtMoney(it.unitPrice || 0)}</span>
+                      <span className="w-20 text-right font-semibold text-slate-800 tabular-nums">{fmtMoney(line)}</span>
+                      <span className="w-6 text-right">
+                        {!isLocked && (
+                          <button
+                            onClick={() => onItemRemove(i)}
+                            disabled={readOnly}
+                            title={readOnly ? reason : undefined}
+                            className="text-slate-300 hover:text-red-500 p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between sm:justify-end sm:gap-3 px-3 py-2 bg-slate-50 font-semibold">
+              <span className="text-slate-500">Subtotal</span>
+              <span className="sm:w-20 text-right text-slate-800 tabular-nums">{fmtMoney(subtotal)}</span>
+              <span className="hidden sm:block w-6" />
+            </div>
           </div>
         )}
       </div>
