@@ -12,6 +12,7 @@
 // same wrapper pattern as markup.ts and linePrice.ts, keeping this module in
 // the strict money type-gate and circular-import-free.
 
+import { overrideRushFee } from "./linePrice";
 import type {
   LinePricingConfig,
   Quote,
@@ -42,6 +43,8 @@ export function computeQuoteTotals(
     const override = Number(li?.clientPpp);
     if (respectOverride && Number.isFinite(override) && override > 0 && qty > 0) {
       subtotal += override * qty;
+      // Rush is a % on top of a flat override — never swallowed by it.
+      rushTotal += overrideRushFee(override, qty, quote.rush_rate);
       return;
     }
     const r = deps.calcLinkedLinePrice(

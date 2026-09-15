@@ -16,6 +16,7 @@ import {
   BROKER_MARKUP,
   STANDARD_MARKUP,
   getShopPricingConfig,
+  overrideRushFee,
 } from "../shared/pricing";
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
@@ -133,7 +134,7 @@ function getLinePrice(li, quote) {
 
   const override = Number(li?.clientPpp);
   if (markup === STANDARD_MARKUP && Number.isFinite(override) && override > 0 && qty > 0) {
-    return { sub: override * qty, ppp: override, gCost: 0, printCost: 0, rushFee: 0, tier: getTier(qty), garment: 0, imprint: 0, overridden: true };
+    return { sub: override * qty, ppp: override, gCost: 0, printCost: 0, rushFee: overrideRushFee(override, qty, quote.rush_rate), tier: getTier(qty), garment: 0, imprint: 0, overridden: true };
   }
 
   const r = calcLinkedLinePrice(li, quote.rush_rate, getLineExtras(li, quote), markup, linkedQtyMap);

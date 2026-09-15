@@ -246,6 +246,16 @@ describe("recomputeOrderMoney — clientPpp override (Kato 2026-08-11)", () => {
     expect(total).toBe(97.3);
   });
 
+  it("rush rides on top of a flat override (20% on the 20), stamped into _rushFee", () => {
+    const lines = [{ sizes: { M: 10 }, clientPpp: 20 }];
+    const { stamped, subtotal, total } = recomputeOrderMoney(lines, { ...order, rush_rate: 0.2 }, deps);
+    expect(stamped[0]._ppp).toBe(20);
+    expect(stamped[0]._lineTotal).toBe(200);
+    expect(stamped[0]._rushFee).toBe(40);
+    expect(subtotal).toBe(240);
+    expect(total).toBe(240);
+  });
+
   it("lines without an override still get fresh engine stamps", () => {
     const lines = [{ sizes: { M: 10 } }, { sizes: { L: 4 }, clientPpp: 0 }];
     const { stamped, subtotal } = recomputeOrderMoney(lines, order, deps);

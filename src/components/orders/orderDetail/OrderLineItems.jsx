@@ -10,6 +10,7 @@ import {
   activeSizeNames,
   BROKER_MARKUP,
   getShopPricingConfig,
+  overrideRushFee,
 } from "../../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
@@ -58,7 +59,7 @@ export default function OrderLineItems({
         const r = hasSaved
           ? { lineTotal: li._lineTotal, ppp: li._ppp, regularPpp: li._ppp, oversizePpp: li._ppp }
           : useClientPpp
-            ? { lineTotal: clientPppOverride * qty, ppp: clientPppOverride, regularPpp: clientPppOverride, oversizePpp: clientPppOverride, overridden: true }
+            ? { lineTotal: clientPppOverride * qty + overrideRushFee(clientPppOverride, qty, order.rush_rate), ppp: clientPppOverride, regularPpp: clientPppOverride, oversizePpp: clientPppOverride, overridden: true }
             : calcLinkedLinePrice(li, order.rush_rate, getLineExtras(li, order), markup, linkedQtyMap);
         const activeSizes = activeSizeNames(li.sizes);
         return (

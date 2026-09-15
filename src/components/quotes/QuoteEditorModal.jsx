@@ -22,6 +22,7 @@ import {
   getRushTiers,
   getRushRateForDaysOut,
   buildQBInvoicePayload,
+  overrideRushFee,
 } from "../shared/pricing";
 import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { normalizeShipTo, isShipToComplete, parseUsAddress, addressOneLine } from "@/lib/tax/address";
@@ -733,7 +734,8 @@ export default function QuoteEditorModal({
         const hasOverride = Number.isFinite(override) && override > 0;
         const ppp = hasOverride ? override : r.ppp;
         const lineTotal = ppp * qty;
-        const rushFee = hasOverride ? 0 : r.rushFee;
+        // Rush rides on top of a flat override — see overrideRushFee.
+        const rushFee = hasOverride ? overrideRushFee(override, qty, q.rush_rate) : r.rushFee;
         // Partner sourcing (Phase 2b): snapshot the partner's COST for this
         // line so job P&L reads a static number — never a live re-fetch of the
         // partner sheet (RLS would return null once the partnership ends). The

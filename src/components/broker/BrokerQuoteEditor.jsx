@@ -14,6 +14,7 @@ import {
   getLineExtras,
   getRushTiers,
   getRushRateForDaysOut,
+  overrideRushFee,
 } from "../shared/pricing";
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
 import { mergeBrokerPricing } from "@/lib/broker/brokerPricing";
@@ -332,7 +333,8 @@ export default function BrokerQuoteEditor({
 
         const clientPpp      = hasClientOverride ? clientOverride : (clientR ? clientR.ppp : 0);
         const clientLineTot  = clientPpp * qty;
-        const clientRushFee  = hasClientOverride ? 0 : (clientR ? clientR.rushFee : 0);
+        // Rush rides on top of a flat client override (overrideRushFee).
+        const clientRushFee  = hasClientOverride ? overrideRushFee(clientOverride, qty, q.rush_rate) : (clientR ? clientR.rushFee : 0);
 
         return {
           ...li,

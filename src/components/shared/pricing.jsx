@@ -6,7 +6,8 @@ import {
   markup as markupCore,
   DEFAULT_BROKER_MARKUP_SHARE,
 } from "@/lib/pricing/markup";
-import { computeLinkedLinePrice } from "@/lib/pricing/linePrice";
+import { computeLinkedLinePrice, overrideRushFee } from "@/lib/pricing/linePrice";
+export { overrideRushFee };
 import { computeQuoteTotals } from "@/lib/pricing/quoteTotals";
 import { tier as tierCore, embroideryPPP as embroideryPPPCore } from "@/lib/pricing/tiers";
 
@@ -1086,7 +1087,9 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP, configOve
       const hasOverride = !isBroker && Number.isFinite(override) && override > 0;
       let lineTotalForQb;
       if (hasOverride) {
-        lineTotalForQb = override * qty;
+        // Rush rides on top of a flat override (overrideRushFee) — same as
+        // the editor panel and the save-time _rushFee stamp.
+        lineTotalForQb = override * qty + overrideRushFee(override, qty, quote.rush_rate);
       } else {
         const r = calcLinkedLinePrice(li, quote.rush_rate, _getLineExtras(li, quote), markup, linkedQtyMap, undefined, configOverride);
         if (!r) return;
