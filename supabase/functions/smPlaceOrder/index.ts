@@ -177,15 +177,19 @@ Deno.serve(async (req) => {
         unresolved.push(`${style || "?"} ${color} ${size}`.trim());
         continue;
       }
-      if (!infoCache[style]) {
+      // Cache by style+color, NOT style alone: the Product Info SOAP query is
+      // color-filtered, so a second line of the same style in a DIFFERENT color
+      // would hit a cache holding only the first color's rows and falsely fail.
+      const infoKey = `${style}::${color.toUpperCase()}`;
+      if (!infoCache[infoKey]) {
         const res = await smSoapCall(
           `${base}/SanMarProductInfoServicePort`,
           buildProductInfoEnvelope(creds, style, color),
           "smPlaceOrder:info",
         );
-        infoCache[style] = res.ok ? parseProductInfoResponse(res.xml) : [];
+        infoCache[infoKey] = res.ok ? parseProductInfoResponse(res.xml) : [];
       }
-      const rows = infoCache[style];
+      const rows = infoCache[infoKey];
       const match = rows.find(
         (r) =>
           r.size.toUpperCase() === size.toUpperCase() &&

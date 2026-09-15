@@ -541,32 +541,49 @@ export function poReceivingSummary(po) {
 // consolidated POs skip shortfall (which order is short is ambiguous).
 // Returns an order patch { checklist, line_items }.
 export function applyCheckInToOrder(order, poItems, { computeShortfall = true, nowIso = new Date().toISOString() } = {}) {
+  const up = (s) => String(s ?? "").trim().toUpperCase();
   const goodsProgress = { ...(order?.checklist?.goods_progress || {}) };
   const lineItems = (order?.line_items || []).map((li) => ({ ...li }));
-  const styleOf = (li) => li?.supplierStyleNumber || li?.resolvedStyleNumber || li?.styleNumber || li?.style || "";
+  // Match the PO item's style against EVERY style alias a line carries — the
+  // original PO may have been built from supplierStyleNumber while a shortfall
+  // reorder PO uses the bare style, so pinning to one field made the reorder
+  // never reconcile (shortfall stayed lit forever).
+  const styleAliases = (li) =>
+    [li?.supplierStyleNumber, li?.resolvedStyleNumber, li?.styleNumber, li?.style].map(up).filter(Boolean);
 
   for (const item of poItems || []) {
     if (item?.checkedIn == null) continue;
-    const poStyle = String(item?.styleCode || "").trim().toUpperCase();
-    const poColor = String(item?.color || "").trim().toUpperCase();
-    const poSize = String(item?.size || "").trim();
+    const poStyle = up(item?.styleCode);
+    const poColor = up(item?.color);
+    const poSize = up(item?.size);
     if (!poStyle || !poSize) continue;
     const received = Math.max(0, Number(item.checkedIn) || 0);
     const ordered = Number(item.quantity) || 0;
 
-    const liIdx = lineItems.findIndex((li) =>
-      String(styleOf(li)).trim().toUpperCase() === poStyle &&
-      String(li?.garmentColor || "").trim().toUpperCase() === poColor &&
-      Object.keys(li?.sizes || {}).some((s) => s === poSize));
+    // Resolve the order's own canonical size key (case-insensitive) so the
+    // floor's goods_progress and _shortfall keys line up with what it reads.
+    let sizeKey = null;
+    const liIdx = lineItems.findIndex((li) => {
+      if (!styleAliases(li).includes(poStyle)) return false;
+      if (up(li?.garmentColor) !== poColor) return false;
+      const sk = Object.keys(li?.sizes || {}).find((s) => up(s) === poSize);
+      if (sk) { sizeKey = sk; return true; }
+      return false;
+    });
     if (liIdx < 0) continue;
 
-    goodsProgress[`${liIdx}-${poSize}`] = { status: "received", qty: received, by: "check-in", at: nowIso };
+    // Only mark a size 'received' when something ACTUALLY arrived. A 0-count is
+    // a full shortage, not a receipt — marking it received would let the floor
+    // auto-complete "Receive goods" and push the job to press with no goods.
+    if (received > 0) {
+      goodsProgress[`${liIdx}-${sizeKey}`] = { status: "received", qty: received, by: "check-in", at: nowIso };
+    }
 
     if (computeShortfall) {
       const li = lineItems[liIdx];
       const short = Math.max(0, ordered - received);
       const sf = { ...(li._shortfall || {}) };
-      if (short > 0) sf[poSize] = short; else delete sf[poSize];
+      if (short > 0) sf[sizeKey] = short; else delete sf[sizeKey];
       lineItems[liIdx] = { ...li, _shortfall: sf };
     }
   }

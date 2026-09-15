@@ -124,6 +124,12 @@ Deno.serve(async (req) => {
     // Resolve real S&S SKUs — our cart stores style+color+size but S&S needs internal SKU IDs
     const resolvedLines: { Identifier: string; Qty: number }[] = [];
     const skuCache: Record<string, Record<string, string>> = {}; // style -> {colorSize -> sku}
+    // Any line we can't resolve to a REAL S&S SKU. We refuse the whole order
+    // rather than submit a guessed identifier (which could map to a different
+    // garment or be dropped, leaving the shop mis- or under-shipped while the
+    // PO shows "Ordered"). Same all-or-nothing posture as smPlaceOrder.
+    const unresolved: string[] = [];
+    const describe = (l: any) => `${l.style || l.sku || "?"} ${l.color || ""} ${l.size || ""}`.trim();
 
     for (const l of lines) {
       // Try to extract style number from our guessed SKU (e.g. "3480PINK-S" -> style "3480")
@@ -133,7 +139,7 @@ Deno.serve(async (req) => {
       const color = l.color || "";
 
       if (!style) {
-        resolvedLines.push({ Identifier: l.sku, Qty: l.qty });
+        unresolved.push(describe(l));
         continue;
       }
 
@@ -199,9 +205,23 @@ Deno.serve(async (req) => {
       if (realSku) {
         resolvedLines.push({ Identifier: realSku, Qty: l.qty });
       } else {
-        // Fall back to guessed SKU — S&S will reject if invalid
-        resolvedLines.push({ Identifier: l.sku || `${style}-${size}`, Qty: l.qty });
+        // Could not resolve to a real S&S SKU — refuse rather than guess.
+        unresolved.push(describe(l));
       }
+    }
+
+    // All-or-nothing: if any line didn't resolve, place NO order and release
+    // the idempotency key so the shop can fix and retry.
+    if (unresolved.length > 0) {
+      await recordOutcome(false, { unresolved });
+      return Response.json(
+        {
+          error:
+            `Couldn't match ${unresolved.length} line(s) to a live S&S SKU: ${unresolved.join(", ")}. ` +
+            `Check the style, color, and size — no order was placed.`,
+        },
+        { status: 422, headers: CORS },
+      );
     }
 
     // S&S API uses PascalCase field names
@@ -231,6 +251,9 @@ Deno.serve(async (req) => {
       method: "POST",
       headers: ssHeaders(auth),
       body: JSON.stringify(ssOrder),
+      // Bound the real-order POST so a hung S&S request can't leave the
+      // idempotency row stuck in_flight forever (retries would 409 for good).
+      signal: AbortSignal.timeout(30000),
     });
 
     const responseText = await res.text();

@@ -85,13 +85,17 @@ export async function ensurePoDraftsForOrder(order, user, { existingPos, lookup 
 
   // Idempotency — never create a second PO for an order that already has one.
   // Check any caller-supplied list first (catches consolidated source_order_ids
-  // the caller has loaded), then a direct query on the single-order link.
+  // the caller has loaded), then a DB read. The DB read loads the shop's POs
+  // and runs orderAlreadyHasPo so it catches BOTH the single-order link AND a
+  // consolidated PO's source_order_ids array — a plain
+  // filter({source_order_id}) missed the array case and let the Orders page
+  // create a duplicate against a consolidated PO.
   if (existingPos && orderAlreadyHasPo(order, existingPos)) {
     return { created: [], skipped: true };
   }
   try {
-    const linked = await base44.entities.PurchaseOrder.filter({ source_order_id: order.id });
-    if (orderAlreadyHasPo(order, linked)) return { created: [], skipped: true };
+    const shopPos = await base44.entities.PurchaseOrder.filter({ shop_owner: shopScope(user) });
+    if (orderAlreadyHasPo(order, shopPos)) return { created: [], skipped: true };
   } catch {
     // A failed idempotency read shouldn't create duplicates by proceeding
     // blindly — but it also shouldn't block first-time creation. We proceed;

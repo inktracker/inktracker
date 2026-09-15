@@ -75,4 +75,31 @@ describe("applyCheckInToOrder", () => {
     ], { nowIso: "T" });
     expect(patch.checklist.goods_progress).toEqual({});
   });
+
+  it("does NOT mark a size 'received' when 0 arrived — it's a full shortage, not a receipt", () => {
+    const zero = [{ styleCode: "5030", color: "Black", size: "M", quantity: 10, checkedIn: 0 }];
+    const patch = applyCheckInToOrder(order, zero, { computeShortfall: true, nowIso: "T" });
+    expect(patch.checklist.goods_progress["0-M"]).toBeUndefined(); // NOT received
+    expect(patch.line_items[0]._shortfall).toEqual({ M: 10 }); // full shortage recorded
+  });
+
+  it("matches the PO item's style against ANY of the line's style aliases (reorder reconciles)", () => {
+    // Order line was built from supplierStyleNumber "AC5030"; the reorder PO
+    // carries the bare style "5030" — must still match and reconcile.
+    const aliasOrder = {
+      checklist: { goods_progress: {} },
+      line_items: [{ supplierStyleNumber: "AC5030", style: "5030", garmentColor: "Black", sizes: { M: 5 } }],
+    };
+    const patch = applyCheckInToOrder(aliasOrder, [{ styleCode: "5030", color: "Black", size: "M", quantity: 5, checkedIn: 5 }], { nowIso: "T" });
+    expect(patch.checklist.goods_progress["0-M"]?.status).toBe("received");
+  });
+
+  it("matches size case-insensitively and uses the order's canonical size key", () => {
+    const caseOrder = {
+      checklist: { goods_progress: {} },
+      line_items: [{ styleNumber: "5030", garmentColor: "Black", sizes: { "2XL": 4 } }],
+    };
+    const patch = applyCheckInToOrder(caseOrder, [{ styleCode: "5030", color: "Black", size: "2xl", quantity: 4, checkedIn: 4 }], { nowIso: "T" });
+    expect(patch.checklist.goods_progress["0-2XL"]?.status).toBe("received"); // canonical key
+  });
 });
