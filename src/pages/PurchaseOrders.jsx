@@ -73,8 +73,9 @@ export default function PurchaseOrders() {
   const [consolidateOpen, setConsolidateOpen] = useState(false);
   // Cross-supplier price comparison for the selected draft PO. Keyed by PO id
   // so a stale result never bleeds onto a different PO.
-  const [comparison, setComparison] = useState(null); // { forPoId, current, alternatives, best, savings }
+  const [comparison, setComparison] = useState(null); // { forPoId, forSupplier, current, alternatives, best, savings }
   const [comparing, setComparing] = useState(false);
+  const compareSeq = useRef(0); // guards against a stale supplier's compare resolving last
   const [receiving, setReceiving] = useState(false);
 
   // Filter + multi-select merge mode (drafts tab only)
@@ -246,20 +247,27 @@ export default function PurchaseOrders() {
   // stash the result so the detail can show a "you'd save $X through Y" callout.
   async function compareSuppliers(po = selected, { silent = false } = {}) {
     if (!po) return;
+    // Sequence guard: clicking between suppliers fires several async compares
+    // for the SAME PO. Without this, an earlier supplier's compare could
+    // resolve LAST and clobber the current one (right label, wrong numbers).
+    const seq = ++compareSeq.current;
     setComparing(true);
     try {
       const cmp = await comparePoSuppliers(po, { thresholds });
-      setComparison({ forPoId: po.id, ...cmp, savings: savingsVsCurrent(cmp) });
+      if (seq !== compareSeq.current) return; // superseded by a newer compare
+      // Tag with the supplier it was computed for so a stale result can never
+      // render against a different supplier selection.
+      setComparison({ forPoId: po.id, forSupplier: po.supplier, ...cmp, savings: savingsVsCurrent(cmp) });
       // Refresh the draft's stored line prices to the current supplier's LIVE
       // (sale-aware) cost, so the subtotal is what you'll actually pay — not a
       // stale quote-time estimate. Only when that supplier prices every line.
-      if (po.status === "draft" && !readOnly && cmp.current?.coversAll) {
+      if (seq === compareSeq.current && po.status === "draft" && !readOnly && cmp.current?.coversAll) {
         await repriceToLive(po, cmp.current);
       }
     } catch (err) {
       if (!silent) notify.error("Couldn't compare supplier pricing", err);
     } finally {
-      setComparing(false);
+      if (seq === compareSeq.current) setComparing(false);
     }
   }
 
@@ -329,7 +337,7 @@ export default function PurchaseOrders() {
     if (!selected || selected.status !== "draft") return;
     if (!(selected.items?.length > 0)) return;
     if (candidateSuppliers(selected.supplier).length <= 1) return;
-    if (comparison?.forPoId === selected.id) return;
+    if (comparison?.forPoId === selected.id && comparison?.forSupplier === selected.supplier) return;
     compareSuppliers(selected, { silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id, selected?.supplier, selected?.items?.length, comparison?.forPoId]);
@@ -817,7 +825,7 @@ export default function PurchaseOrders() {
               receiving={receiving}
               onToggleReceived={toggleReceived}
               onCheckInItem={checkInItem}
-              comparison={comparison?.forPoId === selected.id ? comparison : null}
+              comparison={comparison?.forPoId === selected.id && comparison?.forSupplier === selected.supplier ? comparison : null}
               comparing={comparing}
               onCompareSuppliers={compareSuppliers}
               onSwitchSupplier={switchSupplier}
