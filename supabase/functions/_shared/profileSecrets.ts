@@ -82,11 +82,17 @@ export async function loadProfileWithSecrets(
 /**
  * Loads the **shop owner's** profile + secrets for a signed-in user.
  *
- * For shop owners / managers / employees, this is just their own profile.
- * For brokers (role === "broker"), the broker's own profile has no supplier
- * credentials — the relevant creds live on the assigned shop's profile. We
- * resolve the assigned shop via `profile.assigned_shops[0]` (the email of
- * the shop they're working under) and load THAT profile instead.
+ * For a shop OWNER, this is their own profile. For MANAGERS / EMPLOYEES, the
+ * supplier credentials (and QB/etc.) live on the OWNER's profile — the member's
+ * own profile has none — so we resolve the owner via `profile.shop_owner` (the
+ * owner's email) and load THAT profile. Without this, a manager placing an
+ * order was refused ("connect your account") even though the shop is fully
+ * configured, or would have billed their own personal account — the "manager =
+ * full partnership" model was broken for supplier creds. (Subscription
+ * resolution already resolved the owner via shop_owner; this makes creds match.)
+ *
+ * For BROKERS (role === "broker"), creds live on the assigned shop's profile,
+ * resolved via `profile.assigned_shops[0]`.
  *
  * Use this in any edge function that needs supplier creds (QB, AS Colour,
  * S&S, Shopify, Gmail), not just user-scoped lookups.
@@ -109,6 +115,16 @@ export async function loadShopProfileForUser(
   const role = (userProfile as any).role;
   const isBroker = role === "broker";
   if (!isBroker) {
+    // Manager / employee: resolve the OWNER's profile (where creds live) via
+    // shop_owner. Owners have shop_owner === own email (or null) → no swap.
+    const ownEmail = (userProfile as any).email;
+    const ownerEmail = (userProfile as any).shop_owner;
+    if (ownerEmail && ownerEmail !== ownEmail) {
+      const ownerProfile = await loadProfileWithSecrets(admin, { email: ownerEmail });
+      if (ownerProfile) {
+        return { profile: ownerProfile, isBroker: false, brokerEmail: null, brokerProfile: null };
+      }
+    }
     return { profile: userProfile, isBroker: false, brokerEmail: null, brokerProfile: null };
   }
 
