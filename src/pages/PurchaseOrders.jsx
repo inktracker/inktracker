@@ -1157,11 +1157,12 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
           </div>
         ) : (
           <div className="border border-slate-100 rounded-lg overflow-hidden text-sm">
-            {/* Column header — desktop only; the mobile cards are self-labeling. */}
+            {/* Column header — desktop only; the mobile cards are self-labeling.
+                The WH (warehouse) column is AS Colour only. */}
             <div className="hidden sm:flex items-center gap-3 px-3 py-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
               <div className="flex-1 min-w-0">SKU</div>
               <div className="w-24">Color / Size</div>
-              <div className="w-12 text-center">WH</div>
+              {po.supplier === SUPPLIERS.AC && <div className="w-12 text-center" title="Warehouse (AS Colour ships from CA or NC)">WH</div>}
               <div className="w-16 text-right">Qty</div>
               <div className="w-16 text-right">Unit</div>
               <div className="w-20 text-right">Line</div>
@@ -1217,7 +1218,6 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                           </select>
                         )
                       )}
-                      {!isAc && <span className="hidden sm:block w-12" />}
                       {isLocked ? (
                         <span className="w-16 text-right tabular-nums">{it.quantity}</span>
                       ) : (
