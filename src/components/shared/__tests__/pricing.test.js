@@ -29,6 +29,7 @@ import {
   FIRST_PRINT,
   ADDL_PRINT,
   EXTRA_RATES,
+  overrideRushFee,
 } from "../pricing";
 
 // ── Test Fixtures ──────────────────────────────────────────────────────────
@@ -995,13 +996,14 @@ describe("calcQuoteTotalsWithLinking", () => {
       expect(t.rushTotal).toBe(0);
     });
 
-    it("override skips rush fee", () => {
+    it("override ADDS rush on top of the flat price (Joe 2026-09-15: 20% on the 20)", () => {
       const li = makeLineItem({ clientPpp: 20 });
       const q = makeQuote({ line_items: [li], rush_rate: 0.2 });
       const t = calcQuoteTotalsWithLinking(q);
-      // Override line: subtotal = 900, rush = 0
-      expect(t.rushTotal).toBe(0);
-      expect(t.sub).toBe(900);
+      // Override line: subtotal = 20 × 45 = 900, rush = 900 × 0.2 = 180
+      expect(t.subtotal).toBe(900);
+      expect(t.rushTotal).toBe(180);
+      expect(t.sub).toBe(1080);
     });
 
     it("override only respected for STANDARD_MARKUP", () => {
@@ -1196,7 +1198,7 @@ describe("Quote Stamping", () => {
       const hasOverride = Number.isFinite(override) && override > 0;
       const ppp = hasOverride ? override : r.ppp;
       const lineTotal = ppp * qty;
-      const rushFee = hasOverride ? 0 : r.rushFee;
+      const rushFee = hasOverride ? overrideRushFee(override, qty, q.rush_rate) : r.rushFee;
       return { ...li, _ppp: ppp, _lineTotal: lineTotal, _rushFee: rushFee };
     });
     const lineSubtotal = stampedItems.reduce((s, li) => s + (li._lineTotal || 0), 0);
@@ -1220,7 +1222,7 @@ describe("Quote Stamping", () => {
       const hasOverride = Number.isFinite(override) && override > 0;
       const ppp = hasOverride ? override : r.ppp;
       const lineTotal = ppp * qty;
-      const rushFee = hasOverride ? 0 : r.rushFee;
+      const rushFee = hasOverride ? overrideRushFee(override, qty, q.rush_rate) : r.rushFee;
       return { ...li, _ppp: ppp, _lineTotal: lineTotal, _rushFee: rushFee };
     });
     const lineSubtotal = stampedItems.reduce((s, li) => s + (li._lineTotal || 0), 0);

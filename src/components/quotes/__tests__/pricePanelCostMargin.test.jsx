@@ -20,6 +20,22 @@ const line = (over = {}) => ({
   ...over,
 });
 
+describe("PricePanel override + rush (Joe 2026-09-15: rush must apply on top of a flat price)", () => {
+  it("shows the Rush Fee row and adds 20% on top of the $20 override", () => {
+    render(<PricePanel li={line({ clientPpp: 20 })} rushRate={0.2} extras={{}} allLineItems={[]} onChange={() => {}} />);
+    expect(screen.getByText(/Rush Fee \(20%\)/)).toBeTruthy();
+    // 100 × $20 = $2,000 + 20% rush $400 = $2,400 line total
+    expect(screen.getByText("$400.00")).toBeTruthy();
+    expect(screen.getByText("$2,400.00")).toBeTruthy();
+  });
+
+  it("no rush → override line total is exactly override × qty", () => {
+    render(<PricePanel li={line({ clientPpp: 20 })} rushRate={0} extras={{}} allLineItems={[]} onChange={() => {}} />);
+    expect(screen.queryByText(/Rush Fee/)).toBeNull();
+    expect(screen.getByText("$2,000.00")).toBeTruthy();
+  });
+});
+
 describe("PricePanel cost & margin", () => {
   it("in-house line stamped _partner_cost:null does NOT read as $0 partner cost", () => {
     render(<PricePanel li={line({ _partner_cost: null })} rushRate={0} extras={{}} allLineItems={[]} onChange={() => {}} />);

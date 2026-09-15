@@ -9,6 +9,7 @@
 
 import { sumAdditionalCharges } from "../pricing/additionalCharges";
 import { roundedQuoteTotals } from "../pricing/quoteRounding";
+import { overrideRushFee } from "../pricing/linePrice";
 
 const clean = (s) => (typeof s === "string" ? s.trim() : "");
 const fmtUsd = (n) => `$${Number(n || 0).toFixed(2)}`;
@@ -212,10 +213,11 @@ export function recomputeOrderMoney(lines, order, deps, fees) {
     if (hasOverride) {
       const qty = getQty(li) || 0;
       const lineTotal = Number((override * qty).toFixed(2));
-      subtotal += lineTotal;
-      // Override is the all-in per-piece agreement: no separate rush fee,
-      // mirroring the quote save (rushFee forced 0 under override).
-      return { ...li, _ppp: override, _lineTotal: lineTotal, _rushFee: 0 };
+      // Rush is a % on top of the flat override, mirroring the quote save
+      // (overrideRushFee) so an edited order can't drop a rush the quote charged.
+      const rushFee = overrideRushFee(override, qty, order.rush_rate);
+      subtotal += lineTotal + rushFee;
+      return { ...li, _ppp: override, _lineTotal: lineTotal, _rushFee: rushFee };
     }
     const r = calcLinkedLinePrice(li, order.rush_rate, getLineExtras(li, order), undefined, linkedQtyMap);
     const lineTotal = Number(r?.lineTotal || 0);

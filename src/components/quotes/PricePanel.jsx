@@ -3,6 +3,7 @@ import {
   calcLinkedLinePrice,
   buildLinkedQtyMap,
   fmtMoney,
+  overrideRushFee,
 } from "../shared/pricing";
 import { computeTradeTotal } from "@/lib/partnerTradePricing";
 
@@ -22,15 +23,15 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
   const pppOverride = Number(li?.clientPpp);
   const hasOverride = Number.isFinite(pppOverride) && pppOverride > 0;
 
-  // A per-piece override is a flat price: the save path (QuoteEditorModal)
-  // and the engine both drop rush on an overridden line, so the panel must
-  // too — otherwise it showed a Rush Fee row and a line total inflated by
-  // rush that the quote never actually charged.
-  const rushFee = hasOverride ? 0 : (r.rushFee || 0);
+  // A per-piece override is a flat price, and rush is a % ON TOP of it
+  // (overrideRushFee) — the save path stamps the same number into _rushFee,
+  // so the panel and the saved quote agree. (Until 2026-09-15 an override
+  // silently dropped rush, which made the Turnaround buttons look dead.)
+  const rushFee = hasOverride ? overrideRushFee(pppOverride, qty, rushRate) : (r.rushFee || 0);
 
   const suggestedPpp = r.ppp;
   const avgPpp = hasOverride ? pppOverride : suggestedPpp;
-  const displayTotal = hasOverride ? (pppOverride * qty) : r.lineTotal;
+  const displayTotal = hasOverride ? (pppOverride * qty + rushFee) : r.lineTotal;
 
   // Cost & margin block.
   //

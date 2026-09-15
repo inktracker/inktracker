@@ -5,6 +5,7 @@ import {
   fmtMoney,
   BROKER_MARKUP,
   STANDARD_MARKUP,
+  overrideRushFee,
 } from "../shared/pricing";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 
@@ -195,7 +196,8 @@ export default function BrokerPricePanel({
   const pppOverride = Number(li?.clientPpp);
   const hasOverride = Number.isFinite(pppOverride) && pppOverride > 0;
   const shopAvgPpp = hasOverride ? pppOverride : suggestedShopAvgPpp;
-  const shopTotal = hasOverride ? pppOverride * qty : suggestedShopTotal;
+  // Rush rides on top of a flat override (overrideRushFee), like the shop editor.
+  const shopTotal = hasOverride ? pppOverride * qty + overrideRushFee(pppOverride, qty, rushRate) : suggestedShopTotal;
 
   const profitPerPiece = Math.max(0, shopAvgPpp - brokerAvgPpp);
   const orderProfit = Math.max(0, shopTotal - brokerTotal);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import ReactivateLink from "../shared/ReactivateLink";
-import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, activeSizeNames, buildQBInvoicePayload, getDisplayName, getShopPricingConfig } from "../shared/pricing";
+import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, activeSizeNames, buildQBInvoicePayload, getDisplayName, getShopPricingConfig, overrideRushFee } from "../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
@@ -568,7 +568,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             const r = hasSaved
               ? { ppp: li._ppp, lineTotal: li._lineTotal, rushFee: li._rushFee || 0 }
               : hasOverride
-                ? { ppp: override, lineTotal: override * qty, rushFee: 0 }
+                ? { ppp: override, lineTotal: override * qty, rushFee: overrideRushFee(override, qty, invoice.rush_rate) }
                 : hasDirectTotal
                   ? { ppp: qty > 0 ? directLineTotal / qty : directLineTotal, lineTotal: directLineTotal, rushFee: 0 }
                   : calcLinkedLinePrice(li, invoice.rush_rate || 0, getLineExtras(li, invoice), undefined, linkedQtyMap);

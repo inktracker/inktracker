@@ -24,6 +24,23 @@ import type {
   SizeBreakdownEntry,
 } from "@/types/pricing";
 
+/**
+ * Rush on a FLAT per-piece override (the "override price per piece" box).
+ * Joe 2026-09-15: "if you round the number off to say 20 but want to add
+ * the rush it should reflect the 20% on the 20" — rush is a percentage on
+ * top of the agreed price, not swallowed by it. Before this, every
+ * override silently dropped rush (line total = override × qty, rush 0),
+ * so the Turnaround buttons looked dead on overridden lines.
+ * Returns 0 when there's no override, no qty, or no rush.
+ */
+export function overrideRushFee(override: unknown, qty: unknown, rushRate: unknown): number {
+  const o = Number(override);
+  const q = Number(qty);
+  const r = Number(rushRate);
+  if (!(o > 0) || !(q > 0) || !(r > 0)) return 0;
+  return Math.round(o * q * r * 100) / 100;
+}
+
 export function computeLinkedLinePrice(
   li: LineItem,
   rushRate: number,
