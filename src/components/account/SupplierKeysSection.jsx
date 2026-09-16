@@ -5,6 +5,7 @@ import { validateAcCredsSave, acConnectionWarning } from "@/lib/account/acCredsV
 import { shopScope } from "@/lib/shopScope";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
 import { preferredSupplier } from "@/lib/suppliers/preference";
+import SanMarOrderingSetup from "./SanMarOrderingSetup";
 
 // Supplier API keys editor. Extracted verbatim from Account.jsx as a pure
 // decomposition — no behavior change. Receives the current `user`.
@@ -432,8 +433,13 @@ export default function SupplierKeysSection({ user }) {
           SanMar enables API access per account. Email <a href="mailto:sanmarintegrations@sanmar.com" className="font-mono underline">sanmarintegrations@sanmar.com</a> with
           your customer number, e-sign their free Integration Agreement, and access is granted in 1–2 business days.
           After that, your regular sanmar.com login above connects InkTracker to live SanMar style data and your contracted pricing.
-          Style lookups use exact style numbers (PC61, K420, DT6000). Ordering through InkTracker requires SanMar's separate PO-integration approval — coming later.
+          Style lookups use exact style numbers (PC61, K420, DT6000). Ordering through InkTracker needs SanMar's separate PO-integration approval — the setup below handles it.
         </div>
+
+        {/* SanMar ORDERING: per-account PO-integration onboarding, in-app. Only
+            meaningful once product-data creds are connected (needs the customer
+            number + username in the request email). */}
+        {smHasKey && <SanMarOrderingSetup />}
       </div>
 
       {/* Default garment supplier */}

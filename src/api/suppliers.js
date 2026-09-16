@@ -28,11 +28,11 @@ const FN = {
     shippingMethods: "acGetShippingMethods",
   },
   // SanMar has no keyword-search API — exact style-number lookup only.
-  // smPlaceOrder EXISTS but is DORMANT: the edge function is hard-gated by the
-  // SANMAR_PO_ENABLED secret and returns { needsManual: true } until the shop's
-  // SanMar account is confirmed authorized + the submitPO schema is verified.
-  // Callers handle needsManual by keeping the "place directly, then Mark
-  // submitted" flow. See supabase/functions/smPlaceOrder + _shared/sanmar.ts.
+  // smPlaceOrder is gated TWICE: the platform SANMAR_PO_ENABLED secret, and
+  // per shop by SanMar's PO-integration onboarding (Account → Suppliers →
+  // SanMar ordering setup, smOnboarding) reaching 'live'. Until both, it
+  // returns { needsManual: true } and callers keep the "place directly, then
+  // Mark submitted" flow. See supabase/functions/smPlaceOrder + _shared/sanmar.ts.
   [SUPPLIERS.SANMAR]: {
     lookup: "smLookupStyle",
     placeOrder: "smPlaceOrder",

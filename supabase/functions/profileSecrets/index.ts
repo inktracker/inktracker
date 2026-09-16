@@ -25,6 +25,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { updateProfileSecrets, loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
+import { isSanmarPoLive } from "../_shared/sanmarOnboarding.js";
 
 const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY    = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -83,6 +84,10 @@ Deno.serve(async (req) => {
         ss:    Boolean(profile.ss_account_number && profile.ss_api_key),
         ac:    Boolean(profile.ac_subscription_key),
         sanmar: Boolean(profile.sanmar_customer_number && profile.sanmar_username && profile.sanmar_password),
+        // SanMar ORDERING is per-shop: on only after the in-app PO-integration
+        // onboarding reaches 'live' (smOnboarding). Presence-only for EDEV creds.
+        sanmar_po_live: isSanmarPoLive(profile.sanmar_po_onboarding),
+        sanmar_edev: Boolean(profile.sanmar_edev_username && profile.sanmar_edev_password),
         // ac_email isn't a secret, but the frontend wants to display it
         ac_email: profile.ac_email ?? null,
         // Same for the SanMar username — shown as "connected as ..." in Account.
@@ -155,7 +160,7 @@ Deno.serve(async (req) => {
       } else if (provider === "ac") {
         clearFields = { ac_subscription_key: null, ac_email: null, ac_password: null };
       } else if (provider === "sanmar") {
-        clearFields = { sanmar_customer_number: null, sanmar_username: null, sanmar_password: null };
+        clearFields = { sanmar_customer_number: null, sanmar_username: null, sanmar_password: null, sanmar_edev_username: null, sanmar_edev_password: null };
       } else {
         return json({ error: `Unknown provider: ${provider}` }, 400);
       }
