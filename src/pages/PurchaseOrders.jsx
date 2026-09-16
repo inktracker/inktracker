@@ -1474,6 +1474,21 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
           Download CSV for Order Assistant
         </button>
       )}
+      {/* AS Colour's Order Assistant (ascolour.com/purchase-order-agent) reads
+          the CSV/PDF, builds a cart, and the shop checks out on AS Colour's
+          site with any payment method — the way to order WITHOUT the credit
+          terms the API requires. Mark the PO submitted afterward. */}
+      {po.items?.length > 0 && po.supplier === "AS Colour" && (
+        <a
+          href="https://ascolour.com/purchase-order-agent"
+          target="_blank"
+          rel="noreferrer"
+          className="w-full mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 px-4 py-2 rounded-xl transition"
+          title="Opens AS Colour's Order Assistant in a new tab — upload the downloaded CSV, review the cart, check out with any payment method, then come back and Mark submitted."
+        >
+          Open AS Colour Order Assistant ↗
+        </a>
+      )}
     </div>
   );
 }
