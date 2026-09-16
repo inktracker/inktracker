@@ -45,6 +45,7 @@ import {
   type SmCreds,
 } from "../_shared/sanmar.ts";
 import { canPlaceOrder } from "../_shared/acOrderLogic.js";
+import { isSanmarPoLive } from "../_shared/sanmarOnboarding.js";
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadShopProfileForUser, loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
@@ -113,14 +114,28 @@ Deno.serve(async (req) => {
     const blocked = await requireActiveTeamSubscription(admin, profile);
     if (blocked) return blocked;
 
-    // ── SAFETY GATE ──────────────────────────────────────────────────
-    // Until SanMar PO submission is confirmed + verified, do NOT post to
-    // SanMar. Return the manual-fallback marker AFTER auth (so an anonymous
-    // caller still can't probe) but BEFORE any idempotency claim or supplier
-    // POST. This is what keeps shipping this function inert.
+    // ── SAFETY GATES ─────────────────────────────────────────────────
+    // (1) Platform switch: SANMAR_PO_ENABLED secret — off until InkTracker's
+    //     own order format has been validated by SanMar (first shop live).
+    // (2) Per-shop: SanMar enables integrated POs PER CUSTOMER ACCOUNT, so a
+    //     shop can only order once its in-app onboarding (smOnboarding) is
+    //     'live' — i.e. SanMar has validated its EDEV test and configured its
+    //     production account. Both checks run AFTER auth (no anonymous probe)
+    //     and BEFORE any idempotency claim or supplier POST.
     if (!poEnabled()) {
       console.log("[smPlaceOrder] SANMAR_PO_ENABLED not set — returning manual fallback");
       return Response.json({ success: false, ...MANUAL }, { headers: CORS });
+    }
+    if (!isSanmarPoLive((profile as { sanmar_po_onboarding?: unknown } | null)?.sanmar_po_onboarding)) {
+      return Response.json(
+        {
+          success: false,
+          needsManual: true,
+          needsOnboarding: true,
+          message: "SanMar ordering isn't turned on for this shop yet — finish “SanMar ordering setup” under Account → Suppliers, or order directly with SanMar and use “Mark submitted”.",
+        },
+        { headers: CORS },
+      );
     }
 
     // STRICT per-shop credentials only (no env fallback for orders).

@@ -27,6 +27,7 @@ import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
 import ConsolidateBuyingModal from "@/components/purchaseOrders/ConsolidateBuyingModal";
 import POReceivingPanel from "@/components/purchaseOrders/POReceivingPanel";
 import SupplierConnectionBanner from "@/components/purchaseOrders/SupplierConnectionBanner";
+import { useSupplierFlags } from "@/lib/suppliers/useSupplierFlags";
 import { buildPOCsv, buildPOCsvFilename } from "@/lib/orders/poCsv";
 import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download, PackageCheck, TrendingDown, Scale } from "lucide-react";
 import { notify } from "@/lib/notify";
@@ -87,6 +88,9 @@ export default function PurchaseOrders() {
   // Shipping methods cache keyed by supplier. Loaded once per supplier
   // per session and shared across POs. Saves a round trip every time a
   // user clicks a draft.
+  // Per-shop supplier connection flags (incl. sanmar_po_live — SanMar ordering
+  // is enabled per shop by the in-app PO-integration onboarding).
+  const supplierFlags = useSupplierFlags();
   const [shippingMethodsBySupplier, setShippingMethodsBySupplier] = useState({});
   const [shippingMethodsLoading, setShippingMethodsLoading] = useState(false);
   const [shippingMethodsError, setShippingMethodsError] = useState(null);
@@ -527,15 +531,12 @@ export default function PurchaseOrders() {
     // submitted PO (distinct idempotency key = a second real order) and against
     // submitting a cancelled merge-source alongside the merged PO.
     if (selected.status !== "draft") return;
-    // SanMar PO submission ships DORMANT: the smPlaceOrder edge function is
-    // hard-gated by the SANMAR_PO_ENABLED secret and the submitPO schema is
-    // still being verified against SanMar's WSDL. Until the frontend flag
-    // (VITE_SANMAR_PO_ENABLED) is turned on, keep the current UX exactly —
-    // an immediate "place it directly, then Mark submitted" note, no dialog.
-    // The edge function is the real safety gate (returns needsManual); this
-    // flag just avoids a misleading confirm during the pending window.
-    if (selected.supplier === SUPPLIERS.SANMAR && import.meta.env.VITE_SANMAR_PO_ENABLED !== "true") {
-      setSubmitError("SanMar orders can't be placed through InkTracker yet — order it directly with SanMar, then use “Mark submitted”.");
+    // SanMar ordering is per-shop: on only once the shop's in-app SanMar
+    // PO-integration onboarding (Account → Suppliers) is 'live'. Until then keep
+    // the "place it directly, then Mark submitted" note — no misleading
+    // confirm. The smPlaceOrder edge function is the real gate (needsManual).
+    if (selected.supplier === SUPPLIERS.SANMAR && supplierFlags.isConnected(SUPPLIERS.SANMAR) !== undefined && !supplierFlags.flags?.sanmar_po_live) {
+      setSubmitError("SanMar ordering isn't turned on for this shop yet — finish “SanMar ordering setup” under Account → Suppliers, or order it directly with SanMar, then use “Mark submitted”.");
       return;
     }
     const errors = validateForSubmit(selected, selected.supplier);
@@ -1081,16 +1082,16 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                 </button>
               )
             ) : comparison.savings ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                 <div className="flex flex-col sm:flex-row sm:items-start gap-2.5">
                   <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                  <TrendingDown className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
-                  <div className="flex-1 min-w-0 text-sm text-emerald-900">
+                  <TrendingDown className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0 text-sm text-amber-900">
                     <div className="font-bold">
                       Order through {comparison.savings.supplier} and save {fmtMoney(comparison.savings.totalSaved)}
                       {comparison.savings.perPiece > 0 && <span className="font-semibold"> ({fmtMoney(comparison.savings.perPiece)}/pc)</span>}
                     </div>
-                    <div className="text-emerald-800 text-xs mt-0.5">
+                    <div className="text-amber-800 text-xs mt-0.5">
                       {fmtMoney(comparison.savings.altTotal)} through {comparison.savings.supplier} vs {fmtMoney(comparison.savings.currentTotal)} here ({po.supplier}).
                       {comparison.best?.hasSale && <span className="font-semibold"> {comparison.savings.supplier}&apos;s sale price applied.</span>}
                     </div>
@@ -1119,17 +1120,17 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                     type="button"
                     onClick={() => onSwitchSupplier(comparison.savings.supplier)}
                     disabled={readOnly}
-                    className="shrink-0 w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                    className="shrink-0 w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60"
                   >
                     <Truck className="w-3.5 h-3.5" /> Switch to {comparison.savings.supplier}
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
                 <div>
-                  <span className="font-semibold text-slate-700">{po.supplier} is your cheapest option</span> for these items
+                  <span className="font-semibold text-emerald-800">{po.supplier} is your cheapest option</span> for these items
                   {comparison.current && comparison.current.total > 0 && (
                     <> at {fmtMoney(comparison.current.total)}
                       {comparison.current.perPiece > 0 && <span> ({fmtMoney(comparison.current.perPiece)}/pc)</span>}
@@ -1140,12 +1141,12 @@ function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWa
                   )}.
                   {comparison.alternatives?.some((a) => a.coversAll) && (() => {
                     const alt = comparison.alternatives.filter((a) => a.coversAll).sort((a, b) => a.total - b.total)[0];
-                    return alt ? <span className="text-slate-500"> {alt.supplier} would be {fmtMoney(alt.total)}{alt.hasSale ? " (incl. their sale)" : ""}.</span> : null;
+                    return alt ? <span className="text-emerald-700"> {alt.supplier} would be {fmtMoney(alt.total)}{alt.hasSale ? " (incl. their sale)" : ""}.</span> : null;
                   })()}
                   {comparison.alternatives?.some((a) => !a.coversAll) && (
-                    <span className="text-slate-500"> ({comparison.alternatives.filter((a) => !a.coversAll).map((a) => a.supplier).join(", ")} doesn&apos;t carry every line.)</span>
+                    <span className="text-emerald-700"> ({comparison.alternatives.filter((a) => !a.coversAll).map((a) => a.supplier).join(", ")} doesn&apos;t carry every line.)</span>
                   )}
-                  <button type="button" onClick={() => onCompareSuppliers()} disabled={comparing} className="ml-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-60">re-check</button>
+                  <button type="button" onClick={() => onCompareSuppliers()} disabled={comparing} className="ml-2 text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-60">re-check</button>
                 </div>
               </div>
             )}
