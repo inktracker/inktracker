@@ -143,7 +143,7 @@ export function AcSetupSteps({ connected, accountEmail, refreshKey }) {
 
   return (
     <div className="mt-3 border border-slate-200 rounded-xl p-4 space-y-3 bg-white">
-      <Header title="AS Colour ordering setup" sub="API access comes from AS Colour; orders through the API need approved credit terms." done={approved} stepLabel={`Step ${Math.min(step, 5)} of 5`} />
+      <Header title="AS Colour ordering setup" sub="API access comes from AS Colour. Orders through the API need credit terms; without them, use their Order Assistant (steps 4–5 are optional)." done={approved} stepLabel={`Step ${Math.min(step, 5)} of 5`} />
       <ol className="space-y-3">
         <Step n={1} title="Ask AS Colour for API credentials" state={st(1)}>
           {step === 1 ? (
@@ -174,7 +174,8 @@ export function AcSetupSteps({ connected, accountEmail, refreshKey }) {
         <Step n={4} title="Apply for credit terms" state={st(4)}>
           {step === 4 ? (
             <>
-              <div>AS Colour only takes API orders on credit terms. We email them for the credit application; they send a PDF to <span className="font-semibold">{state.ownerEmail}</span>, you return it, and approval takes about 2–4 weeks (they call your credit references, then it goes to their CFO — nudging your references along helps). Until then orders still submit but sit in "awaiting payment" at AS Colour until you arrange payment with them.</div>
+              <div>You can order from AS Colour today without this step: on any AS Colour purchase order, click <span className="font-semibold">Download CSV for Order Assistant</span>, then <span className="font-semibold">Open AS Colour Order Assistant</span> — it reads the file, builds the cart, and you check out on their site with a card. Come back and Mark submitted.</div>
+              <div>Credit terms only matter if you want orders to submit straight from InkTracker through their API. AS Colour takes API orders on terms only. We email them for the credit application; they send a PDF to <span className="font-semibold">{state.ownerEmail}</span>, you return it, and approval takes about 2–4 weeks (they call your credit references, then it goes to their CFO — nudging your references along helps). Until then API orders still submit but sit in "awaiting payment" at AS Colour.</div>
               <div className="flex items-center gap-3 flex-wrap">
                 <button className={btn} disabled={!!busy} onClick={() => run("acRequestCredit", "Credit application requested")}>{busy === "acRequestCredit" ? "Sending…" : "Request the credit application"}</button>
                 <button className={ghost} disabled={!!busy} onClick={() => run("acMarkCreditRequested", "Marked as applied")}>I already applied</button>
