@@ -23,12 +23,13 @@ import { sanitizeSupplierPrice } from "./supplierPrice.ts";
 // isolate-safety rule as _shared/ascolour.ts: credentials are NEVER stored in
 // module state — every helper takes an SmCreds argument.
 //
-// The test environment (test-ws.sanmar.com) uses SEPARATE credentials issued
+// The EDEV test environment (edev-ws.sanmar.com — PO guide v24.5 Aug 2026
+// renamed "Test" back to "Edev") uses SEPARATE credentials issued
 // by SanMar support; set SANMAR_USE_TEST=1 plus the env creds to point the
 // platform fallback at it during integration testing.
 
 export const SM_PROD_BASE = "https://ws.sanmar.com:8080/SanMarWebService";
-export const SM_TEST_BASE = "https://test-ws.sanmar.com:8080/SanMarWebService";
+export const SM_TEST_BASE = "https://edev-ws.sanmar.com:8080/SanMarWebService";
 
 export function smBase(): string {
   // Integration-testing hook: point the whole SanMar client at a mock
@@ -518,11 +519,13 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
 
 // --- Purchase Order submission (SanMar Standard PO SOAP service) ---------------
 //
-// Reconciled against the SanMar Purchase Order Integration Guide v24.3
-// (Feb 2026), pp. 21–28 — the guide SanMar attached to their 2026-09-15 reply
-// confirming PO integration + issuing TEST-environment credentials.
+// Reconciled against the SanMar Purchase Order Integration Guide v24.5
+// (Aug 2026), pp. 21–28 — the guide SanMar attached to their 2026-09-15 reply
+// confirming PO integration + issuing EDEV-environment credentials. (Schema is
+// identical to v24.3; v24.5 renamed the test host to EDEV and refreshed the
+// recommended test products.)
 //
-//   TEST:  https://test-ws.sanmar.com:8080/SanMarWebService/SanMarPOServicePort?wsdl
+//   EDEV:  https://edev-ws.sanmar.com:8080/SanMarWebService/SanMarPOServicePort?wsdl
 //   PROD:  https://ws.sanmar.com:8080/SanMarWebService/SanMarPOServicePort?wsdl
 //   Operations: getPreSubmitInfo (stock check, does NOT order) and submitPO.
 //   Auth: same sanMarCustomerNumber / sanMarUserName / sanMarUserPassword
@@ -574,7 +577,7 @@ export const SM_SHIP_METHODS = [
   "USPS PP",         // USPS Ground Advantage
   "USPS APP",        // USPS Priority Mail
   "PSST",            // Pack Separately Ship Together (decorator program — needs SanMar setup)
-  "TRUCK",           // > 200 lb
+  "TRUCK",           // > 500 lb (v24.5)
 ] as const;
 
 /**

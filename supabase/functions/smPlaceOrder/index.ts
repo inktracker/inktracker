@@ -6,7 +6,7 @@
 //     SANMAR_PO_ENABLED secret. Until that secret is set (to "1" or "true"),
 //     it NEVER posts to SanMar — it returns { needsManual: true } so the PO
 //     page keeps showing the "order directly, then Mark submitted" path.
-//     The SOAP schema is reconciled against the PO Integration Guide v24.3
+//     The SOAP schema is reconciled against the PO Integration Guide v24.5
 //     (2026-09-15). The gate stays until SanMar validates our TEST order
 //     (scripts/sanmar-test-po.ts) and onboards the production account for
 //     integrated POs — flip SANMAR_PO_ENABLED only after their go-live email.
