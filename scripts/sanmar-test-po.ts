@@ -1,13 +1,13 @@
 // SanMar TEST-environment purchase-order runner (onboarding step, Sept 2026).
 //
-// SanMar requires a multi-line test PO on their TEST environment, shipped to
+// SanMar requires a multi-line test PO on their EDEV test environment, shipped to
 // the address we'll use in production, before they enable integrated POs on
 // the production account. This script drives the SAME shared code the
 // smPlaceOrder edge function uses (_shared/sanmar.ts: resolveSmPoLines →
 // getPreSubmitInfo → submitPO), so a green run here validates the real path.
 //
 // It never touches production: the endpoint is hard-wired to
-// test-ws.sanmar.com and the credentials come ONLY from SANMAR_TEST_* env
+// edev-ws.sanmar.com (PO guide v24.5) and the credentials come ONLY from SANMAR_TEST_* env
 // vars (SanMar issues separate test creds — retrieve them from their
 // one-time Bitwarden link yourself; never paste them into chat or files).
 //
@@ -107,18 +107,20 @@ if (!shipMethod) {
   Deno.exit(2);
 }
 
-// Default lines = SanMar's recommended test products (PO guide v24.3, p.13).
-// Multi-line on purpose: SanMar validates formatting on multi-line orders.
+// Default lines = SanMar's recommended EDEV test products (PO guide v24.5,
+// p.13: PC61 Charcoal L, PC61 White M, PC55 Kelly M, K500 Black L, DT5001
+// Black L, PC54 Navy M). Multi-line on purpose: SanMar validates formatting
+// on multi-line orders.
 const lineSpecs = args("--line").length
   ? args("--line")
-  : ["PC61|Charcoal|S|12", "PC61|Brown|S|6", "PC55|Aquatic Blue|S|6", "S508|Maui Blue|M|3"];
+  : ["PC61|Charcoal|L|12", "PC61|White|M|6", "PC55|Kelly|M|6", "K500|Black|L|3"];
 const inputs = lineSpecs.map((spec) => {
   const [style, color, size, qty] = spec.split("|").map((s) => s.trim());
   return { style, color, size, quantity: Number(qty) || 0 };
 });
 
 const base = SM_TEST_BASE;
-console.log(`SanMar TEST env: ${base}`);
+console.log(`SanMar EDEV test env: ${base}`);
 console.log(`PO ${poNumber} → ${shipTo.name}, ${shipTo.address1}, ${shipTo.city} ${shipTo.state} ${normalizeSmZip(shipTo.zip)} via ${shipMethod}`);
 
 // ── 1. Resolve lines to inventoryKey + sizeIndex (unless --no-resolve) ─────

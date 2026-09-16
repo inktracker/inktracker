@@ -18,6 +18,7 @@ import {
   normalizeSmZip,
   normalizeSmShipMethod,
   SM_PO_SPEC,
+  SM_TEST_BASE,
 } from "../sanmar.ts";
 
 // Fixture XML lifted from the SanMar Web Services Integration Guide v24.3
@@ -429,7 +430,7 @@ describe("buildMatchFromEntries — per-size prices (2XL+ upcharges)", () => {
   });
 });
 
-describe("PO submission — buildSubmitPoEnvelope (guide v24.3 pp.26–27)", () => {
+describe("PO submission — buildSubmitPoEnvelope (PO guide v24.5 pp.26–27)", () => {
   const creds = { customerNumber: "12345", username: "shop", password: "p<w&d" };
   const po = {
     poNumber: "ORD-2026-XYZ",
@@ -542,6 +543,12 @@ describe("PO submission — buildSubmitPoEnvelope (guide v24.3 pp.26–27)", () 
     const env = buildSubmitPoEnvelope(creds, { ...po, shipTo: { ...po.shipTo, residence: true } });
     expect(env).toContain("<attention>ORD-2026-XYZ</attention>");
     expect(env).toContain("<residence>Y</residence>");
+  });
+});
+
+describe("PO submission — EDEV test host (guide v24.5 p.21)", () => {
+  it("points the test base at edev-ws.sanmar.com, not the retired test-ws host", () => {
+    expect(SM_TEST_BASE).toBe("https://edev-ws.sanmar.com:8080/SanMarWebService");
   });
 });
 
