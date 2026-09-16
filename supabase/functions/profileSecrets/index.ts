@@ -26,6 +26,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { updateProfileSecrets, loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 import { isSanmarPoLive } from "../_shared/sanmarOnboarding.js";
+import { normalizeSupplierSetup } from "../_shared/supplierSetup.js";
 
 const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY    = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -88,6 +89,11 @@ Deno.serve(async (req) => {
         // onboarding reaches 'live' (smOnboarding). Presence-only for EDEV creds.
         sanmar_po_live: isSanmarPoLive(profile.sanmar_po_onboarding),
         sanmar_edev: Boolean(profile.sanmar_edev_username && profile.sanmar_edev_password),
+        // S&S / AS Colour in-app setup (supplierSetup edge fn): verified = a
+        // real authenticated call with the shop's own creds succeeded.
+        ss_verified: Boolean(normalizeSupplierSetup(profile.supplier_setup).ss.verified_at),
+        ac_verified: Boolean(normalizeSupplierSetup(profile.supplier_setup).ac.verified_at),
+        ac_credit_approved: Boolean(normalizeSupplierSetup(profile.supplier_setup).ac.credit_approved_at),
         // ac_email isn't a secret, but the frontend wants to display it
         ac_email: profile.ac_email ?? null,
         // Same for the SanMar username — shown as "connected as ..." in Account.

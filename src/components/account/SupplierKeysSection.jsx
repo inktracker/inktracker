@@ -6,6 +6,7 @@ import { shopScope } from "@/lib/shopScope";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
 import { preferredSupplier } from "@/lib/suppliers/preference";
 import SanMarOrderingSetup from "./SanMarOrderingSetup";
+import { SsSetupSteps, AcSetupSteps } from "./SupplierSetupSteps";
 
 // Supplier API keys editor. Extracted verbatim from Account.jsx as a pure
 // decomposition — no behavior change. Receives the current `user`.
@@ -310,6 +311,8 @@ export default function SupplierKeysSection({ user }) {
         ) : (
           <p className="text-xs text-slate-500">No S&S credentials configured. Enter your account details to connect.</p>
         )}
+        {/* S&S ordering setup: get key → enter → verify (real call with the shop's key). */}
+        <SsSetupSteps connected={ssHasKey && !ssEditing} refreshKey={saved ? 1 : 0} />
       </div>
 
       {/* AS Colour */}
@@ -372,15 +375,8 @@ export default function SupplierKeysSection({ user }) {
           ) : null;
         })()}
 
-        <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-[11px] text-amber-800 leading-relaxed">
-          <strong className="block mb-1 text-amber-900">Want to place orders too?</strong>
-          The API key above lets you browse the catalog and check live inventory immediately.
-          To actually <strong>submit orders</strong> through InkTracker, AS Colour requires approved <strong>credit terms</strong> (their only API payment option).
-          <br /><br />
-          <strong>How to apply:</strong> email <a href="mailto:support@ascolour.com" className="font-mono underline">support@ascolour.com</a> requesting the credit application. They'll send a PDF; complete and return it. Approval takes <strong>2-4 weeks</strong> (they contact your credit references, then submit to their CFO — speeding up the references step yourself can help).
-          <br /><br />
-          Without credit terms, orders submit but land in <strong>"awaiting payment"</strong> in AS Colour's system until you arrange payment directly with them.
-        </div>
+        {/* AS Colour ordering setup: request API creds → enter → verify → credit application → approved. */}
+        <AcSetupSteps connected={acHasKey && !!acEmailFromServer && acHasPassword && !acEditing} accountEmail={acEmailFromServer} refreshKey={saved ? 1 : 0} />
       </div>
 
       {/* SanMar */}
