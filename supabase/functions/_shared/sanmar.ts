@@ -518,57 +518,135 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
 
 // --- Purchase Order submission (SanMar Standard PO SOAP service) ---------------
 //
-// ⚠️  SPEC-PENDING — VERIFY AGAINST THE WSDL SANMAR RETURNS.
-//     As of this writing the shop's SanMar account was NOT yet confirmed
-//     authorized for the PO web service (request emailed to
-//     sanmarintegrations@sanmar.com, 2026-09-14). Everything in THIS section
-//     is built to the documented Standard Purchase Order service in the
-//     Integration Guide, but the exact operation name, element names, and
-//     response shape MUST be reconciled with the WSDL / sample payloads SanMar
-//     provides before this is trusted with a real order. The identifiers that
-//     need confirming are collected in SM_PO_SPEC below so there's ONE place to
-//     fix. Until then the smPlaceOrder edge function is hard-gated OFF by the
-//     SANMAR_PO_ENABLED secret and never posts to SanMar.
+// Reconciled against the SanMar Purchase Order Integration Guide v24.3
+// (Feb 2026), pp. 21–28 — the guide SanMar attached to their 2026-09-15 reply
+// confirming PO integration + issuing TEST-environment credentials.
 //
-// SanMar identifies a garment variant for ordering by inventoryKey + sizeIndex
-// (NOT by a human style/color/size). smPlaceOrder resolves those via the
-// Product Info service before building the envelope, same way ssPlaceOrder
-// resolves real S&S SKUs.
+//   TEST:  https://test-ws.sanmar.com:8080/SanMarWebService/SanMarPOServicePort?wsdl
+//   PROD:  https://ws.sanmar.com:8080/SanMarWebService/SanMarPOServicePort?wsdl
+//   Operations: getPreSubmitInfo (stock check, does NOT order) and submitPO.
+//   Auth: same sanMarCustomerNumber / sanMarUserName / sanMarUserPassword
+//         <arg1> block as the product-data services (test env = separate creds).
+//
+// Rules from the guide that the builders below enforce:
+//   • SanMar converts the SOAP PO into comma-delimited order files, so a comma
+//     in ANY field corrupts the order — every field is comma-stripped (p.18/26).
+//   • Char limits: poNum 28, shipTo (company) 28, shipAddress1/2 35, shipCity 28,
+//     shipState 2, shipZip 5–10 digits (leading zeros required), shipMethod 15,
+//     shipEmail 105, attention 35. notes/department/whseNo are "Leave Blank".
+//   • A line is identified by inventoryKey + sizeIndex (recommended) OR by
+//     style + color (SANMAR_MAINFRAME_COLOR) + size. We resolve keys via the
+//     Product Info service first (resolveSmPoLines) and send the keys.
+//   • Duplicate lines for the same product must be consolidated into ONE line
+//     with the total qty (p.14) or SanMar may source from a warehouse with
+//     insufficient stock → consolidateSmPoLines.
+//   • Response: <return><errorOccurred>false</errorOccurred><message>PO
+//     Submission successful</message></return>. NO PO number is echoed back —
+//     the shop's poNum IS the reference.
+//
+// The smPlaceOrder edge function stays hard-gated OFF by the SANMAR_PO_ENABLED
+// secret until SanMar has validated our TEST order and onboarded production.
 
-// The handful of spec-dependent identifiers, isolated so finalizing against the
-// WSDL is a one-spot edit. Names below are the documented Standard PO service;
-// confirm each against SanMar's actual WSDL.
 export const SM_PO_SPEC = {
-  // Endpoint port (joined onto smBase()). Lookup services use
-  // SanMarProductInfoServicePort / SanMarPricingServicePort / SanMarWebServicePort.
+  // Endpoint port (joined onto smBase()).
   servicePort: "SanMarPOServicePort",
-  // SOAP operation + its namespace.
+  // SOAP operations + their namespace.
   operation: "submitPO",
+  preSubmitOperation: "getPreSubmitInfo",
   namespace: "http://webservice.integration.sanmar.com/",
   namespacePrefix: "web",
-  // The response element that carries a success flag / assigned PO number.
-  // (Errors still ride the shared errorOccured/message channel that
-  // smSoapCall already detects.)
+  // The response element that carries errorOccurred / message.
   responseTag: "return",
 } as const;
 
+// Ship methods SanMar accepts in <shipMethod> (guide p.9–10). Will-call pickup
+// uses a warehouse code instead, but that requires "Warehouse Selection" to be
+// enabled on the account — not part of our onboarding, so not listed.
+export const SM_SHIP_METHODS = [
+  "UPS",             // UPS Standard Ground (SanMar's default; free freight > $200)
+  "UPS 2ND DAY",
+  "UPS 2ND DAY AM",
+  "UPS 3RD DAY",
+  "UPS NEXT DAY",
+  "UPS NEXT DAY EA",
+  "UPS NEXT DAY SV",
+  "UPS SATURDAY",
+  "USPS PP",         // USPS Ground Advantage
+  "USPS APP",        // USPS Priority Mail
+  "PSST",            // Pack Separately Ship Together (decorator program — needs SanMar setup)
+  "TRUCK",           // > 200 lb
+] as const;
+
+/**
+ * Normalize an operator/app ship method to a SanMar <shipMethod> value.
+ * Empty → "UPS" (SanMar ground). Common phrasings ("UPS Ground", "Ground",
+ * "ups 2nd day") map onto the table; anything unrecognized returns "" so the
+ * caller can REFUSE rather than silently reroute a real order.
+ */
+export function normalizeSmShipMethod(input: unknown): string {
+  let m = String(input ?? "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!m) return "UPS";
+  if (m === "GROUND" || m === "UPS GROUND" || m === "UPS STANDARD GROUND" || m === "UPS STANDARD") return "UPS";
+  m = m.replace(/^UPS GROUND$/, "UPS");
+  if (m.startsWith("UPS ")) {
+    m = m
+      .replace(/\b2ND DAY AIR\b/, "2ND DAY")
+      .replace(/\bSECOND DAY\b/, "2ND DAY")
+      .replace(/\bTHIRD DAY\b/, "3RD DAY")
+      .replace(/\bNEXT DAY AIR\b/, "NEXT DAY")
+      .replace(/\bNEXT DAY EARLY( AM)?\b/, "NEXT DAY EA")
+      .replace(/\bNEXT DAY SAVER\b/, "NEXT DAY SV");
+  }
+  if (m === "USPS GROUND" || m === "USPS GROUND ADVANTAGE") m = "USPS PP";
+  if (m === "USPS PRIORITY" || m === "USPS PRIORITY MAIL") m = "USPS APP";
+  return (SM_SHIP_METHODS as readonly string[]).includes(m) ? m : "";
+}
+
+// Comma-strip + whitespace-collapse + truncate. Commas are SanMar's order-file
+// delimiter (guide: "Do Not Use Additional Commas in any Field").
+export function smPoField(v: unknown, max: number): string {
+  return String(v ?? "").replace(/,/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/**
+ * SanMar ZIP: 5 digits, 5+4 (with dash), or 9 digits; numbers only; leading
+ * zeros must be preserved ("008054"-style inputs are padded to 5). Returns ""
+ * when nothing usable remains so the caller can refuse.
+ */
+export function normalizeSmZip(zip: unknown): string {
+  const raw = String(zip ?? "").trim();
+  const m = raw.match(/^\s*(\d{1,5})(?:\s*-?\s*(\d{4}))?\s*$/);
+  if (m) {
+    const z5 = m[1].padStart(5, "0");
+    return m[2] ? `${z5}-${m[2]}` : z5;
+  }
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 9) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  if (digits.length >= 5 && digits.length <= 10) return digits;
+  return "";
+}
+
 export interface SmPoShipTo {
-  name: string;
+  name: string;          // ship-to COMPANY name (<shipTo>, 28)
   address1: string;
   address2?: string;
   city: string;
   state: string;
   zip: string;
+  email?: string;        // order confirmation + shipping notification (105)
+  attention?: string;    // receiver's name (35); defaults to the PO number
+  residence?: boolean | string; // Y/N — residential address (UPS surcharge)
+  // Accepted from the PO page but NOT part of SanMar's schema:
   country?: string;
   phone?: string;
-  email?: string;
 }
 
 export interface SmPoLine {
   // Preferred SanMar identifiers (resolved server-side from style/color/size).
   inventoryKey?: string;
   sizeIndex?: string;
-  // Human fallbacks (kept for logging / when a variant couldn't be resolved).
+  // Human fallbacks — the schema accepts style + color + size INSTEAD of the
+  // keys (color must be SanMar's mainframe color), used only when keys are absent.
   style?: string;
   catalogColor?: string;
   size?: string;
@@ -579,56 +657,104 @@ export interface SmPoRequest {
   poNumber: string;
   shipTo: SmPoShipTo;
   shipMethod?: string;
+  // Internal PO notes. NOT sent — SanMar's <notes> is "Leave Blank" and the
+  // shop's notes field is internal chatter anyway.
   notes?: string;
   lines: SmPoLine[];
 }
 
+function smLineOrderable(l: SmPoLine): boolean {
+  if (!(Number(l.quantity) > 0)) return false;
+  if (l.inventoryKey && l.sizeIndex) return true;
+  return !!(l.style && l.catalogColor && l.size);
+}
+
 /**
- * Build the submitPO SOAP envelope. SPEC-PENDING (see SM_PO_SPEC): the element
- * names here follow the documented Standard PO service and must be reconciled
- * with the WSDL SanMar returns. Only lines carrying a resolved inventoryKey +
- * sizeIndex are emitted — the caller is responsible for resolving them first
- * and rejecting the order if any line is unresolved (an ambiguous variant must
- * never silently drop from a real order).
+ * Merge duplicate lines (same variant) into one with the summed qty — guide
+ * p.14 "Duplicate Order Line Consolidation". Keyed by inventoryKey+sizeIndex
+ * when resolved, else style|color|size. Unorderable lines are dropped (the
+ * caller must have refused the order already if any line was unresolved).
  */
-export function buildSubmitPoEnvelope(creds: SmCreds, po: SmPoRequest): string {
-  const p = SM_PO_SPEC.namespacePrefix;
+export function consolidateSmPoLines(lines: SmPoLine[]): SmPoLine[] {
+  const out = new Map<string, SmPoLine>();
+  for (const l of lines || []) {
+    if (!smLineOrderable(l)) continue;
+    const key = l.inventoryKey && l.sizeIndex
+      ? `k:${l.inventoryKey}:${l.sizeIndex}`
+      : `s:${String(l.style).toUpperCase()}|${String(l.catalogColor).toUpperCase()}|${String(l.size).toUpperCase()}`;
+    const prev = out.get(key);
+    if (prev) prev.quantity = (Number(prev.quantity) || 0) + (Number(l.quantity) || 0);
+    else out.set(key, { ...l, quantity: Number(l.quantity) || 0 });
+  }
+  return [...out.values()];
+}
+
+// The <arg0> body shared by getPreSubmitInfo and submitPO (identical schema,
+// guide pp.22–27). Element ORDER follows SanMar's sample requests.
+function buildSmPoArg0(po: SmPoRequest): string {
   const s = po.shipTo;
-  const lineXml = po.lines
-    .filter((l) => l.inventoryKey && l.sizeIndex)
-    .map(
-      (l) => `        <lineItem>
-          <inventoryKey>${xmlEscape(l.inventoryKey!)}</inventoryKey>
-          <sizeIndex>${xmlEscape(l.sizeIndex!)}</sizeIndex>
+  const residence = s.residence === true || String(s.residence ?? "").trim().toUpperCase() === "Y" ? "Y" : "N";
+  const lineXml = consolidateSmPoLines(po.lines)
+    .map((l) => {
+      const keyed = !!(l.inventoryKey && l.sizeIndex);
+      return `        <webServicePoDetailList>
+          <inventoryKey>${keyed ? xmlEscape(String(l.inventoryKey)) : ""}</inventoryKey>
+          <sizeIndex>${keyed ? xmlEscape(String(l.sizeIndex)) : ""}</sizeIndex>
+          <style>${xmlEscape(smPoField(l.style || "", 60))}</style>
+          <color>${keyed ? "" : xmlEscape(smPoField(l.catalogColor || "", 50))}</color>
+          <size>${keyed ? "" : xmlEscape(smPoField(l.size || "", 50))}</size>
           <quantity>${Number(l.quantity) || 0}</quantity>
-        </lineItem>`,
-    )
+          <whseNo />
+        </webServicePoDetailList>`;
+    })
     .join("\n");
-  return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:${p}="${SM_PO_SPEC.namespace}">
-  <soapenv:Header />
-  <soapenv:Body>
-    <${p}:${SM_PO_SPEC.operation}>
-      <arg0>
-        <poNum>${xmlEscape(po.poNumber)}</poNum>
-        <shipToName>${xmlEscape(s.name)}</shipToName>
-        <shipTo1>${xmlEscape(s.address1)}</shipTo1>
-        <shipTo2>${xmlEscape(s.address2 || "")}</shipTo2>
-        <shipToCity>${xmlEscape(s.city)}</shipToCity>
-        <shipToState>${xmlEscape(s.state)}</shipToState>
-        <shipToZip>${xmlEscape(s.zip)}</shipToZip>
-        <shipToCountry>${xmlEscape(s.country || "US")}</shipToCountry>
-        <shipMethod>${xmlEscape(po.shipMethod || "")}</shipMethod>
-        <notesToSanMar>${xmlEscape(po.notes || "")}</notesToSanMar>
+  return `      <arg0>
+        <attention>${xmlEscape(smPoField(s.attention || po.poNumber, 35))}</attention>
+        <notes />
+        <poNum>${xmlEscape(smPoField(po.poNumber, 28))}</poNum>
+        <shipTo>${xmlEscape(smPoField(s.name, 28))}</shipTo>
+        <shipAddress1>${xmlEscape(smPoField(s.address1, 35))}</shipAddress1>
+        <shipAddress2>${xmlEscape(smPoField(s.address2 || "", 35))}</shipAddress2>
+        <shipCity>${xmlEscape(smPoField(s.city, 28))}</shipCity>
+        <shipState>${xmlEscape(smPoField(s.state, 2).toUpperCase())}</shipState>
+        <shipZip>${xmlEscape(normalizeSmZip(s.zip))}</shipZip>
+        <shipMethod>${xmlEscape(smPoField(normalizeSmShipMethod(po.shipMethod) || po.shipMethod || "", 15))}</shipMethod>
+        <shipEmail>${xmlEscape(smPoField(s.email || "", 105))}</shipEmail>
+        <residence>${residence}</residence>
+        <department />
 ${lineXml}
-      </arg0>
-      <arg1>
+      </arg0>`;
+}
+
+function buildSmAuthArg1(creds: SmCreds): string {
+  return `      <arg1>
         <sanMarCustomerNumber>${xmlEscape(creds.customerNumber)}</sanMarCustomerNumber>
         <sanMarUserName>${xmlEscape(creds.username)}</sanMarUserName>
         <sanMarUserPassword>${xmlEscape(creds.password)}</sanMarUserPassword>
-      </arg1>
-    </${p}:${SM_PO_SPEC.operation}>
+      </arg1>`;
+}
+
+function wrapSmPoOperation(operation: string, creds: SmCreds, po: SmPoRequest): string {
+  const p = SM_PO_SPEC.namespacePrefix;
+  return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:${p}="${SM_PO_SPEC.namespace}">
+  <soapenv:Header />
+  <soapenv:Body>
+    <${p}:${operation}>
+${buildSmPoArg0(po)}
+${buildSmAuthArg1(creds)}
+    </${p}:${operation}>
   </soapenv:Body>
 </soapenv:Envelope>`;
+}
+
+/** Build the submitPO envelope (guide p.27). Places a REAL order when sent to prod. */
+export function buildSubmitPoEnvelope(creds: SmCreds, po: SmPoRequest): string {
+  return wrapSmPoOperation(SM_PO_SPEC.operation, creds, po);
+}
+
+/** Build the getPreSubmitInfo envelope (guide p.23) — stock check only, never orders. */
+export function buildPreSubmitInfoEnvelope(creds: SmCreds, po: SmPoRequest): string {
+  return wrapSmPoOperation(SM_PO_SPEC.preSubmitOperation, creds, po);
 }
 
 export interface SmPoResult {
@@ -638,17 +764,115 @@ export interface SmPoResult {
 }
 
 /**
- * Parse the submitPO response. SPEC-PENDING: SanMar's application-level errors
- * ride the shared errorOccured/message channel (already caught by smSoapCall),
- * so a response that reaches here is presumed accepted; we surface any assigned
- * PO number and message. Reconcile the tag names with the real WSDL.
+ * Parse the submitPO response (guide p.28): <return><errorOccurred>…</errorOccurred>
+ * <message>PO Submission successful</message></return>. SanMar does not echo a
+ * PO number; `poNumber` is filled only if a future schema adds one.
  */
 export function parseSubmitPoResponse(xml: string): SmPoResult {
   if (!xml) return { success: false, poNumber: "", message: "Empty response from SanMar" };
   const ret = xmlBlocks(xml, SM_PO_SPEC.responseTag)[0] ?? xml;
-  const errFlag = xmlText(xml, "errorOccured") || xmlText(xml, "errorOccurred");
+  const errFlag = xmlText(ret, "errorOccurred") || xmlText(ret, "errorOccured") || xmlText(xml, "errorOccurred") || xmlText(xml, "errorOccured");
   const message = xmlText(ret, "message") || xmlText(xml, "message") || "";
-  // SanMar echoes back the PO number (or an assigned one) on success.
   const poNumber = xmlText(ret, "poNum") || xmlText(ret, "poNumber") || "";
   return { success: errFlag !== "true", poNumber, message };
+}
+
+export interface SmPreSubmitLine {
+  inventoryKey: string;
+  sizeIndex: string;
+  style: string;
+  color: string;
+  size: string;
+  quantity: number;
+  whseNo: string;   // warehouse number that will ship it (guide p.10/20 table)
+  message: string;  // "Requested Quantity is confirmed and available in warehouse 'N'…" / not-in-stock
+  ok: boolean;
+}
+
+export interface SmPreSubmitResult {
+  ok: boolean;        // false when ANY line can't be filled from any warehouse
+  message: string;    // top-level message (lists the short styles on failure)
+  lines: SmPreSubmitLine[];
+}
+
+/**
+ * Parse the getPreSubmitInfo response (guide pp.24–25). Top-level
+ * errorOccurred=true means at least one line is not in stock anywhere; the
+ * per-line errorOccured/message/whseNo say which and from where.
+ */
+export function parsePreSubmitInfoResponse(xml: string): SmPreSubmitResult {
+  if (!xml) return { ok: false, message: "Empty response from SanMar", lines: [] };
+  const ret = xmlBlocks(xml, SM_PO_SPEC.responseTag)[0] ?? xml;
+  const topErr = xmlText(ret, "errorOccurred") || xmlText(ret, "errorOccured");
+  const message = xmlText(ret, "message") || xmlText(ret, "internalMessage") || "";
+  const lines = xmlBlocks(ret, "webServicePoDetailList").map((b) => {
+    const err = xmlText(b, "errorOccured") || xmlText(b, "errorOccurred");
+    return {
+      inventoryKey: xmlText(b, "inventoryKey"),
+      sizeIndex: xmlText(b, "sizeIndex"),
+      style: xmlText(b, "style"),
+      color: xmlText(b, "color"),
+      size: xmlText(b, "size"),
+      quantity: Number(xmlText(b, "quantity")) || 0,
+      whseNo: xmlText(b, "whseNo"),
+      message: xmlText(b, "message"),
+      ok: err !== "true",
+    };
+  });
+  return { ok: topErr !== "true" && lines.every((l) => l.ok), message, lines };
+}
+
+export interface SmResolveInput {
+  style: string;
+  color: string;
+  size: string;
+  quantity: number;
+}
+
+/**
+ * Resolve human style/color/size lines to SanMar inventoryKey + sizeIndex via
+ * the Product Info service (one SOAP call per style+color, cached). Shared by
+ * the smPlaceOrder edge function and the test-order script so both order the
+ * exact same way. Never guesses: a line that doesn't match a returned row
+ * lands in `unresolved` and the caller must refuse the whole order.
+ */
+export async function resolveSmPoLines(
+  creds: SmCreds,
+  base: string,
+  lines: SmResolveInput[],
+  soapCall: typeof smSoapCall = smSoapCall,
+  ctx = "sanmar:resolve",
+): Promise<{ resolved: SmPoLine[]; unresolved: string[] }> {
+  const infoCache: Record<string, ReturnType<typeof parseProductInfoResponse>> = {};
+  const resolved: SmPoLine[] = [];
+  const unresolved: string[] = [];
+  for (const l of lines) {
+    const style = String(l.style || "").trim();
+    const color = String(l.color || "").trim();
+    const size = String(l.size || "").trim();
+    const qty = Number(l.quantity) || 0;
+    if (!style || qty <= 0) {
+      unresolved.push(`${style || "?"} ${color} ${size}`.trim());
+      continue;
+    }
+    // Cache by style+color, NOT style alone: the Product Info query is
+    // color-filtered, so a second line of the same style in a DIFFERENT color
+    // would hit a cache holding only the first color's rows and falsely fail.
+    const infoKey = `${style.toUpperCase()}::${color.toUpperCase()}`;
+    if (!infoCache[infoKey]) {
+      const res = await soapCall(`${base}/SanMarProductInfoServicePort`, buildProductInfoEnvelope(creds, style, color), ctx);
+      infoCache[infoKey] = res.ok ? parseProductInfoResponse(res.xml) : [];
+    }
+    const match = infoCache[infoKey].find(
+      (r) =>
+        r.size.toUpperCase() === size.toUpperCase() &&
+        (r.color.toUpperCase() === color.toUpperCase() || r.catalogColor.toUpperCase() === color.toUpperCase()),
+    );
+    if (match?.inventoryKey && match?.sizeIndex) {
+      resolved.push({ inventoryKey: match.inventoryKey, sizeIndex: match.sizeIndex, style, catalogColor: match.catalogColor, size, quantity: qty });
+    } else {
+      unresolved.push(`${style} ${color} ${size}`.trim());
+    }
+  }
+  return { resolved, unresolved };
 }

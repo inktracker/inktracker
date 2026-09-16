@@ -5,18 +5,22 @@
 // ⚠️  DORMANT BY DEFAULT. This function is hard-gated OFF by the
 //     SANMAR_PO_ENABLED secret. Until that secret is set (to "1" or "true"),
 //     it NEVER posts to SanMar — it returns { needsManual: true } so the PO
-//     page keeps showing the "order directly, then Mark submitted" path. The
-//     gate exists because (a) the shop's SanMar account was not yet confirmed
-//     authorized for the PO web service, and (b) the exact submitPO schema is
-//     SPEC-PENDING against SanMar's WSDL (see _shared/sanmar.ts SM_PO_SPEC).
-//     Flip the secret ONLY after both are settled.
+//     page keeps showing the "order directly, then Mark submitted" path.
+//     The SOAP schema is reconciled against the PO Integration Guide v24.3
+//     (2026-09-15). The gate stays until SanMar validates our TEST order
+//     (scripts/sanmar-test-po.ts) and onboards the production account for
+//     integrated POs — flip SANMAR_PO_ENABLED only after their go-live email.
+//
+// Flow: resolve lines → getPreSubmitInfo (stock check, refuses if SanMar
+// can't fill a line from any warehouse) → submitPO.
 //
 // Body (sent by the PO page):
 //   {
 //     poNumber: string,                 // shop's PO reference
 //     shipTo: { name, address1, address2, city, state, zip, country, phone, email },
-//     shippingMethod?: string,
-//     notes?: string,
+//     shippingMethod?: string,          // SanMar ship method (see SM_SHIP_METHODS); "" → UPS ground
+//     notes?: string,                   // internal — NOT sent to SanMar (their notes field is "leave blank")
+//     skipStockCheck?: boolean,         // bypass the getPreSubmitInfo preflight (operator override)
 //     lines: [{ style, color, size, qty }],   // resolved to inventoryKey+sizeIndex here
 //     idempotencyKey: string,           // the PO's UUID
 //     accessToken?: string,             // also accepted via Authorization header
@@ -27,16 +31,18 @@
 
 import {
   CORS,
-  credsFromProfile,
-  buildProductInfoEnvelope,
-  parseProductInfoResponse,
   buildSubmitPoEnvelope,
+  buildPreSubmitInfoEnvelope,
   parseSubmitPoResponse,
+  parsePreSubmitInfoResponse,
+  resolveSmPoLines,
+  normalizeSmShipMethod,
+  normalizeSmZip,
+  SM_SHIP_METHODS,
   smBase,
   smSoapCall,
   SM_PO_SPEC,
   type SmCreds,
-  type SmPoLine,
 } from "../_shared/sanmar.ts";
 import { canPlaceOrder } from "../_shared/acOrderLogic.js";
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
@@ -127,13 +133,24 @@ Deno.serve(async (req) => {
     }
 
     // ── Validate payload ─────────────────────────────────────────────
-    const { poNumber, shipTo, lines, shippingMethod = "", notes = "", idempotencyKey = "" } = body;
+    const { poNumber, shipTo, lines, shippingMethod = "", idempotencyKey = "", skipStockCheck = false } = body;
     if (!poNumber) return Response.json({ error: "poNumber required" }, { status: 400, headers: CORS });
     if (!shipTo?.address1 || !shipTo?.city || !shipTo?.state || !shipTo?.zip) {
       return Response.json({ error: "Complete ship-to address required" }, { status: 400, headers: CORS });
     }
+    if (!normalizeSmZip(shipTo.zip)) {
+      return Response.json({ error: `Ship-to ZIP "${shipTo.zip}" isn't a valid US ZIP (5 digits or 5+4).` }, { status: 400, headers: CORS });
+    }
     if (!Array.isArray(lines) || lines.length === 0) {
       return Response.json({ error: "At least one order line required" }, { status: 400, headers: CORS });
+    }
+    // Ship method must be one SanMar accepts — never silently reroute a real order.
+    const shipMethod = normalizeSmShipMethod(shippingMethod);
+    if (!shipMethod) {
+      return Response.json(
+        { error: `"${shippingMethod}" isn't a SanMar ship method. Use one of: ${SM_SHIP_METHODS.join(", ")}.` },
+        { status: 400, headers: CORS },
+      );
     }
 
     // ── Idempotency claim ────────────────────────────────────────────
@@ -160,55 +177,21 @@ Deno.serve(async (req) => {
       finishSupplierOrder(admin, { shopOwner, key: idemKey, success, response, supplierOrderId });
 
     // ── Resolve each line to inventoryKey + sizeIndex ────────────────
-    // SanMar orders by inventoryKey + sizeIndex, not human style/color/size.
-    // Look each style up once (getProductInfoByStyleColorSize returns a row
-    // per color×size with both keys), then match on color name + size.
+    // SanMar orders by inventoryKey + sizeIndex, not human style/color/size
+    // (shared resolver — same code path the test-order script uses).
     const base = smBase();
-    const infoCache: Record<string, Awaited<ReturnType<typeof parseProductInfoResponse>>> = {};
-    const resolved: SmPoLine[] = [];
-    const unresolved: string[] = [];
-
-    for (const l of lines) {
-      const style = String(l.style || "").trim();
-      const color = String(l.color || "").trim();
-      const size = String(l.size || "").trim();
-      const qty = Number(l.qty ?? l.quantity) || 0;
-      if (!style || qty <= 0) {
-        unresolved.push(`${style || "?"} ${color} ${size}`.trim());
-        continue;
-      }
-      // Cache by style+color, NOT style alone: the Product Info SOAP query is
-      // color-filtered, so a second line of the same style in a DIFFERENT color
-      // would hit a cache holding only the first color's rows and falsely fail.
-      const infoKey = `${style}::${color.toUpperCase()}`;
-      if (!infoCache[infoKey]) {
-        const res = await smSoapCall(
-          `${base}/SanMarProductInfoServicePort`,
-          buildProductInfoEnvelope(creds, style, color),
-          "smPlaceOrder:info",
-        );
-        infoCache[infoKey] = res.ok ? parseProductInfoResponse(res.xml) : [];
-      }
-      const rows = infoCache[infoKey];
-      const match = rows.find(
-        (r) =>
-          r.size.toUpperCase() === size.toUpperCase() &&
-          (r.color.toUpperCase() === color.toUpperCase() ||
-            r.catalogColor.toUpperCase() === color.toUpperCase()),
-      );
-      if (match?.inventoryKey && match?.sizeIndex) {
-        resolved.push({
-          inventoryKey: match.inventoryKey,
-          sizeIndex: match.sizeIndex,
-          style,
-          catalogColor: match.catalogColor,
-          size,
-          quantity: qty,
-        });
-      } else {
-        unresolved.push(`${style} ${color} ${size}`.trim());
-      }
-    }
+    const { resolved, unresolved } = await resolveSmPoLines(
+      creds,
+      base,
+      lines.map((l: { style?: unknown; color?: unknown; size?: unknown; qty?: unknown; quantity?: unknown }) => ({
+        style: String(l.style || ""),
+        color: String(l.color || ""),
+        size: String(l.size || ""),
+        quantity: Number(l.qty ?? l.quantity) || 0,
+      })),
+      smSoapCall,
+      "smPlaceOrder:info",
+    );
 
     // Never place a partial real order silently — if any line couldn't be
     // resolved to a SanMar variant, refuse the whole thing and release the
@@ -225,18 +208,49 @@ Deno.serve(async (req) => {
       );
     }
 
+    const poRequest = {
+      poNumber: String(poNumber),
+      shipTo,
+      shipMethod,
+      lines: resolved,
+    };
+
+    // ── Stock preflight (getPreSubmitInfo) ───────────────────────────
+    // Asks SanMar whether every line can ship from some warehouse for this
+    // destination WITHOUT placing the order. A "not in stock from any
+    // warehouse" answer would otherwise put the whole order on hold at SanMar
+    // and trigger a phone call — better to stop here with the message.
+    if (!skipStockCheck) {
+      const pre = await smSoapCall(
+        `${base}/${SM_PO_SPEC.servicePort}`,
+        buildPreSubmitInfoEnvelope(creds, poRequest),
+        "smPlaceOrder:presubmit",
+      );
+      const preParsed = pre.ok ? parsePreSubmitInfoResponse(pre.xml) : null;
+      if (!pre.ok || !preParsed?.ok) {
+        const short = preParsed?.lines.filter((l) => !l.ok).map((l) => `${l.style} ${l.color} ${l.size}`.trim()) || [];
+        const msg = pre.error || preParsed?.message || "SanMar couldn't confirm stock for this order.";
+        console.error(`[smPlaceOrder] presubmit refused: ${msg}`);
+        await recordOutcome(false, { presubmit: msg, short });
+        return Response.json(
+          {
+            error: `SanMar can't fill this order as submitted: ${msg}` +
+              (short.length ? ` (short: ${short.join(", ")})` : "") +
+              ` Adjust the lines, or order directly with SanMar.`,
+            stockCheck: preParsed,
+          },
+          { status: 422, headers: CORS },
+        );
+      }
+      console.log(`[smPlaceOrder] presubmit ok — warehouses: ${[...new Set(preParsed.lines.map((l) => l.whseNo))].join(",")}`);
+    }
+
     // ── Submit ───────────────────────────────────────────────────────
     // Don't log ship-to PII.
     console.log(`[smPlaceOrder] submitting PO ${poNumber} — ${resolved.length} line(s) via ${SM_PO_SPEC.operation}`);
     const res = await smSoapCall(
       `${base}/${SM_PO_SPEC.servicePort}`,
-      buildSubmitPoEnvelope(creds, {
-        poNumber: String(poNumber),
-        shipTo,
-        shipMethod: String(shippingMethod || ""),
-        notes: String(notes || ""),
-        lines: resolved,
-      }),
+      buildSubmitPoEnvelope(creds, poRequest),
       "smPlaceOrder:submit",
     );
 
