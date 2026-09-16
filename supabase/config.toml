@@ -49,6 +49,9 @@ verify_jwt = false
 [functions.smOnboarding]
 verify_jwt = false
 
+[functions.supplierSetup]
+verify_jwt = false
+
 [functions.acGetShippingMethods]
 verify_jwt = false
 
