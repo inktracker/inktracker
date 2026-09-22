@@ -7,6 +7,7 @@ import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profile
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { fetchAllRows } from "../_shared/paginate.js";
 import { mintPaymentLink } from "../_shared/qbPaymentLink.js";
+import { planSelfTax, buildTaxLine, stripInternalNotes } from "../_shared/qbTaxPlan.js";
 import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { parseRetryAfterMs, QbRateLimitError, QbUnreachableError } from "../_shared/qbRateLimit.ts";
 import {
@@ -398,6 +399,59 @@ async function qbUpdate(token: string, realmId: string, entity: string, body: ob
   );
   if (!res.ok) throw new Error(`QB update ${entity} failed: ${res.status} ${JSON.stringify(data)}`);
   return data;
+}
+
+// Is sales tax turned ON in the company? Non-AST companies with the feature off
+// (e.g. free/basic tiers) return UsingSalesTax=false, and QB then discards ALL
+// tax on transactions — so for those we must push tax as a line, not via QB's
+// tax engine. Best-effort: on any read failure, assume OFF (safer → tax line).
+async function qbUsingSalesTax(token: string, realmId: string): Promise<boolean> {
+  try {
+    const r = await qbQuery(token, realmId, "SELECT * FROM Preferences");
+    const prefs = r?.QueryResponse?.Preferences?.[0];
+    return prefs?.TaxPrefs?.UsingSalesTax === true;
+  } catch (e) {
+    console.error("[createInvoice] UsingSalesTax read failed (assuming off):", (e as Error)?.message);
+    return false;
+  }
+}
+
+// Find a MANUAL sales-tax code whose combined sales rate matches `ratePct`, for
+// the "self" tax mode's PROPER-tax path (shops whose QB has sales tax on). FIND-
+// ONLY — returns null when there's no match (caller falls back to a tax line);
+// never fabricates codes in a customer's books.
+async function qbFindManualTaxCode(token: string, realmId: string, ratePct: number): Promise<string | null> {
+  const target = Math.round(ratePct * 1000) / 1000;
+  let taxRates: any[] = [];
+  let taxCodes: any[] = [];
+  try {
+    taxRates = (await qbQuery(token, realmId, "SELECT * FROM TaxRate"))?.QueryResponse?.TaxRate ?? [];
+    taxCodes = (await qbQuery(token, realmId, "SELECT * FROM TaxCode"))?.QueryResponse?.TaxCode ?? [];
+  } catch (e) {
+    console.error("[createInvoice] tax code/rate read failed:", (e as Error)?.message);
+    return null;
+  }
+  const pctById = new Map<string, number>();
+  for (const r of taxRates) {
+    const pct = Number(r?.RateValue);
+    if (r?.Id != null && Number.isFinite(pct)) pctById.set(String(r.Id), Math.round(pct * 1000) / 1000);
+  }
+  const salesRateOf = (tc: any): number | null => {
+    const details = tc?.SalesTaxRateList?.TaxRateDetail;
+    if (!Array.isArray(details) || details.length === 0) return null;
+    let sum = 0, seen = false;
+    for (const d of details) {
+      const id = d?.TaxRateRef?.value != null ? String(d.TaxRateRef.value) : null;
+      if (id && pctById.has(id)) { sum += pctById.get(id)!; seen = true; }
+    }
+    return seen ? Math.round(sum * 1000) / 1000 : null;
+  };
+  for (const tc of taxCodes) {
+    if (tc?.Active === false || tc?.Id == null) continue;
+    const pct = salesRateOf(tc);
+    if (pct != null && Math.abs(pct - target) < 0.01) return String(tc.Id);
+  }
+  return null;
 }
 
 // DocNumber-family lookup: the base DocNumber plus its -rN revisions.
@@ -1057,6 +1111,36 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // Tax handling: let QB auto-calculate tax using its own tax codes/rates.
   const taxPercent = parseFloat(invoicePayload?.taxPercent) || 0;
 
+  // Tax MODE (per-shop, pricing_config.qbTaxMode). "self" = the shop enters its
+  // own tax; how we record it depends on what their QuickBooks can do:
+  //   • QB has sales tax ON and a matching rate → PROPER tracked tax: reference
+  //     that manual tax code (TxnTaxCodeRef); QB computes our rate, reconcile
+  //     validates it.
+  //   • QB can't record tax (free/basic tier, sales tax off, or no matching
+  //     rate) → push the shop's EXACT tax as a NON line; all sales lines go NON
+  //     so QB adds nothing of its own, and the reconcile passes (no TAX lines →
+  //     expected 0 = QB 0) while the invoice TOTAL still matches InkTracker.
+  // "qb" (default) is unchanged: AST computes, hold on mismatch.
+  // Probe the shop's QB tax capability (only when self mode could apply), then
+  // let the pure planner decide proper-tax vs tax-line. Logic + edge cases are
+  // pinned in ../_shared/__tests__/qbTaxPlan.test.js.
+  const couldSelf = params?.taxMode === "self" && taxPercent > 0 && !isTaxExempt;
+  const usingSalesTax = couldSelf ? await qbUsingSalesTax(token, realmId) : false;
+  const matchingTaxCode = couldSelf && usingSalesTax
+    ? await qbFindManualTaxCode(token, realmId, taxPercent)
+    : null;
+  const taxPlan = planSelfTax({
+    taxMode: params?.taxMode,
+    taxPercent,
+    isTaxExempt,
+    usingSalesTax,
+    matchingTaxCode,
+    taxAmount: params?.taxAmount,
+  });
+  const selfProperTaxCode: string | null = taxPlan.mode === "proper" ? taxPlan.taxCode! : null;
+  const selfLineTaxAmount = taxPlan.mode === "line" ? (taxPlan.lineAmount || 0) : 0;
+  if (couldSelf) console.error(`[createInvoice] self tax plan=${taxPlan.mode} (usingSalesTax=${usingSalesTax}, code=${matchingTaxCode}, line=${selfLineTaxAmount})`);
+
   // Per-line tax: garments + setup + taxable fees → TAX; non-taxable fees
   // (e.g. shipping) → NON. Tax-exempt customers or a 0% rate force NON on all.
   // Strip the transient _taxable/_isFee hints (set by buildInvoiceLinesFromPayload)
@@ -1073,7 +1157,9 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   lines.forEach((l: any) => {
     if (l.SalesItemLineDetail) {
       const lineTaxable = l._taxable !== false;
-      const code = (isTaxExempt || taxPercent === 0 || !lineTaxable) ? "NON" : "TAX";
+      // Tax-LINE fallback: force every sales line NON so QB adds no tax of its
+      // own — the tax rides as its own NON line appended below.
+      const code = (isTaxExempt || taxPercent === 0 || !lineTaxable || selfLineTaxAmount > 0) ? "NON" : "TAX";
       l.SalesItemLineDetail.TaxCodeRef = { value: code };
       if (!l._isFee) {
         const amt = Number(l.Amount) || 0;
@@ -1085,7 +1171,20 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     delete l._isFee;
   });
 
-  console.error(`[createInvoice] Tax: rate=${taxPercent}%, isTaxExempt=${isTaxExempt}, lines=${lines.length}`);
+  // Tax-LINE fallback: append the shop's exact tax as its own NON line so the
+  // invoice TOTAL matches InkTracker even though QB records no tax of its own.
+  // Reuses an existing line's ItemRef (QB requires one); the description makes
+  // it read as tax on the customer's invoice.
+  if (selfLineTaxAmount > 0) {
+    const itemRef = lines.find((l: any) => l?.SalesItemLineDetail?.ItemRef)?.SalesItemLineDetail?.ItemRef;
+    const taxLine = buildTaxLine({ itemRef, amount: selfLineTaxAmount, ratePct: taxPercent });
+    // Cast: buildTaxLine emits only QB fields (no _taxable/_isFee hints — the
+    // strip loop already ran), so it reaches QuickBooks clean.
+    if (taxLine) (lines as any[]).push(taxLine);
+    else console.error("[createInvoice] self tax-line: no ItemRef available to attach the tax line");
+  }
+
+  console.error(`[createInvoice] Tax: rate=${taxPercent}%, isTaxExempt=${isTaxExempt}, lines=${lines.length}, selfMode=${selfProperTaxCode ? "proper" : selfLineTaxAmount > 0 ? "line" : "none"}`);
 
   let created: any;
   // DB row wins over the caller's snapshot (see authoritative re-read above).
@@ -1289,10 +1388,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
           SyncToken: existingInv.SyncToken,
           sparse: true,
           CustomerRef: { value: qbCustomerId },
-          AllowOnlineCreditCardPayment: true,
-          AllowOnlineACHPayment: true,
+          // Intentionally omitted (sparse update): never override the shop's
+          // QuickBooks Payments settings. Leaving these out keeps whatever the
+          // invoice already carries instead of forcing card/ACH back on.
           Line: lines,
-          CustomerMemo: { value: clampQbMemo(quote.notes) },
+          // Self tax, PROPER path: reference the shop's manual QB tax code so QB
+          // records our rate. (Line-fallback shops carry the tax as a line instead.)
+          ...(selfProperTaxCode ? { TxnTaxDetail: { TxnTaxCodeRef: { value: selfProperTaxCode } } } : {}),
+          CustomerMemo: { value: clampQbMemo(stripInternalNotes(quote.notes)) },
           PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`
             + (quote.job_title ? ` · Job: ${quote.job_title}` : ""),
         };
@@ -1384,10 +1487,15 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       DocNumber: docNumber,
       TxnDate: quote.date,
       DueDate: quote.date || undefined,
-      AllowOnlineCreditCardPayment: true,
-      AllowOnlineACHPayment: true,
+      // Do NOT set AllowOnline*Payment here. Omitting them lets QuickBooks
+      // apply the shop's own Payments settings (card / ACH toggles) per
+      // invoice. Hard-coding them overrode the shop owner's QB config —
+      // e.g. an ACH-only shop still had card enabled, eating ~3% fees.
       Line: lines,
-      CustomerMemo: { value: clampQbMemo(quote.notes) },
+      // Self tax, PROPER path: reference the shop's manual QB tax code so QB
+      // records our rate. (Line-fallback shops carry the tax as a line instead.)
+      ...(selfProperTaxCode ? { TxnTaxDetail: { TxnTaxCodeRef: { value: selfProperTaxCode } } } : {}),
+      CustomerMemo: { value: clampQbMemo(stripInternalNotes(quote.notes)) },
       // PrivateNote is QB's internal memo (visible to the shop in QB, not on
       // the customer's invoice). Append the InkTracker job title so it flows
       // to accounting for reference.

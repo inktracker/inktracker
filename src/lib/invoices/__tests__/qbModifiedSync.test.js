@@ -115,6 +115,22 @@ describe("stripSyncNotes (customer-facing surfaces)", () => {
     expect(stripSyncNotes(null)).toBe("");
     expect(stripSyncNotes(undefined)).toBe("");
   });
+
+  it("strips order-edit audit lines the customer must not see", () => {
+    const notes =
+      "Digitizing Fee: one-time.\n" +
+      "[2026-09-15] Updated from order edit: total $725.38 → $757.86\n" +
+      "[2026-09-16] Updated from order edit: total $757.86 → $778.86";
+    expect(stripSyncNotes(notes)).toBe("Digitizing Fee: one-time.");
+  });
+
+  it("strips a mix of sync + order-edit lines, keeps real notes", () => {
+    const notes =
+      "No 3d puff embroidery.\n" +
+      "[2026-09-16] Updated from order edit: total $700.00 → $778.86\n" +
+      "[2026-07-18] Synced from QuickBooks: total $19477.53 → $19777.53";
+    expect(stripSyncNotes(notes)).toBe("No 3d puff embroidery.");
+  });
 });
 
 // ── Push-pending precedence (Edit Order phase 2) ────────────────────────────

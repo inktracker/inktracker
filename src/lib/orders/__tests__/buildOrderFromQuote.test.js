@@ -58,6 +58,16 @@ describe("buildOrderFromQuote — the audit-trail invariants", () => {
     expect(order.quote_id).toBe("Q-2026-ABC12");
   });
 
+  it("carries the reorder flag + screen override forward (for screen-availability tracking)", () => {
+    const plain = buildOrderFromQuote(baseQuote(), { userEmail: "shop@x.com", now: NOW });
+    expect(plain.is_reorder).toBe(false);
+    expect(plain.setup_screens_override).toBeNull();
+    const q = { ...baseQuote(), is_reorder: true, setup_screens_override: 3 };
+    const order = buildOrderFromQuote(q, { userEmail: "shop@x.com", now: NOW });
+    expect(order.is_reorder).toBe(true);
+    expect(order.setup_screens_override).toBe(3);
+  });
+
   it("carries deposit_paid forward — does NOT reset to false", () => {
     const q = baseQuote({ deposit_paid: true });
     const order = buildOrderFromQuote(q, { userEmail: "shop@x.com", now: NOW });

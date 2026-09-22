@@ -1767,6 +1767,18 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
     totalsRow(discLabel, `-${fmtMoney(discountAmt)}`, { color: [22, 101, 52] });
   }
 
+  // Setup / screen fees + one-off additional charges — itemized so the
+  // breakdown foots to Total. Without these an invoice with fees printed
+  // Subtotal + Tax ≠ Total, the fee amount silently missing (Truman's
+  // INV-2026-YLBUS: a $40 digitizing + $21 CC fee weren't shown).
+  const invSetup = Number(invoice.setup_total) || 0;
+  if (invSetup > 0) totalsRow('SETUP & SCREEN FEES', fmtMoney(invSetup));
+  for (const c of normalizeAdditionalCharges(invoice.additional_charges)) {
+    const amt = Number(c.amount) || 0;
+    if (amt === 0) continue;
+    totalsRow((c.label || 'Additional fee').toUpperCase(), fmtMoney(amt));
+  }
+
   totalsRow(`TAX (${taxRate}%)`, fmtMoney(tax));
   totalsRow('TOTAL', fmtMoney(total));
   if (invoiceDeposit > 0 && !invoice.paid) {

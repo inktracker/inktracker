@@ -23,6 +23,7 @@ export default function OrderInvoiceActions({
   callAction,
   advanceWithGoodsGuard,
   handleCreateInvoice,
+  handleResyncInvoice,
   handleOpenSend,
   onCreateSlip,
   onPrintTicket,
@@ -110,6 +111,20 @@ export default function OrderInvoiceActions({
               >
                 View in QB
               </a>
+            )}
+            {/* One button that does the right thing without digging into Preview
+                Invoice: qbSync creates when there's no QB invoice, updates when
+                there is, recreates when it was deleted in QB, refuses when paid
+                — so it can't duplicate. Adaptive label mirrors the invoice modal. */}
+            {handleResyncInvoice && (
+              <button
+                onClick={handleResyncInvoice}
+                disabled={creatingInvoice || readOnly}
+                title={readOnly ? roTitle : "Create or update this invoice in QuickBooks"}
+                className="px-4 py-2 text-sm font-semibold text-[#2CA01C] border border-[#2CA01C] rounded-xl hover:bg-[#2CA01C]/5 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creatingInvoice ? "Syncing…" : (relatedInvoice.qb_invoice_id ? "Resync with QuickBooks" : "Sync to QuickBooks")}
+              </button>
             )}
           </>
         )}

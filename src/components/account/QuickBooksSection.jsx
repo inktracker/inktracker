@@ -260,6 +260,7 @@ export default function QuickBooksSection({
               </div>
             )}
           </div>
+          <QbTaxModeEditor user={user} />
           <QbItemMapEditor user={user} />
           <button
             onClick={handleDisconnectQB}
@@ -320,6 +321,89 @@ export default function QuickBooksSection({
         </div>
       )}
     </>
+  );
+}
+
+// How sales tax is recorded on QuickBooks invoices. Two mutually-exclusive
+// modes stored in pricing_config.qbTaxMode:
+//   "self" — push the tax the shop set in InkTracker as REAL tracked sales tax
+//            (qbSync references a manual QB tax code of the same rate). For
+//            shops whose QuickBooks does NOT calculate tax automatically.
+//   "qb"   — let QuickBooks' Automated Sales Tax compute it (default; today's
+//            behavior). Requires a QuickBooks set up for automatic tax.
+// Default (absent) is "qb" so existing shops are unchanged; a shop opts into
+// "self" here. Applies to FUTURE pushes/resyncs.
+function QbTaxModeEditor({ user }) {
+  const [mode, setMode] = useState(null); // null = not loaded
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  async function ensureLoaded() {
+    if (loaded) return;
+    try {
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+      const pc = shops?.[0]?.pricing_config || {};
+      setMode(pc.qbTaxMode === "self" ? "self" : "qb");
+    } catch {
+      setMode("qb");
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  async function choose(next) {
+    if (next === mode) return;
+    setMode(next);
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+      const pc = { ...(shops?.[0]?.pricing_config || {}), qbTaxMode: next };
+      if (shops?.[0]) await base44.entities.Shop.update(shops[0].id, { pricing_config: pc });
+      loadShopPricingConfig(pc);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-emerald-200 pt-3 mt-3">
+      <div className="text-sm font-semibold text-slate-700 mb-1">Sales tax on QuickBooks invoices</div>
+      <p className="text-xs text-slate-500 mb-2">
+        Choose how the sales tax lands in QuickBooks. Applies to invoices pushed from here on.
+      </p>
+      {!loaded ? (
+        <button onClick={ensureLoaded} className="text-sm font-semibold text-emerald-700 hover:text-emerald-900 transition">
+          Set tax mode…
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="radio" name="qbTaxMode" checked={mode === "self"} onChange={() => choose("self")} disabled={saving} className="mt-0.5" />
+            <span className="text-xs text-slate-600">
+              <span className="font-semibold text-slate-700">Use the tax I set in InkTracker</span><br />
+              Records the exact tax InkTracker calculated as tracked sales tax in QuickBooks. Your QuickBooks must have a matching sales-tax rate set up (Taxes screen). Best when QuickBooks doesn&apos;t calculate tax automatically.
+            </span>
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="radio" name="qbTaxMode" checked={mode === "qb"} onChange={() => choose("qb")} disabled={saving} className="mt-0.5" />
+            <span className="text-xs text-slate-600">
+              <span className="font-semibold text-slate-700">Let QuickBooks calculate it</span><br />
+              QuickBooks&apos; Automated Sales Tax computes the tax from the customer&apos;s address. Requires a QuickBooks set up for automatic sales tax — if it returns $0, switch to the option above.
+            </span>
+          </label>
+          {saved && <div className="text-xs text-emerald-700 font-semibold">Saved ✓</div>}
+          {error && <div className="text-xs text-red-600">{error}</div>}
+        </div>
+      )}
+    </div>
   );
 }
 

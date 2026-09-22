@@ -54,8 +54,9 @@ export function shouldMintDepositInvoice(quote) {
 /**
  * Build the QB deposit-invoice body. One NON-taxed line: the deposit is a
  * prepayment, not a sale — tax is assessed once, on the final invoice's
- * full lines. AllowOnline* flags mirror the main create path so the share
- * link can collect.
+ * full lines. AllowOnline* flags are intentionally omitted so QuickBooks
+ * applies the shop's own Payments settings (card / ACH), same as the main
+ * create path.
  */
 export function buildDepositInvoiceBody({ qbCustomerId, docNumber, itemId, amount, quoteId, depositPct, billEmail, txnDate }) {
   const pctLabel = Number(depositPct) > 0 ? `${Number(depositPct)}% ` : "";
@@ -64,8 +65,6 @@ export function buildDepositInvoiceBody({ qbCustomerId, docNumber, itemId, amoun
     DocNumber: docNumber,
     TxnDate: txnDate,
     DueDate: txnDate, // due on receipt, same as the main create path
-    AllowOnlineCreditCardPayment: true,
-    AllowOnlineACHPayment: true,
     Line: [{
       DetailType: "SalesItemLineDetail",
       Amount: r2(amount),

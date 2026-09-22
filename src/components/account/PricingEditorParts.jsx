@@ -516,6 +516,94 @@ export function SetupFeesEditor({ config, setConfig }) {
             Reorder rate is used when "Reorder" is checked on the quote — screens already exist from the first run, so film/burn can be skipped.
           </p>
         </div>
+
+        {/* Screen inventory — independent of whether setup fees are billed.
+            Optional per-mesh breakdown: how many of each mesh count you own
+            and how many are coated (ready to burn). Empty = checks off. */}
+        <ScreenInventoryEditor config={config} setConfig={setConfig} />
       </div>
+  );
+}
+
+function ScreenInventoryEditor({ config, setConfig }) {
+  const rows = Array.isArray(config.screenInventory) ? config.screenInventory : [];
+  const owned = rows.reduce((s, r) => s + Math.max(0, Math.round(Number(r?.total) || 0)), 0);
+  const coated = rows.reduce((s, r) => s + Math.min(
+    Math.max(0, Math.round(Number(r?.total) || 0)),
+    Math.max(0, Math.round(Number(r?.coated) || 0)),
+  ), 0);
+
+  const setRows = (next) => setConfig(prev => ({ ...prev, screenInventory: next }));
+  const patchRow = (idx, patch) => setRows(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+
+  return (
+    <div className="border-t border-slate-100 dark:border-slate-700 pt-4 mt-4">
+      <div className="mb-3">
+        <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Screen inventory</div>
+        <p className="text-[11px] text-slate-500 mt-0.5">
+          Your screens by mesh count — how many you own and how many are coated (ready to burn). Production shows how many are free (yours minus what active jobs are using), how many are coated, and warns when you're over-committed. Leave empty to turn the check off.
+        </p>
+      </div>
+
+      {rows.length > 0 && (
+        <>
+          <div className="grid grid-cols-[1fr_90px_90px_32px] gap-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 px-1">
+            <div>Mesh Count</div>
+            <div>Owned</div>
+            <div>Coated</div>
+            <div />
+          </div>
+          {rows.map((row, idx) => (
+            <div key={idx} className="grid grid-cols-[1fr_90px_90px_32px] gap-2 mb-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={row?.mesh ?? ""}
+                onChange={(e) => patchRow(idx, { mesh: e.target.value })}
+                placeholder="e.g. 110, 156, 230"
+                className="text-xs border border-slate-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+              />
+              <NumericInput
+                value={Number.isInteger(row?.total) ? row.total : (Number(row?.total) || 0)}
+                onChange={(v) => patchRow(idx, { total: Math.max(0, Math.round(Number(v) || 0)) })}
+                integer min={0}
+                label="Screens owned of this mesh"
+                className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 text-center focus:outline-none focus:ring-1 focus:ring-teal-300"
+              />
+              <NumericInput
+                value={Number.isInteger(row?.coated) ? row.coated : (Number(row?.coated) || 0)}
+                onChange={(v) => patchRow(idx, { coated: Math.max(0, Math.round(Number(v) || 0)) })}
+                integer min={0}
+                label="Coated screens of this mesh"
+                className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 text-center focus:outline-none focus:ring-1 focus:ring-teal-300"
+              />
+              <button
+                type="button"
+                onClick={() => setRows(rows.filter((_, i) => i !== idx))}
+                title={`Remove ${row?.mesh ? `${row.mesh} mesh` : "row"}`}
+                className="text-slate-300 hover:text-red-500 transition flex items-center justify-center"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </>
+      )}
+
+      <div className="flex items-center gap-4 mt-1">
+        <button
+          type="button"
+          onClick={() => setRows([...rows, { mesh: "", total: 0, coated: 0 }])}
+          className="text-xs font-semibold text-teal-600 hover:text-teal-700 transition"
+        >
+          + Add mesh count
+        </button>
+        {rows.length > 0 && (
+          <span className="text-[11px] text-slate-500">
+            {owned} owned · {coated} coated
+          </span>
+        )}
+      </div>
+    </div>
   );
 }

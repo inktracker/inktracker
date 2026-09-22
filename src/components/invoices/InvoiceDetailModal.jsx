@@ -10,13 +10,13 @@ import ModalBackdrop from "../shared/ModalBackdrop";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { invoiceThreadId } from "@/lib/messageThreads";
+import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { qbModifiedState, qbPushPending, buildAdoptPatches, stripSyncNotes } from "@/lib/invoices/qbModifiedSync";
 import ChangeHistory from "../shared/ChangeHistory";
-import { createInvoiceInQB } from "@/lib/invoices/createInvoiceInQB";
 
 export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onAddToProduction, onInvoiceUpdated, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
   const [loading, setLoading] = useState(false);
@@ -47,28 +47,9 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   // notice clears immediately even if the parent doesn't re-render.
   const [syncedInvoice, setSyncedInvoice] = useState(null);
   const [syncingQb, setSyncingQb] = useState(false);
-  // Edit Order phase 2: push local edits to the existing QB invoice
-  // (qbSync's resync/update path). Success mirrors qb_* back and clears
-  // qb_push_pending server-side.
-  const [pushingQb, setPushingQb] = useState(false);
-  async function handlePushToQb() {
-    if (pushingQb) return;
-    setPushingQb(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Not signed in");
-      const result = await createInvoiceInQB({ base44, invoice: activeInvoice, customer, session });
-      if (!result.ok) throw new Error(result.error || "QuickBooks push failed");
-      const freshRows = await base44.entities.Invoice.filter({ shop_owner: activeInvoice.shop_owner, id: activeInvoice.id });
-      const fresh = freshRows?.[0];
-      if (fresh) { setSyncedInvoice(fresh); onInvoiceUpdated?.(fresh); }
-      setQbStatus({ type: "success", text: "QuickBooks invoice updated to match your edit." });
-    } catch (err) {
-      setQbStatus({ type: "error", text: `Push didn't complete: ${err?.message || "unknown error"}. Your local edit is safe — click Push again to retry.` });
-    } finally {
-      setPushingQb(false);
-    }
-  }
+  // One reliable path for pushing to QB (create / update / recreate) — the
+  // "Sync to QuickBooks" footer button and the "local changes" banner both
+  // call handleCreateInQB(true), which lets qbSync recognize what to do.
   const activeInvoice = syncedInvoice || invoice;
   const qbModified = qbModifiedState(activeInvoice);
 
@@ -195,12 +176,18 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
     return () => { cancelled = true; };
   }, [invoice?.order_id]);
 
-  async function handleCreateInQB() {
+  async function handleCreateInQB(recreate = false) {
     // Ironclad no-duplicate guard: if this invoice already has a QB
     // record, refuse to create a second one. The footer renders the
     // "View in QB" link in that case, but this internal check is the
     // backstop — never trust the UI to be the only gate.
-    if (invoice.qb_invoice_id) {
+    //
+    // Recreate (recreate=true, the "Re-push to QB" action) deliberately skips
+    // this so a deleted-in-QB invoice can be re-pushed: qbSync re-fetches the
+    // stored id and self-heals — it UPDATES if the invoice still exists,
+    // REFUSES if it's paid, and only creates fresh when QB confirms it's gone.
+    // So handing the call to the server can't mint a duplicate.
+    if (!recreate && invoice.qb_invoice_id) {
       setQbStatus({
         type: "info",
         // the banner renderer reads .text — a .message key rendered as an
@@ -233,7 +220,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         });
         if (freshRows?.length) inv = freshRows[0];
       } catch { /* fall back to the prop */ }
-      if (inv.qb_invoice_id) {
+      if (!recreate && inv.qb_invoice_id) {
         setQbStatus({
           type: "info",
           text: `This invoice is already in QuickBooks (QB ID ${inv.qb_invoice_id}). Use "View in QB" to open it.`,
@@ -313,6 +300,10 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         noEmail: true,
         // Collapse concurrent/double submits onto one QB write (NEW-10).
         idempotencyKey,
+        // Per-shop tax mode: "self" pushes the shop's own tax to QB as tracked
+        // sales tax; default lets QB's Automated Sales Tax decide.
+        taxMode: getShopPricingConfig()?.qbTaxMode === "self" ? "self" : "qb",
+        taxAmount: Number(inv.tax) || 0,
         quote: quoteShape,
         invoicePayload,
         customer: {
@@ -376,6 +367,16 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             ? `Linked to the existing QuickBooks invoice (#${data.qbDocNumber || data.qbInvoiceId}) — no duplicate was created.${data.paymentLink ? " Payment link ready." : ""}`
             : `Invoice created in QuickBooks.${data.paymentLink ? " Payment link ready." : ""}`,
         });
+      }
+
+      // Reflect the server's write-back (new/updated qb_invoice_id + payment
+      // link) so the footer flips to "View in QB" on the fresh invoice — a
+      // re-push after a QB delete otherwise still showed the stale link.
+      if (onInvoiceUpdated) {
+        try {
+          const rows = await base44.entities.Invoice.filter({ shop_owner: inv.shop_owner, id: inv.id });
+          if (rows?.length) onInvoiceUpdated(rows[0]);
+        } catch { /* non-fatal — the status banner already reflects the result */ }
       }
     } catch (err) {
       setQbStatus({ type: "error", text: err.message });
@@ -680,12 +681,12 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                 This invoice was updated by an order edit — QuickBooks still shows the previous version.
               </div>
               <button
-                onClick={handlePushToQb}
-                disabled={pushingQb || readOnly}
+                onClick={() => handleCreateInQB(true)}
+                disabled={qbCreating || readOnly}
                 title={readOnly ? readOnlyReason : undefined}
                 className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {pushingQb ? "Pushing…" : "Push update to QuickBooks"}
+                {qbCreating ? "Syncing…" : "Push update to QuickBooks"}
               </button>
             </div>
           )}
@@ -727,6 +728,24 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                 </span>
                 <span>−{fmtMoney(sub - afterDisc)}</span>
               </div>
+            )}
+            {/* Setup + one-off fees — itemized so the breakdown foots to Total.
+                Without these an invoice with fees showed Subtotal + Tax ≠ Total,
+                the fee amount silently missing (Truman's INV-2026-YLBUS: a $40
+                digitizing + $21 CC fee were baked into the total but not shown). */}
+            {(Number(invoice.setup_total) || 0) > 0 && (
+              <div className="flex justify-between text-sm text-slate-500">
+                <span>Setup &amp; Screen Fees</span>
+                <span>{fmtMoney(Number(invoice.setup_total))}</span>
+              </div>
+            )}
+            {normalizeAdditionalCharges(invoice.additional_charges).map((c, i) =>
+              Number(c.amount) ? (
+                <div key={c.id || i} className="flex justify-between text-sm text-slate-500">
+                  <span>{c.label || "Additional fee"}</span>
+                  <span>{fmtMoney(Number(c.amount))}</span>
+                </div>
+              ) : null,
             )}
             {activeInvoice.tax > 0 && (
               <div className="flex justify-between text-sm text-slate-500">
@@ -818,12 +837,8 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               View Order
             </button>
           )}
-          {/* QB button — "View in QB" when the invoice already exists
-              there, "Create in QB" when it doesn't. Two layers of
-              dup protection: the button itself never offers create
-              when qb_invoice_id is set, AND handleCreateInQB refuses
-              the call as a backstop. */}
-          {invoice.qb_invoice_id ? (
+          {/* View the QB invoice when one exists. */}
+          {invoice.qb_invoice_id && (
             <a
               href={`https://qbo.intuit.com/app/invoice?txnId=${encodeURIComponent(invoice.qb_invoice_id)}`}
               target="_blank"
@@ -832,13 +847,17 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             >
               View in QB
             </a>
-          ) : (
-            <button onClick={handleCreateInQB} disabled={qbCreating || readOnly}
-              title={readOnly ? readOnlyReason : undefined}
-              className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50 disabled:cursor-not-allowed">
-              {qbCreating ? "Creating…" : "Create in QB"}
-            </button>
           )}
+          {/* One button that always does the right thing. qbSync recognizes the
+              state: creates when there's no QB invoice, updates when there is,
+              recreates when it was deleted in QB, and refuses when it's already
+              paid — so this can never mint a duplicate. Replaces the old
+              Create / Re-push / Push-update split that left dead-ends. */}
+          <button onClick={() => handleCreateInQB(true)} disabled={qbCreating || readOnly}
+            title={readOnly ? readOnlyReason : "Create or update this invoice in QuickBooks"}
+            className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50 disabled:cursor-not-allowed">
+            {qbCreating ? "Syncing…" : (invoice.qb_invoice_id ? "Resync with QuickBooks" : "Sync to QuickBooks")}
+          </button>
           {/* Preview PDF — the preview window has its own download
               button, so we don't render a separate "Download PDF" here. */}
           <button onClick={() => previewPdf((async () => {

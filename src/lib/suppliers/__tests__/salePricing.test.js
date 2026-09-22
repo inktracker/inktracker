@@ -23,18 +23,36 @@ describe("buildSaleSizePrices", () => {
     expect(out["2XL"]).toBe(8.1);
   });
 
-  it("shifts sizes missing a per-size sale by the base discount — upcharge preserved", () => {
-    // 3XL has no reported sale: standard 11.62 minus the base discount
-    // (8.62 − 6.34 = 2.28) keeps its +$3.00-over-base upcharge intact.
+  it("keeps full standard cost for a size the supplier left off sale", () => {
+    // 3XL has no reported sale AND the supplier gave per-size sales for the
+    // other sizes → 3XL is genuinely not on sale, so it holds its real
+    // standard cost (11.62). The markup matrix must price it from that actual
+    // cost, never a shifted-down number (Joe 2026-09-15).
     const out = buildSaleSizePrices(option, "White", 6.34);
-    expect(out["3XL"]).toBe(9.34);
+    expect(out["3XL"]).toBe(11.62);
   });
 
-  it("ignores a per-size 'sale' at or above that size's standard price", () => {
+  it("keeps full standard cost when a per-size 'sale' is at/above that size's standard", () => {
     const bad = JSON.parse(JSON.stringify(option));
-    bad.colors[0].sizeSalePrices["2XL"] = 10.62;
+    bad.colors[0].sizeSalePrices["2XL"] = 10.62; // not a real sale (== std)
     const out = buildSaleSizePrices(bad, "White", 6.34);
-    expect(out["2XL"]).toBe(8.34); // shifted standard, not the fake sale
+    expect(out["2XL"]).toBe(10.62); // actual standard cost, not a fake/shifted sale
+  });
+
+  it("spreads a color-level-only sale across sizes (no per-size sale map)", () => {
+    // SanMar-style: a single color sale, no per-size sale detail. Here the
+    // discount SHOULD spread so the one sale reaches every size while each
+    // size keeps its upcharge. base 8.62 − sale 6.34 = 2.28 discount.
+    const colorLevel = {
+      priceMap: { White: { piecePrice: 8.62, salePrice: 6.34 } },
+      colors: [{
+        colorName: "White",
+        sizePrices: { S: 8.62, "2XL": 10.62, "3XL": 11.62 },
+        sizeSalePrices: {},
+      }],
+    };
+    const out = buildSaleSizePrices(colorLevel, "White", 6.34);
+    expect(out).toEqual({ S: 6.34, "2XL": 8.34, "3XL": 9.34 });
   });
 
   it("returns {} when the option has no per-size data for the color", () => {
@@ -69,6 +87,7 @@ describe("buildSaleSizePrices", () => {
       "Red",
       7,
     );
-    expect(out).toEqual({ S: 7, "2XL": 9 });
+    // Red gave a per-size sale (S), so its 2XL is not on sale → full std 11.
+    expect(out).toEqual({ S: 7, "2XL": 11 });
   });
 });
