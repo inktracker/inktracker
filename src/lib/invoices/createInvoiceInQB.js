@@ -1,4 +1,5 @@
-import { buildQBInvoicePayload, getQty, getShopPricingConfig } from "@/components/shared/pricing";
+import { buildQBInvoicePayload, getShopPricingConfig } from "@/components/shared/pricing";
+import { buildFallbackInvoiceLines } from "@/lib/invoices/fallbackInvoiceLines";
 
 // Per-shop QB tax mode: "self" pushes the shop's own tax to QB as tracked sales
 // tax; anything else (default) lets QuickBooks' Automated Sales Tax decide.
@@ -47,26 +48,9 @@ export async function createInvoiceInQB({ base44, invoice, customer, session, id
   // buildQBInvoicePayload expects (QB-pulled rows, order-derived invoices):
   // build a simple line payload from the totals so the sync still works.
   if (!invoicePayload?.lines?.length) {
-    const lineItems = invoice.line_items || [];
-    const lines = lineItems.length > 0
-      ? lineItems.map((li) => {
-          const qty = getQty(li) || Number(li.qty) || 1;
-          const amount = Number(li.total) || Number(li.amount) || (invoice.subtotal || invoice.total || 0);
-          return {
-            description: [li.brand, li.style, li.garmentColor, li.description].filter(Boolean).join(" ") || "Service",
-            qty,
-            unitPrice: Number((amount / qty).toFixed(4)),
-            amount: Number(amount.toFixed(2)),
-            itemName: "Screen Print",
-          };
-        }).filter((l) => l.amount > 0)
-      : [{
-          description: "Invoice",
-          qty: 1,
-          unitPrice: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
-          amount: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
-          itemName: "Screen Print",
-        }];
+    // Shared with InvoiceDetailModal + SendInvoiceModal — reads each line's
+    // `lineTotal` (not just total/amount) and keeps negative discount lines.
+    const lines = buildFallbackInvoiceLines(invoice.line_items, invoice);
     const discVal = parseFloat(invoice.discount) || 0;
     const isFlat = invoice.discount_type === "flat";
     invoicePayload = {

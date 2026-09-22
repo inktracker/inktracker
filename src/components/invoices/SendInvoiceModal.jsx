@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { Mail, Loader2, CheckCircle2, X, AlertCircle } from "lucide-react";
-import { fmtMoney, buildQBInvoicePayload, getQty } from "../shared/pricing";
+import { fmtMoney, buildQBInvoicePayload } from "../shared/pricing";
+import { buildFallbackInvoiceLines } from "@/lib/invoices/fallbackInvoiceLines";
 import { exportInvoiceToPDF } from "../shared/pdfExport";
 import { isValidEmail } from "@/lib/email";
 import { invoiceThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
@@ -120,26 +121,9 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       };
       let invoicePayload = buildQBInvoicePayload(quoteShape);
       if (!invoicePayload?.lines?.length) {
-        const lineItems = invoice.line_items || [];
-        const lines = lineItems.length > 0
-          ? lineItems.map((li) => {
-              const qty = getQty(li) || Number(li.qty) || 1;
-              const amount = Number(li.total) || Number(li.amount) || (invoice.subtotal || invoice.total || 0);
-              return {
-                description: [li.brand, li.style, li.garmentColor, li.description].filter(Boolean).join(" ") || "Service",
-                qty,
-                unitPrice: Number((amount / qty).toFixed(4)),
-                amount: Number(amount.toFixed(2)),
-                itemName: "Screen Print",
-              };
-            }).filter((l) => l.amount > 0)
-          : [{
-              description: "Invoice",
-              qty: 1,
-              unitPrice: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
-              amount: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
-              itemName: "Screen Print",
-            }];
+        // Shared with InvoiceDetailModal + createInvoiceInQB — reads each line's
+        // `lineTotal` (not just total/amount) and keeps negative discount lines.
+        const lines = buildFallbackInvoiceLines(invoice.line_items, invoice);
         invoicePayload = {
           lines,
           discountPercent: invoice.discount_type === "flat" ? 0 : (parseFloat(invoice.discount) || 0),
