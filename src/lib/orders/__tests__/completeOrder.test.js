@@ -60,6 +60,7 @@ describe("buildOrderCompletionPlan — invariant: NEVER deletes the order", () =
     expect(plan.orderUpdate.patch).toEqual({
       status: "Completed",
       completed_date: TODAY,
+      floor_completed_at: null, // office completion clears the floor's "needs invoicing" flag
     });
   });
 });
