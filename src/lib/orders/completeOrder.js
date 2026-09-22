@@ -88,7 +88,9 @@ export function buildOrderCompletionPlan(
 
   const orderUpdate = {
     id: order.id,
-    patch: { status: COMPLETED_STATUS, completed_date: today },
+    // floor_completed_at: the Shop Floor's "finished, needs invoicing" flag —
+    // running the full completion (invoice + performance rows) clears it.
+    patch: { status: COMPLETED_STATUS, completed_date: today, floor_completed_at: null },
   };
 
   // If an invoice already exists for this order's quote (typical

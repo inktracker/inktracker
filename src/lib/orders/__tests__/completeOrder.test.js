@@ -112,7 +112,7 @@ describe("buildOrderCompletionPlan — existing invoice: link instead of create"
     });
     expect(plan.orderUpdate).toEqual({
       id: baseOrder.id,
-      patch: { status: "Completed", completed_date: TODAY },
+      patch: { status: "Completed", completed_date: TODAY, floor_completed_at: null },
     });
   });
 
