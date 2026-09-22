@@ -1444,10 +1444,11 @@ export default function QuoteDetailModal({
           quote={quote}
           customer={customer}
           onClose={() => setShowSendModal(false)}
-          onSuccess={() => {
-            setShowSendModal(false);
-            onSend?.();
-          }}
+          // Don't close here — SendQuoteModal flips to its "Quote sent
+          // successfully" screen (the same confirmation Send Invoice shows)
+          // and the operator dismisses it with Close. Closing on success
+          // used to unmount that screen before anyone saw it.
+          onSuccess={() => { onSend?.(); }}
         />
       )}
 

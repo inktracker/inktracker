@@ -213,7 +213,8 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
       sent_to_client_at: new Date().toISOString(),
     });
     onUpdate(updated);
-    setShowSendModal(false);
+    // Leave the send modal open on its confirmation screen; the broker
+    // closes it with Close (same behavior as the shop's Send Quote).
   }
 
   async function handleMarkClientApproved() {
