@@ -61,6 +61,26 @@ export function countGoodsProgress(order) {
 export const ORDER_GOODS_AUTO_PLACE = "Place blank order";
 export const ORDER_GOODS_AUTO_RECEIVE = "Receive goods";
 
+// "Art Approval" → the "Get approval" task IS the customer's approval on the
+// order (art_approved, written by the ArtApproval page when the customer
+// signs off). Floor staff can't grant it by tapping; it derives from the
+// record. Returns null for every other task so it stays operator-tickable.
+export const ART_APPROVAL_AUTO_TASK = "Get approval";
+export function autoCheckArtApprovalTask(step, task, order) {
+  if (step !== "Art Approval") return null;
+  if (task !== ART_APPROVAL_AUTO_TASK) return null;
+  return !!order?.art_approved;
+}
+
+// One entry point: auto-derived state for any stage's task, or null when the
+// task is a plain operator checkbox. Order Goods derives from per-size counts,
+// Art Approval from the customer's approval.
+export function autoCheckTask(step, task, order, counts) {
+  const art = autoCheckArtApprovalTask(step, task, order);
+  if (art !== null) return art;
+  return autoCheckOrderGoodsTask(step, task, counts || countGoodsProgress(order));
+}
+
 export function autoCheckOrderGoodsTask(step, task, counts) {
   if (step !== "Order Goods") return null;
   if (task === ORDER_GOODS_AUTO_PLACE) {

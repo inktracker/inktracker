@@ -15,7 +15,7 @@ import HintTip from "../components/shared/HintTip";
 import { useBillingGate, useReadOnly } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
-import { ensurePoDraftsForOrder } from "@/lib/orders/autoPoFromOrder";
+import { changeOrderStatus, nextStatusOf, autoPoToast } from "@/lib/orders/changeOrderStatus";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { shopScope } from "@/lib/shopScope";
 
@@ -164,26 +164,18 @@ export default function Orders() {
     { key: "maxTotal", label: "Max Total", type: "text" },
   ];
 
+  // Shared status path (changeOrderStatus) — identical side effects to
+  // Production and Shop Floor: Completed = full completion flow, Order
+  // Goods = auto draft POs, backward = checklist reset.
   async function handleAdvance(id) {
     const order = orders.find((o) => o.id === id);
-    const idx = O_STATUSES.indexOf(order.status);
-    const nextStatus = idx >= 0 && idx < O_STATUSES.length - 1 ? O_STATUSES[idx + 1] : null;
+    const nextStatus = nextStatusOf(order);
     if (!nextStatus) return;
-    // Calendar/Production filter requires completed_date to show the
-    // green "Completed" chip. Mirror Production.jsx handleAdvance so
-    // the order doesn't fall off the calendar when marked complete
-    // from this list.
-    const payload = { status: nextStatus };
-    if (nextStatus === "Completed" && !order.completed_date) {
-      // Shop-tz, not UTC. After ~5pm Pacific the UTC date is
-      // already tomorrow — using toISOString() here stamped
-      // tomorrow's date and the Calendar's green chip landed on
-      // the wrong day. The Alder Creek "didn't show on today"
-      // regression (2026-05-30).
-      payload.completed_date = todayInShopTz();
-    }
     try {
-      const updated = await base44.entities.Order.update(id, payload);
+      const updated = await changeOrderStatus({
+        order, newStatus: nextStatus, user, base44,
+        onAutoPo: (res) => { const msg = autoPoToast(res, order.order_id); if (msg) notify.success(msg); },
+      });
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       // Modal lifecycle: keep open through the pipeline stages so the
       // operator doesn't lose their place mid-job. Final transition
@@ -191,18 +183,6 @@ export default function Orders() {
       if (viewing?.id === id) {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
-      }
-      // Auto-create draft PO(s) when the order enters Order Goods (1A/2A).
-      // Idempotent + fire-and-forget; the helper self-checks for an existing PO.
-      if (nextStatus === "Order Goods" && user) {
-        ensurePoDraftsForOrder(updated, user)
-          .then(({ created }) => {
-            if (created?.length) {
-              const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
-              notify.success(`${label} created for ${updated.order_id || "this order"} — review on Purchase Orders.`);
-            }
-          })
-          .catch((e) => console.warn("[autoPO] ensurePoDraftsForOrder failed:", e));
       }
     } catch (err) {
       notify.error("Couldn't update the order status", err);

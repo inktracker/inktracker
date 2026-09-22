@@ -12,7 +12,6 @@ import { Loader2 } from "lucide-react";
 const CUSTOMER_STATUSES = [
   { status: "Printing",  label: "In production",     hint: 'Emails "your order is now in production" when a job moves to Printing.' },
   { status: "Completed", label: "Ready",             hint: 'Emails "your order is finished" when a job is marked Completed.' },
-  { status: "Shipped",   label: "Shipped",           hint: 'Emails "your order is on its way" when a job is marked Shipped.' },
 ];
 
 export default function CustomerUpdatesSection({ user }) {
