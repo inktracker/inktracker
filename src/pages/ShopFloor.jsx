@@ -23,6 +23,7 @@ import MyTasksCard from "../components/team/MyTasksCard";
 import { getStageTasks } from "@/lib/productionTasks";
 import { changeOrderStatus, effectiveStatus, autoPoToast } from "@/lib/orders/changeOrderStatus";
 import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
+import { readyForPress, pressOptions } from "@/lib/floorQueues";
 import { todayInShopTz } from "@/lib/shopTimezone";
 
 // Collect every artwork file attached to an order so press operators
@@ -227,6 +228,7 @@ export default function ShopFloor() {
     catch { /* ignore */ }
   }, [updatesStorageKey, updatesCollapsed]);
   const [filter, setFilter] = useState("Active");
+  const [pressFilter, setPressFilter] = useState(""); // "Ready" tab: "" = every press
   // Printable production ticket for the selected job.
   const [showTicket, setShowTicket] = useState(false);
   // Floor discrepancy report (Edit Order decision #2): the floor MARKS
@@ -597,8 +599,14 @@ export default function ShopFloor() {
   const byDueSoonest = (a, b) =>
     String(a.scheduled_date || a.due_date || "9999").localeCompare(String(b.scheduled_date || b.due_date || "9999"));
 
+  // "Ready for press" = past art approval + goods in (Pre-Press / Printing),
+  // optionally one press — the operator's "what can I print right now?"
+  const readyAll = readyForPress(orders);
+  const presses = pressOptions(orders);
   const filtered = filter === "Active"
     ? orders.filter(o => o.status !== "Completed").sort(byDueSoonest)
+    : filter === "Ready"
+      ? readyForPress(orders, pressFilter)
     : filter === "Completed"
       ? orders.filter(o => o.status === "Completed")
       : filter === "Mine"
@@ -648,15 +656,29 @@ export default function ShopFloor() {
       </header>
 
       {/* Filter tabs */}
-      <div className="bg-white border-b border-slate-200 px-5 py-2 flex gap-1">
-        {[...(myActive.length > 0 ? ["Mine"] : []), "Active", "All", "Completed"].map(f => (
+      <div className="bg-white border-b border-slate-200 px-5 py-2 flex gap-1 flex-wrap">
+        {[...(myActive.length > 0 ? ["Mine"] : []), "Ready", "Active", "All", "Completed"].map(f => (
           <button key={f} onClick={() => { setFilter(f); setSelected(null); }}
             className={`text-sm font-semibold px-5 py-2 rounded-lg transition ${filter === f ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
-            {f === "Mine" ? `My Jobs (${myActive.length})` : f}
+            {f === "Mine" ? `My Jobs (${myActive.length})` : f === "Ready" ? `Ready for press (${readyAll.length})` : f}
             {f === "Active" && ` (${orders.filter(o => o.status !== "Completed").length})`}
           </button>
         ))}
       </div>
+      {/* Press picker — only on the Ready tab and only when the office has
+          assigned presses on ready jobs; shops that don't assign presses
+          never see it. */}
+      {filter === "Ready" && presses.length > 0 && (
+        <div className="bg-white border-b border-slate-200 px-5 py-2 flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Press</span>
+          {["", ...presses].map((p) => (
+            <button key={p || "all"} onClick={() => { setPressFilter(p); setSelected(null); }}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${pressFilter === p ? "bg-slate-800 text-white border-slate-800" : "text-slate-600 border-slate-200 hover:bg-slate-100"}`}>
+              {p || "All presses"} ({readyForPress(orders, p).length})
+            </button>
+          ))}
+        </div>
+      )}
 
       <MyTasksCard
         user={user}
@@ -670,7 +692,11 @@ export default function ShopFloor() {
         {/* Order list */}
         <div className={`${selected ? "hidden md:block" : ""} md:w-96 bg-white border-r border-slate-200 overflow-y-auto`}>
           {filtered.length === 0 && (
-            <div className="p-8 text-center text-slate-500 text-sm">No orders</div>
+            <div className="p-8 text-center text-slate-500 text-sm">
+              {filter === "Ready"
+                ? (pressFilter ? `Nothing ready on ${pressFilter}.` : "Nothing ready for press — jobs land here once art is approved and blanks are in.")
+                : "No orders"}
+            </div>
           )}
           {filtered.map(order => {
             const active = selected?.id === order.id;
@@ -686,7 +712,12 @@ export default function ShopFloor() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>{order.order_id} · {getQty(order)} pcs</span>
+                  <span>
+                    {order.order_id} · {getQty(order)} pcs
+                    {filter === "Ready" && normalizeAssignedPress(order.assigned_press) && (
+                      <span className="text-slate-400"> · {normalizeAssignedPress(order.assigned_press)}</span>
+                    )}
+                  </span>
                   {/* A job with no due date must not read as "Due —" on the
                       floor — that looks like a date the operator can ignore.
                       Amber "No due date" says a decision is missing. */}
