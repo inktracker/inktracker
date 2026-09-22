@@ -150,6 +150,53 @@ export function useOrderInvoice({ order, customer, onComplete, callAction }) {
     }
   }
 
+  // "Sync to QuickBooks" on an order that ALREADY has an invoice: push it to
+  // QB right from the order window instead of making the operator dig into
+  // Preview Invoice. qbSync recognizes the state — creates when there's no QB
+  // invoice, updates when there is, recreates when it was deleted in QB,
+  // refuses when paid. A FRESH idempotency key is critical: the default stable
+  // key collapses onto the first create's cached result, making a resync a
+  // silent no-op (the "click does nothing" bug).
+  async function handleResyncInvoice() {
+    if (!relatedInvoice) return;
+    setCreatingInvoice(true);
+    setQbPushNote("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { setQbPushNote("Not signed in — can't reach QuickBooks."); return; }
+      let connected = false;
+      try {
+        const { data, error } = await base44.functions.invoke("qbSync", {
+          action: "checkConnection", accessToken: session.access_token,
+        });
+        connected = !error && !!data?.connected;
+      } catch { /* treat as not connected */ }
+      if (!connected) { setQbPushNote("QuickBooks isn't connected for this shop."); return; }
+
+      const cust = await fetchInvoiceCustomer(relatedInvoice);
+      const result = await createInvoiceInQB({
+        base44, invoice: relatedInvoice, customer: cust, session,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      if (result?.taxBlocked) {
+        const d = result.taxBlockDetail || {};
+        setQbPushNote(
+          `On hold — QuickBooks calculated a different sales tax (billed $${Number(d.quotedTax || 0).toFixed(2)}, ` +
+          `QB computed $${Number(d.qbTax || 0).toFixed(2)}). Fix the tax in QuickBooks (or the invoice's rate), then resync. See docs/qb-tax-sync.md.`
+        );
+      } else if (!result?.ok) {
+        setQbPushNote(`QuickBooks sync didn't complete: ${result?.error || "unknown error"}.`);
+      } else {
+        setQbPushNote("Synced to QuickBooks.");
+      }
+      await lookupRelatedInvoice();
+    } catch (err) {
+      setQbPushNote(`QuickBooks sync failed: ${err?.message || "unknown error"}`);
+    } finally {
+      setCreatingInvoice(false);
+    }
+  }
+
   // Open the Send Invoice modal — fetch the customer first so the recipient
   // and any QB pay link are prefilled.
   async function handleOpenSend() {
@@ -167,6 +214,7 @@ export function useOrderInvoice({ order, customer, onComplete, callAction }) {
     qbPushNote,
     lookupRelatedInvoice,
     handleCreateInvoice,
+    handleResyncInvoice,
     handleOpenSend,
   };
 }

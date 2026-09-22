@@ -307,11 +307,24 @@ Deno.serve(async (req) => {
     }
 
     const priceMap: Record<string, { piecePrice: number; casePrice: number }> = {};
+    // Per-size cost per colour, same shape S&S/SanMar emit (sizePriceMap[color][size]).
+    // AS Colour charges more for extended sizes (e.g. 4XL/5XL run $2–3 over the
+    // base) — the quote editor reads this map to markup EACH size from its real
+    // cost. Without it, the colour collapsed to one MIN piecePrice and every
+    // size priced like the cheapest, quietly underpricing 4XL/5XL (Joe 2026-09-15).
+    const sizePriceMap: Record<string, Record<string, number>> = {};
     for (const v of product.variants) {
       const cn = v.colour;
       if (!cn || !v.price) continue;
       if (!priceMap[cn]) priceMap[cn] = { piecePrice: v.price, casePrice: v.price };
       if (v.price < priceMap[cn].piecePrice) priceMap[cn].piecePrice = v.price;
+      const sz = v.size;
+      if (sz) {
+        if (!sizePriceMap[cn]) sizePriceMap[cn] = {};
+        // Same size can repeat across warehouses/SKUs — keep the lowest real price.
+        const cur = sizePriceMap[cn][sz];
+        if (cur === undefined || v.price < cur) sizePriceMap[cn][sz] = v.price;
+      }
     }
 
     const matchUiShape = {
@@ -344,12 +357,18 @@ Deno.serve(async (req) => {
           casePrice: priceMap[c.name]?.casePrice ?? 0,
           imageUrl: colImg?.url || varImg?.imageUrl || product.primaryImage,
           sizeQuantities: inventoryMap[c.name] ?? {},
+          // Per-size cost so the quote line marks up each size from its real
+          // cost (the attach effect + saved line read colors[].sizePrices).
+          ...(sizePriceMap[c.name] && Object.keys(sizePriceMap[c.name]).length > 0
+            ? { sizePrices: sizePriceMap[c.name] }
+            : {}),
         };
       }),
       variants: product.variants,
       images: product.images,
       inventoryMap,
       priceMap,
+      sizePriceMap,
       piecePrice: Math.min(
         ...Object.values(priceMap).map((p) => p.piecePrice).filter(Boolean),
         Infinity,

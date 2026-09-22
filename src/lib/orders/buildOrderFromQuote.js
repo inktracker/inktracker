@@ -152,6 +152,11 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
     qb_deposit_invoice_id: q.qb_deposit_invoice_id ?? null,
     status: "Art Approval",
     line_items: q.line_items,
+    // Carry the reorder flag + screen-count override so screen-availability
+    // tracking counts committed screens correctly (a reorder ties up 0 new
+    // screens; a paired override reflects the actual screens burned).
+    is_reorder: Boolean(q.is_reorder),
+    setup_screens_override: Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : null,
     notes: q.notes,
     rush_rate: q.rush_rate,
     extras: q.extras,

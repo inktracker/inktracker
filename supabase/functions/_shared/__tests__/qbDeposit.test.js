@@ -76,9 +76,11 @@ describe("buildDepositInvoiceBody", () => {
     expect(body.Line[0].Amount).toBe(250.01);
     expect(body.Line[0].SalesItemLineDetail.UnitPrice).toBe(250.01);
   });
-  it("online payment enabled + due on receipt (same as the main create path)", () => {
-    expect(body.AllowOnlineCreditCardPayment).toBe(true);
-    expect(body.AllowOnlineACHPayment).toBe(true);
+  it("omits AllowOnline* flags so QB applies the shop's own Payments settings", () => {
+    expect(body.AllowOnlineCreditCardPayment).toBeUndefined();
+    expect(body.AllowOnlineACHPayment).toBeUndefined();
+  });
+  it("due on receipt (same as the main create path)", () => {
     expect(body.DueDate).toBe("2026-08-12");
   });
   it("omits BillEmail when none provided", () => {

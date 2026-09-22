@@ -137,12 +137,24 @@ async function probeStripe(): Promise<Probe> {
 
 async function probeResend(): Promise<Probe> {
   if (!RESEND_API_KEY) return P("Resend", "critical", false, "RESEND_API_KEY unset", null);
-  const { res, latencyMs, err } = await timedFetch(
-    "https://api.resend.com/domains",
+  // Probe /api-keys (lightweight) rather than /domains, which intermittently
+  // stalls >15s at the 6am run and paged a false "critical DOWN" while real
+  // sending was fine. A pure timeout/network miss is retried once (a blip on a
+  // reachability check shouldn't declare an outage); a real auth/HTTP error
+  // returns instantly and still trips the probe on the first try.
+  const call = () => timedFetch(
+    "https://api.resend.com/api-keys",
     { headers: { Authorization: `Bearer ${RESEND_API_KEY}` } },
-    15_000,
+    20_000,
   );
-  if (!res) return P("Resend", "critical", false, `no response (${err})`, latencyMs);
+  let { res, latencyMs, err } = await call();
+  if (!res) {
+    const retry = await call();
+    res = retry.res;
+    latencyMs = (latencyMs ?? 0) + (retry.latencyMs ?? 0);
+    err = retry.err;
+  }
+  if (!res) return P("Resend", "critical", false, `no response after retry (${err})`, latencyMs);
   return P("Resend", "critical", res.ok, res.ok ? "authed ok" : `HTTP ${res.status}`, latencyMs);
 }
 

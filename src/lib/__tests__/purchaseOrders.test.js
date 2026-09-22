@@ -170,9 +170,20 @@ describe("updateItemQty / removeItem", () => {
     expect(updateItemQty(items, 1, 7)[1].quantity).toBe(7);
   });
 
-  it("updateItemQty removes the line when quantity goes to 0 or negative", () => {
-    expect(updateItemQty(items, 0, 0)).toHaveLength(1);
-    expect(updateItemQty(items, 0, -1)).toHaveLength(1);
+  it("updateItemQty KEEPS the row when the field is cleared (no auto-delete)", () => {
+    // Clearing to retype must not remove the item — that's the explicit ✕.
+    expect(updateItemQty(items, 0, "")).toHaveLength(2);
+    expect(updateItemQty(items, 0, "")[0].quantity).toBe("");
+    expect(updateItemQty(items, 0, 0)).toHaveLength(2);
+    expect(updateItemQty(items, 0, 0)[0].quantity).toBe(0);
+  });
+  it("updateItemQty clamps a negative quantity to 0 but keeps the row", () => {
+    expect(updateItemQty(items, 0, -1)).toHaveLength(2);
+    expect(updateItemQty(items, 0, -1)[0].quantity).toBe(0);
+  });
+  it("removeItem is the explicit way to drop a line", () => {
+    expect(removeItem(items, 0)).toHaveLength(1);
+    expect(removeItem(items, 0)[0].sku).toBe("B");
   });
 
   it("removeItem removes by index", () => {

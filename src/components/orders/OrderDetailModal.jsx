@@ -42,7 +42,6 @@ import {
 // customized. Auto-derived "Place blank order" / "Receive goods" on
 // Order Goods only fire when those canonical names are in the list.
 import { getStageTasks } from "@/lib/productionTasks";
-import { todayInShopTz } from "@/lib/shopTimezone";
 import OrderDetailHeader from "./orderDetail/OrderDetailHeader";
 import OrderLineItems from "./orderDetail/OrderLineItems";
 import FloorModePanel from "./orderDetail/FloorModePanel";
@@ -106,7 +105,6 @@ export default function OrderDetailModal({
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [saving, setSaving] = useState(false);
-  const [reordered, setReordered] = useState(false);
   const [copied, setCopied] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -175,6 +173,7 @@ export default function OrderDetailModal({
     qbPushNote,
     lookupRelatedInvoice,
     handleCreateInvoice,
+    handleResyncInvoice,
     handleOpenSend,
   } = useOrderInvoice({ order, customer, onComplete, callAction });
 
@@ -502,43 +501,6 @@ export default function OrderDetailModal({
     }).catch(() => {});
   }
 
-  async function handleReorder() {
-    setSaving(true);
-    try {
-      const newQuoteId = `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
-      await base44.entities.Quote.create({
-        quote_id: newQuoteId,
-        shop_owner: order.shop_owner,
-        customer_id: order.customer_id || "",
-        customer_name: order.customer_name || "",
-        job_title: order.job_title || "",
-        // Shop-tz, not UTC. Reorder quotes were stamping tomorrow's
-        // date for any shop west of London past ~5pm local.
-        date: todayInShopTz(),
-        due_date: null,
-        status: "Draft",
-        notes: order.notes || "",
-        rush_rate: order.rush_rate || 0,
-        extras: order.extras || {},
-        line_items: order.line_items || [],
-        discount: order.discount || 0,
-        discount_type: order.discount_type || "percent",
-        tax_rate: order.tax_rate || 0,
-        // Reorders inherit the ORDER's deposit terms, not a hardcoded 50 —
-        // the old literal 50 disagreed with every editor default (0) and
-        // silently re-imposed deposits on shops that don't use them.
-        deposit_pct: order.deposit_pct ?? 0,
-        deposit_paid: false,
-      });
-      setReordered(true);
-      setTimeout(() => setReordered(false), 3000);
-    } catch (err) {
-      notify.error("Reorder failed", err);
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function callAction(fn, ...args) {
     if (!fn) return;
     setSaving(true);
@@ -823,6 +785,7 @@ export default function OrderDetailModal({
             callAction={callAction}
             advanceWithGoodsGuard={advanceWithGoodsGuard}
             handleCreateInvoice={handleCreateInvoice}
+            handleResyncInvoice={handleResyncInvoice}
             handleOpenSend={handleOpenSend}
             onCreateSlip={() => setShowPackingSlip(true)}
             onPrintTicket={() => setShowTicket(true)}

@@ -47,6 +47,13 @@ export const DEFAULTS = {
     ],
   },
   rushRate: 0.20,
+  // Screen-availability tracking. `screensOwned` is the simple total (legacy
+  // fallback). `screenInventory` is the detailed per-mesh breakdown — rows of
+  // { mesh, total, coated } — and takes over when set: owned = sum of totals,
+  // plus a coated (ready-to-burn) count and mesh breakdown. Empty/0 keeps the
+  // whole feature OFF. See src/lib/screens/screenAvailability.js.
+  screensOwned: null,
+  screenInventory: [],
   // Embroidery pricing: stitch count tiers × quantity tiers
   embroidery: {
     enabled: false,

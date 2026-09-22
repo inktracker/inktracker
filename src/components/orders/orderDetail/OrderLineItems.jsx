@@ -13,6 +13,7 @@ import {
   overrideRushFee,
 } from "../../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
+import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { getImprintArtwork } from "./orderDetailHelpers";
@@ -282,6 +283,23 @@ export default function OrderLineItems({
               </span>
               <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
             </div>
+          )}
+          {/* Setup + one-off fees — itemized so the breakdown foots to Total,
+              matching the invoice/quote views. Without these an order with fees
+              showed Subtotal + Tax ≠ Total, the fee amount silently missing. */}
+          {(Number(order.setup_total) || 0) > 0 && (
+            <div className="flex justify-between text-sm text-slate-500">
+              <span>Setup &amp; Screen Fees</span>
+              <span>{fmtMoney(Number(order.setup_total))}</span>
+            </div>
+          )}
+          {normalizeAdditionalCharges(order.additional_charges).map((c, i) =>
+            Number(c.amount) ? (
+              <div key={c.id || i} className="flex justify-between text-sm text-slate-500">
+                <span>{c.label || "Additional fee"}</span>
+                <span>{fmtMoney(Number(c.amount))}</span>
+              </div>
+            ) : null,
           )}
           <div className="flex justify-between text-sm text-slate-500">
             <span>Tax ({order.tax_rate}%)</span>

@@ -43,7 +43,7 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 // already covered by a SUBMITTED purchase order (via the scalar source_order_id
 // OR the consolidated source_order_ids array). Draft POs don't count as covered
 // — the goods aren't actually on order until the PO is submitted.
-const TERMINAL_ORDER_STATUSES = new Set(["Completed", "Cancelled", "Canceled", "Voided"]);
+export const TERMINAL_ORDER_STATUSES = new Set(["Completed", "Cancelled", "Canceled", "Voided"]);
 
 export function ordersNeedingGoods(orders, purchaseOrders) {
   const covered = new Set();

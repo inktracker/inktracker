@@ -1,4 +1,10 @@
-import { buildQBInvoicePayload, getQty } from "@/components/shared/pricing";
+import { buildQBInvoicePayload, getQty, getShopPricingConfig } from "@/components/shared/pricing";
+
+// Per-shop QB tax mode: "self" pushes the shop's own tax to QB as tracked sales
+// tax; anything else (default) lets QuickBooks' Automated Sales Tax decide.
+function qbTaxMode() {
+  return getShopPricingConfig()?.qbTaxMode === "self" ? "self" : "qb";
+}
 
 // Create an InkTracker invoice in QuickBooks WITHOUT emailing the customer.
 //
@@ -17,7 +23,13 @@ import { buildQBInvoicePayload, getQty } from "@/components/shared/pricing";
 // Returns: { ok, qbInvoiceId, paymentLink, taxBlocked, taxBlockDetail, error }.
 // `qbSync` itself writes qb_invoice_id / qb_payment_link back to the invoices
 // row, so callers should refetch the invoice rather than trust these alone.
-export async function createInvoiceInQB({ base44, invoice, customer, session }) {
+// `idempotencyKey` overrides the default stable-per-invoice key. Pass a FRESH
+// key (e.g. crypto.randomUUID()) for a deliberate RESYNC/retry — the default
+// deterministic key collapses onto the first create's cached qbSync result, so
+// reusing it makes a resync a silent no-op. qbSync's qb_invoice_id verification
+// (update if present, recreate if deleted, refuse if paid) is the real
+// duplicate guard, so a fresh key is safe.
+export async function createInvoiceInQB({ base44, invoice, customer, session, idempotencyKey }) {
   if (!invoice) return { ok: false, error: "No invoice provided." };
   if (!session?.access_token) return { ok: false, error: "Not signed in." };
 
@@ -78,8 +90,14 @@ export async function createInvoiceInQB({ base44, invoice, customer, session }) 
       // Idempotency (NEW-10): stable per invoice so two concurrent submits
       // (double-click / two tabs) collapse onto ONE QB write instead of
       // creating duplicate QB invoices. A later manual retry goes through
-      // InvoiceDetailModal with a fresh per-attempt key.
-      idempotencyKey: `createInvoice:${invoice.id || invoice.invoice_id}`,
+      // InvoiceDetailModal with a fresh per-attempt key. A caller-supplied
+      // `idempotencyKey` (a fresh UUID for a deliberate resync) overrides the
+      // default — reusing the stable key would collapse onto the first create's
+      // cached result and make the resync a silent no-op.
+      idempotencyKey: idempotencyKey || `createInvoice:${invoice.id || invoice.invoice_id}`,
+      taxMode: qbTaxMode(),
+      // Exact tax for the "self" tax-line fallback (QBs that can't record tax).
+      taxAmount: Number(invoice.tax) || 0,
       quote: quoteShape,
       invoicePayload,
       customer: {

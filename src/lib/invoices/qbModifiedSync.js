@@ -45,18 +45,27 @@ const fmtUsd = (n) => `$${Number(n).toFixed(2)}`;
 // Matches lines produced by buildSyncNote. Anchored on the dated prefix
 // so ordinary shop notes that merely mention QuickBooks survive.
 const SYNC_NOTE_LINE = /^\[\d{4}-\d{2}-\d{2}\] Synced from QuickBooks:.*$/;
+// Order-edit audit lines (editOrderEngine appendNote) are internal too — the
+// customer must never see the "total $X → $Y" plumbing an order edit leaves on
+// the invoice notes. Same dated-prefix anchoring so a real shop note that
+// merely says "updated" survives.
+const ORDER_EDIT_NOTE_LINE = /^\[\d{4}-\d{2}-\d{2}\] Updated from order edit:.*$/;
 
 /**
- * Remove sync-audit lines from a notes string for CUSTOMER-facing
+ * Remove internal audit lines from a notes string for CUSTOMER-facing
  * surfaces (invoice PDF, QB CustomerMemo). The audit trail is internal
- * bookkeeping — clients should never see "total $X → $Y" plumbing.
- * Returns "" when nothing but sync lines remain.
+ * bookkeeping — clients should never see "total $X → $Y" plumbing, whether it
+ * came from a QuickBooks sync or an order edit. Returns "" when nothing but
+ * audit lines remain.
  */
 export function stripSyncNotes(notes) {
   if (typeof notes !== "string" || !notes) return "";
   return notes
     .split("\n")
-    .filter((line) => !SYNC_NOTE_LINE.test(line.trim()))
+    .filter((line) => {
+      const t = line.trim();
+      return !SYNC_NOTE_LINE.test(t) && !ORDER_EDIT_NOTE_LINE.test(t);
+    })
     .join("\n")
     .trim();
 }
