@@ -28,10 +28,15 @@ export default function EditCustomerModal({
   uploadingArtwork,
   currentEditingArtwork,
   handleRemoveArtwork,
+  recentOrders = [],
+  loadingRecentOrders = false,
+  handleReorder,
+  reorderingId = null,
   readOnly = false,
   reactivateHref,
 }) {
   const readOnlyReason = "Your subscription has ended — reactivate to create and edit.";
+  const money = (n) => `$${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return (
     <ModalBackdrop
       onClose={() => {
@@ -170,6 +175,49 @@ export default function EditCustomerModal({
               </div>
             )}
           </div>
+        </div>
+
+        {/* Recent Jobs — one-click reorder of a past order for this repeat client */}
+        <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3">
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Recent Jobs</div>
+          {loadingRecentOrders ? (
+            <div className="text-sm text-slate-400 py-2">Loading past jobs…</div>
+          ) : recentOrders.length === 0 ? (
+            <div className="text-sm text-slate-500 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-4 text-center">
+              No past orders yet. Once this customer has an order, you can reorder it here in one click.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {recentOrders.slice(0, 8).map((o) => (
+                <div
+                  key={o.id}
+                  className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl px-3 py-2 border border-slate-100 dark:border-slate-700"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
+                      {o.job_title || o.order_id || "Untitled job"}
+                    </div>
+                    <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                      {o.date && <span>{o.date}</span>}
+                      {o.status && <span className="px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{o.status}</span>}
+                    </div>
+                  </div>
+                  <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums shrink-0">
+                    {o.total != null ? money(o.total) : ""}
+                  </div>
+                  <button
+                    onClick={() => handleReorder?.(o)}
+                    disabled={readOnly || reorderingId === o.id}
+                    title={readOnly ? readOnlyReason : "Create a new draft quote from this order"}
+                    className="shrink-0 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 px-3 py-1.5 rounded-lg transition"
+                  >
+                    {reorderingId === o.id ? "Creating…" : "Reorder"}
+                  </button>
+                  <ReactivateLink show={readOnly} href={reactivateHref} className="shrink-0" />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Saved Imprints Editor */}

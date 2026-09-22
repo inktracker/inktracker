@@ -3,7 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import QuoteSentConfirmation from "./QuoteSentConfirmation";
 import { Mail, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
-import { buildQBInvoicePayload, fmtMoney, BROKER_MARKUP } from "../shared/pricing";
+import { buildQBInvoicePayload, fmtMoney, BROKER_MARKUP, getShopPricingConfig } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import { quoteThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { quotePaymentUrl } from "@/lib/publicUrls";
@@ -399,6 +399,10 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         invoicePayload,
         idempotencyKey,
         acceptQbTax,
+        // Per-shop tax mode: "self" pushes the shop's own tax to QB as tracked
+        // sales tax; default lets QB's Automated Sales Tax decide.
+        taxMode: getShopPricingConfig()?.qbTaxMode === "self" ? "self" : "qb",
+        taxAmount: Number(quoteForQb?.tax) || 0,
         // Mint the pay-now link WITHOUT QuickBooks emailing its own copy —
         // the /send fallback is suppressed (skipSend). InkTracker sends the
         // single customer email (Resend) with the PDF, Approve button, and

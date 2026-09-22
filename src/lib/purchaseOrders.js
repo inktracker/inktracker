@@ -118,8 +118,13 @@ export function removeItem(items, index) {
 export function updateItemQty(items, index, quantity) {
   if (!Array.isArray(items)) return [];
   if (index < 0 || index >= items.length) return items;
-  const qty = Number(quantity) || 0;
-  if (qty <= 0) return removeItem(items, index);
+  // Keep the row while editing — clearing the field to retype must NOT delete
+  // the item (Joe 2026-09-17: "if I delete the existing number to type a new
+  // one, the item disappears"). Removal is the explicit ✕ (removeItem). A blank
+  // field stays blank; a number is clamped to ≥ 0. Zero/blank quantities are
+  // rejected by validateForSubmit, so an unfinished edit can never be ordered.
+  const raw = String(quantity ?? "").trim();
+  const qty = raw === "" ? "" : Math.max(0, Number(raw) || 0);
   const next = [...items];
   next[index] = { ...next[index], quantity: qty };
   return next;

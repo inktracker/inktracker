@@ -25,6 +25,7 @@ import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from 
 import { buildSaleSizePrices } from "@/lib/suppliers/salePricing";
 import { notify } from "@/lib/notify";
 import { customGarmentHeader, getCustomGarmentTitle } from "@/lib/quotes/garmentTitle";
+import { getUpchargedSizes } from "@/lib/quotes/sizeUpcharge";
 
 // Query S&S Activewear, AS Colour, and SanMar in parallel and merge results.
 // AS Colour uses `styleCode`, the others use `styleNumber` — same wire format
@@ -723,6 +724,27 @@ export default function LineItemEditor({
     item.id === li.id ? li : item
   );
 
+  // Per-size garment prices for the panel. Resolved once here (also gates the
+  // "some sizes cost more" note below). Manual-cost lines must not have session
+  // lookup data outrank the typed cost.
+  const effectiveSizePrices = li.garmentCostManual
+    ? undefined
+    : (ssSizePriceMap[li.garmentColor]
+      || (ssColors.find((c) => c.colorName === li.garmentColor) || {}).sizePrices
+      || sizePricesRef.current
+      || undefined);
+
+  // Which sizes ON THIS ORDER actually cost more than the garment's base
+  // (cheapest) size — from the real supplier per-size costs the engine prices
+  // from (a sale line's map when manual). Most styles are flat across sizes
+  // (e.g. AS Colour 5001), so this is empty and the "costs more" note stays
+  // hidden; it appears only on a genuine upcharge (e.g. AC 5101's 4XL/5XL) and
+  // names the exact sizes. Logic is pinned in getUpchargedSizes' tests.
+  const notePrices = (effectiveSizePrices && Object.keys(effectiveSizePrices).length > 0)
+    ? effectiveSizePrices
+    : (li.sizePrices && Object.keys(li.sizePrices).length > 0 ? li.sizePrices : null);
+  const upchargedSizesOnOrder = getUpchargedSizes(li.sizes, notePrices, gridSizes);
+
   // Always-fresh mirror of the `li` prop. Async paths (handleStyleBlur
   // takes ~1s for an S&S/AC API lookup) must read the LATEST `li` —
   // not the closure-captured value from when the lookup started. The
@@ -1411,9 +1433,9 @@ export default function LineItemEditor({
                 </div>
               )}
 
-              {BIG_SIZES.reduce((s, sz) => s + (parseInt(li.sizes?.[sz], 10) || 0), 0) > 0 && (
+              {upchargedSizesOnOrder.length > 0 && (
                 <div className="mt-2 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-1.5 border border-amber-100">
-                  2XL+ sizes highlighted — pricing based on average across all sizes.
+                  Heads up: {upchargedSizesOnOrder.join(", ")} {upchargedSizesOnOrder.length === 1 ? "costs" : "cost"} more — the total price already includes it.
                 </div>
               )}
             </div>
@@ -1771,18 +1793,11 @@ export default function LineItemEditor({
               partnerConfig={(partnerSheets.find((s) => s.partner === li.partner_source) || {}).config || null}
               partnerLabel={li.partner_source || null}
               onChange={onChange}
-              sizePrices={
-                // Manual-cost lines must not have session lookup data
-                // outrank the typed cost in the panel — the save path
-                // reads li.sizePrices (cleared), so the panel must
-                // match or the preview and the saved stamps diverge.
-                li.garmentCostManual
-                  ? undefined
-                  : (ssSizePriceMap[li.garmentColor]
-                    || (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices
-                    || sizePricesRef.current
-                    || undefined)
-              }
+              // Manual-cost lines must not have session lookup data outrank the
+              // typed cost in the panel — the save path reads li.sizePrices
+              // (cleared), so the panel must match or the preview and the saved
+              // stamps diverge. Resolved once above; shared with the $/ea grid row.
+              sizePrices={effectiveSizePrices}
             />
           </div>
         </div>

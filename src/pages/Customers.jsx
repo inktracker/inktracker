@@ -22,6 +22,8 @@ import ReactivateLink from "@/components/shared/ReactivateLink";
 import { notify } from "@/lib/notify";
 import { isValidEmail } from "@/lib/email";
 import { shopScope } from "@/lib/shopScope";
+import { todayInShopTz } from "@/lib/shopTimezone";
+import { buildReorderQuotePayload, newReorderQuoteId } from "@/lib/orders/reorder";
 import { hasOwnerAccess } from "@/lib/managerPermissions";
 import AddCustomerForm from "@/components/customers/AddCustomerForm";
 import CustomerCardGrid from "@/components/customers/CustomerCardGrid";
@@ -89,6 +91,11 @@ export default function Customers() {
   const [artworkNote, setArtworkNote] = useState("");
   const [artworkColorCount, setArtworkColorCount] = useState("");
   const [uploadingArtwork, setUploadingArtwork] = useState(false);
+  // Past jobs for the customer being edited — powers the "Recent Jobs"
+  // reorder list. Loaded on open (id + name buckets, deduped).
+  const [editingOrders, setEditingOrders] = useState([]);
+  const [loadingEditingOrders, setLoadingEditingOrders] = useState(false);
+  const [reorderingId, setReorderingId] = useState(null);
   const [invoiceStats, setInvoiceStats] = useState({});
   const [showMerge, setShowMerge] = useState(false);
   // Auto-detected post-QB-merge orphans. Fires once after the customer
@@ -355,6 +362,50 @@ export default function Customers() {
   }, [artworkDocs]);
 
   const currentEditingArtwork = editing ? artworkByCustomer[editing.id] || [] : [];
+
+  // Load the editing customer's past jobs for the "Recent Jobs" reorder list.
+  // id + name buckets (customer_id isn't always set on legacy orders), deduped,
+  // newest first. Ignores a stale response if the user switches customers fast.
+  useEffect(() => {
+    if (!editing?.id) { setEditingOrders([]); return; }
+    let cancelled = false;
+    setLoadingEditingOrders(true);
+    (async () => {
+      try {
+        const [oById, oByName] = await Promise.all([
+          base44.entities.Order.filter({ customer_id: editing.id }),
+          editing.name ? base44.entities.Order.filter({ customer_name: editing.name }) : Promise.resolve([]),
+        ]);
+        const uniq = [...new Map([...oById, ...oByName].map((r) => [r.id, r])).values()];
+        uniq.sort((a, b) => String(b.date || b.created_date || "").localeCompare(String(a.date || a.created_date || "")));
+        if (!cancelled) setEditingOrders(uniq);
+      } catch {
+        if (!cancelled) setEditingOrders([]);
+      } finally {
+        if (!cancelled) setLoadingEditingOrders(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editing?.id, editing?.name]);
+
+  async function handleCustomerReorder(order) {
+    if (readOnly || reorderingId) return;
+    setReorderingId(order.id);
+    try {
+      const payload = buildReorderQuotePayload(order, {
+        quoteId: newReorderQuoteId(),
+        today: todayInShopTz(),
+      });
+      const created = await base44.entities.Quote.create(payload);
+      notify.success("Reorder created", `Draft ${created.quote_id} — opening in Quotes.`);
+      setEditing(null);
+      navigate(`/Quotes?id=${encodeURIComponent(created.id)}`);
+    } catch (err) {
+      notify.error("Reorder failed", err);
+    } finally {
+      setReorderingId(null);
+    }
+  }
 
   function canDelete() {
     // Customer deletion is a destructive accounting-adjacent action — it
@@ -663,6 +714,10 @@ export default function Customers() {
           uploadingArtwork={uploadingArtwork}
           currentEditingArtwork={currentEditingArtwork}
           handleRemoveArtwork={handleRemoveArtwork}
+          recentOrders={editingOrders}
+          loadingRecentOrders={loadingEditingOrders}
+          handleReorder={handleCustomerReorder}
+          reorderingId={reorderingId}
           readOnly={readOnly}
           reactivateHref={reactivateHref}
         />

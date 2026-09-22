@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
 import { CalendarGridSkeleton } from "@/components/shared/Skeletons";
-import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
+import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle, getShopPricingConfig } from "../components/shared/pricing";
+import { computeScreenAvailability, upcomingScreenDemand } from "@/lib/screens/screenAvailability";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
 import { addDaysISO, relativeDueLabel, getOrderActionHint, selectOverdueOrders } from "@/lib/calendar/agendaHints";
@@ -254,6 +255,20 @@ export default function Production() {
     const noDue = active.filter((o) => !o.due_date);
     return [...withDue, ...noDue];
   }, [orders]);
+
+  // Screen availability — free = screens owned minus what active jobs are
+  // using. Silent unless the shop set a screen count in Account → Pricing.
+  const screenAvail = useMemo(
+    () => computeScreenAvailability({
+      orders,
+      owned: getShopPricingConfig()?.screensOwned,
+      inventory: getShopPricingConfig()?.screenInventory,
+    }),
+    [orders],
+  );
+  // Forward "potentially needed" tally from the color counts on live quotes
+  // (the upcoming pipeline not yet converted to orders).
+  const upcomingScreens = useMemo(() => upcomingScreenDemand(quotes), [quotes]);
 
   // Table view filtering
   let filteredTable = filter === "All" ? orders : orders.filter((o) => o.status === filter);
@@ -721,6 +736,38 @@ export default function Production() {
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Production</h2>
           <p className="text-slate-500 text-sm mt-0.5">View and manage orders in calendar or table view</p>
+          {screenAvail.enabled && (
+            <div
+              title={[
+                `${screenAvail.committed} screen${screenAvail.committed === 1 ? "" : "s"} tied up by active jobs · ${screenAvail.owned} owned`,
+                screenAvail.coated != null ? `${screenAvail.coated} coated (ready to burn)` : null,
+                screenAvail.byMesh.length
+                  ? "By mesh (coated/owned): " + screenAvail.byMesh.map((m) => `${m.mesh || "?"} ${m.coated}/${m.total}`).join(" · ")
+                  : null,
+              ].filter(Boolean).join("\n")}
+              className={`inline-flex items-center gap-1.5 mt-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg ${
+                screenAvail.free < 0
+                  ? "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                  : "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+              }`}
+            >
+              {screenAvail.free < 0
+                ? `Screens over-committed by ${-screenAvail.free}`
+                : `Screens: ${screenAvail.free} of ${screenAvail.owned} free`}
+              {screenAvail.coated != null && (
+                <span className="font-medium opacity-80">· {screenAvail.coated} coated</span>
+              )}
+            </div>
+          )}
+          {screenAvail.enabled && upcomingScreens > 0 && (
+            <p
+              title="Total screens the color counts on your live quotes (Sent / Pending / Approved) would need — reorders excluded. A forward estimate; screens are only committed once a job is in production."
+              className="text-[11px] text-slate-500 mt-1"
+            >
+              Upcoming quotes may need <span className="font-semibold text-slate-600 dark:text-slate-300">~{upcomingScreens}</span> screen{upcomingScreens === 1 ? "" : "s"} to burn
+              {screenAvail.coated != null && ` · ${screenAvail.coated} coated now`}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           {[
