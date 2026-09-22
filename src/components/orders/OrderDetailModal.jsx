@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { effectiveStatus } from "@/lib/orders/changeOrderStatus";
 import ReactivateLink from "../shared/ReactivateLink";
 import AttachmentGallery from "../shared/AttachmentGallery";
 import ArtworkPreviewOverlay from "../shared/ArtworkPreviewOverlay";
@@ -24,7 +25,7 @@ import { canSeeMoney, managerCanAccess } from "@/lib/managerPermissions";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import {
   countGoodsProgress,
-  autoCheckOrderGoodsTask,
+  autoCheckTask,
   bulkSetOrderGoodsStep,
   nextGoodsStatusOnTap,
   unreceivedCount,
@@ -244,14 +245,14 @@ export default function OrderDetailModal({
     const stepChecks = order.checklist?.[stage] || {};
     const counts = countGoodsProgress(order);
     return tasks.every((task) => {
-      const auto = autoCheckOrderGoodsTask(stage, task, counts);
+      const auto = autoCheckTask(stage, task, order, counts);
       return auto === null ? !!stepChecks[task] : auto;
     });
   }
 
   function maybeAutoAdvance(order) {
     if (!onAdvance) return;
-    const current = order.status || "Pre-Press";
+    const current = effectiveStatus(order);
     const idx = O_STATUSES.indexOf(current);
     if (idx < 0 || idx >= O_STATUSES.length - 1) return;
     if (!isStageComplete(order, current)) return;
@@ -261,7 +262,7 @@ export default function OrderDetailModal({
   }
 
   async function floorToggleTask(task) {
-    const step = liveOrder.status || "Pre-Press";
+    const step = effectiveStatus(liveOrder);
     const checklist = { ...(liveOrder.checklist || {}) };
     if (!checklist[step]) checklist[step] = {};
     checklist[step][task] = checklist[step][task] ? null : { by: shopName || "Admin", at: new Date().toISOString() };

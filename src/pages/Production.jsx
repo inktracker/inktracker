@@ -33,6 +33,7 @@ import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink
 import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
 import { shopScope } from "@/lib/shopScope";
 import { ensurePoDraftsForOrder } from "@/lib/orders/autoPoFromOrder";
+import { changeOrderStatus, prevStatusOf, nextStatusOf } from "@/lib/orders/changeOrderStatus";
 
 // Mirrors STATUS_COLORS in src/pages/Calendar.jsx — each step gets a
 // visually distinct hue so the production board reads as a progress
@@ -376,29 +377,28 @@ export default function Production() {
   // Auto-create draft PO(s) when an order enters "Order Goods" (1A/2A: full
   // quantity, one draft per supplier, never submitted, idempotent). Fire-and-
   // forget so it never blocks the status change; a toast confirms.
-  async function autoCreatePoOnOrderGoods(order) {
-    if (!user || !order?.id || poByOrderId[order.id]) return;
-    try {
-      const { created, warnings } = await ensurePoDraftsForOrder(order, user, {
-        existingPos: Object.values(poByOrderId),
-      });
-      if (created.length) {
-        patchPoMapWithCreated(created);
-        const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
-        notify.success(`${label} created for ${order.order_id || "this order"} — review on Purchase Orders.`);
-      } else if (warnings?.some((w) => w.unresolved?.length || w.lookupErrors?.length || w.error)) {
-        // Nothing got created but there WERE problems (AS Colour styles didn't
-        // resolve to live SKUs, or a create failed). Don't leave the order in
-        // Order Goods with no PO and no signal.
-        notify.error(
-          `Couldn't auto-build the PO for ${order.order_id || "this order"}`,
-          "Some garments didn't resolve to a live supplier SKU. Open Purchase Orders and build it via Consolidate buying or New PO.",
-        );
-      }
-    } catch (err) {
-      console.warn("[autoPO] ensurePoDraftsForOrder failed:", err);
+  // Report the auto-PO outcome after an order enters Order Goods (the create
+  // itself happens inside changeOrderStatus). Patches the PO map so the card
+  // flips to "View Pending PO" and toasts success / an unresolved-SKU warning.
+  function reportAutoPo(order, { created = [], warnings } = {}) {
+    if (created.length) {
+      patchPoMapWithCreated(created);
+      const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
+      notify.success(`${label} created for ${order.order_id || "this order"} — review on Purchase Orders.`);
+    } else if (warnings?.some((w) => w.unresolved?.length || w.lookupErrors?.length || w.error)) {
+      // Nothing got created but there WERE problems (AS Colour styles didn't
+      // resolve to live SKUs, or a create failed). Don't leave the order in
+      // Order Goods with no PO and no signal.
+      notify.error(
+        `Couldn't auto-build the PO for ${order.order_id || "this order"}`,
+        "Some garments didn't resolve to a live supplier SKU. Open Purchase Orders and build it via Consolidate buying or New PO.",
+      );
     }
   }
+  const autoPoArgs = (order) => ({
+    autoPoOptions: { existingPos: Object.values(poByOrderId) },
+    onAutoPo: (res) => { if (!poByOrderId[order.id]) reportAutoPo(order, res); },
+  });
 
   // Manual "Create PO" from an order's footer — supplier-aware (builds a draft
   // for whatever supplier(s) the order's line items actually use: S&S, AS
@@ -436,21 +436,17 @@ export default function Production() {
     }
   }
 
+  // Status moves go through changeOrderStatus — the SAME path as Orders and
+  // Shop Floor. Completed always runs the full completion flow (there is no
+  // "light" Completed from the pipeline chip anymore); entering Order Goods
+  // auto-creates draft POs; moving back clears the re-entered checklist.
   async function handleAdvance(id) {
     const order = orders.find((o) => o.id === id);
-    const idx = O_STATUSES.indexOf(order.status);
-    if (idx < 0 || idx >= O_STATUSES.length - 1) return;
-    const nextStatus = O_STATUSES[idx + 1];
-    // When advancing INTO Completed, also stamp completed_date.
-    // Calendar's green chip requires BOTH status==="Completed" AND
-    // completed_date — without the stamp the order silently
-    // disappears from the calendar.
-    const payload = { status: nextStatus };
-    if (nextStatus === "Completed" && !order.completed_date) {
-      payload.completed_date = todayInShopTz();
-    }
+    const nextStatus = nextStatusOf(order);
+    if (!nextStatus) return;
+    if (nextStatus === "Completed" && billingGate("complete orders")) return;
     try {
-      const updated = await base44.entities.Order.update(id, payload);
+      const updated = await changeOrderStatus({ order, newStatus: nextStatus, user, base44, ...autoPoArgs(order) });
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       // Modal lifecycle: keep the order modal open while the operator
       // walks through the production pipeline (Art Approval → Order
@@ -462,18 +458,17 @@ export default function Production() {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
       }
-      if (nextStatus === "Order Goods") autoCreatePoOnOrderGoods(updated);
     } catch (err) {
-      notify.error("Couldn't update the order status", err);
+      notify.error(nextStatus === "Completed" ? "Couldn't complete the order" : "Couldn't update the order status", err);
     }
   }
 
   async function handleRevert(id) {
     const order = orders.find((o) => o.id === id);
-    const idx = O_STATUSES.indexOf(order.status);
-    if (idx <= 0) return;
+    const prevStatus = prevStatusOf(order);
+    if (!prevStatus) return;
     try {
-      const updated = await base44.entities.Order.update(id, { status: O_STATUSES[idx - 1] });
+      const updated = await changeOrderStatus({ order, newStatus: prevStatus, user, base44, ...autoPoArgs(order) });
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       if (viewing?.id === id) setViewing(updated);
     } catch (err) {
@@ -658,7 +653,7 @@ export default function Production() {
             ? order
             : await runOrderCompletion({ order, user, base44 });
         } else {
-          updatedById[id] = await base44.entities.Order.update(id, { status: bulkStatus });
+          updatedById[id] = await changeOrderStatus({ order, newStatus: bulkStatus, user, base44, ...autoPoArgs(order) });
         }
       } catch (e) {
         console.error("Bulk status update failed:", e);
@@ -666,13 +661,6 @@ export default function Production() {
       }
     }
     setOrders((prev) => prev.map((o) => updatedById[o.id] || o));
-    // Same auto-PO trigger as single advance — for every order this bulk move
-    // pushed INTO Order Goods. Idempotent + fire-and-forget.
-    if (bulkStatus === "Order Goods") {
-      for (const o of Object.values(updatedById)) {
-        if (o?.status === "Order Goods") autoCreatePoOnOrderGoods(o);
-      }
-    }
     setSelectedIds(new Set());
     setBulkStatus("");
     if (failed.length > 0) {

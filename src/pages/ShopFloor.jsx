@@ -7,12 +7,12 @@ import ProductionTicket from "../components/orders/ProductionTicket";
 import { displayFullName } from "@/lib/displayName";
 import {
   countGoodsProgress,
-  autoCheckOrderGoodsTask,
+  autoCheckTask,
   bulkSetOrderGoodsStep,
   nextGoodsStatusOnTap,
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
-import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2, Printer, FileImage } from "lucide-react";
+import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Clock, CheckCircle2, AlertTriangle, Loader2, Printer, FileImage } from "lucide-react";
 import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
 import TimeClockButton from "../components/team/TimeClockButton";
@@ -21,7 +21,7 @@ import EnablePushButton from "../components/team/EnablePushButton";
 import OrderComments from "../components/orders/OrderComments";
 import MyTasksCard from "../components/team/MyTasksCard";
 import { getStageTasks } from "@/lib/productionTasks";
-import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
+import { changeOrderStatus, effectiveStatus, autoPoToast } from "@/lib/orders/changeOrderStatus";
 import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
 import { todayInShopTz } from "@/lib/shopTimezone";
 
@@ -269,8 +269,6 @@ export default function ShopFloor() {
     }
   }
   const [refreshing, setRefreshing] = useState(false);
-  const [note, setNote] = useState("");
-  const [sending, setSending] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
 
@@ -369,13 +367,13 @@ export default function ShopFloor() {
     const stepChecks = order.checklist?.[stage] || {};
     const counts = countGoodsProgress(order);
     return tasks.every((task) => {
-      const auto = autoCheckOrderGoodsTask(stage, task, counts);
+      const auto = autoCheckTask(stage, task, order, counts);
       return auto === null ? !!stepChecks[task] : auto;
     });
   }
 
   async function maybeAutoAdvance(order) {
-    const current = order.status || "Pre-Press";
+    const current = effectiveStatus(order);
     const idx = STEPS.indexOf(current);
     // Already at the terminal stage (Completed) or unknown status — bail.
     if (idx < 0 || idx >= STEPS.length - 1) return;
@@ -390,24 +388,21 @@ export default function ShopFloor() {
     await updateStatus(order, next);
   }
 
+  // ONE status path shared with Orders + Production (changeOrderStatus):
+  // Completed runs the full completion flow, entering Order Goods creates
+  // draft POs, moving back clears the re-entered stage's checklist.
   async function updateStatus(order, newStatus) {
     setUpdating(true);
     try {
-      const stepNotes = { ...(order.step_notes || {}) };
-      if (!stepNotes[newStatus]) stepNotes[newStatus] = [];
-      stepNotes[newStatus].push({
-        text: `Status changed to ${newStatus}`,
-        by: user?.full_name || user?.email || "Employee",
-        at: new Date().toISOString(),
-      });
-      const updated = await base44.entities.Order.update(order.id, {
-        status: newStatus,
-        step_notes: stepNotes,
+      const updated = await changeOrderStatus({
+        order, newStatus, user, base44,
+        onAutoPo: (res) => { const msg = autoPoToast(res, order.order_id); if (msg) notify.success(msg); },
       });
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
-      setSelected(updated);
+      if (newStatus === "Completed") setSelected(null); // operator moves to the next job
+      else setSelected(updated);
     } catch (err) {
-      notify.error("Update failed", err);
+      notify.error(newStatus === "Completed" ? "Couldn't complete the order" : "Update failed", err);
     } finally {
       setUpdating(false);
     }
@@ -415,7 +410,7 @@ export default function ShopFloor() {
 
   async function toggleTask(order, task) {
     try {
-      const step = order.status || "Pre-Press";
+      const step = effectiveStatus(order);
       const checklist = { ...(order.checklist || {}) };
       if (!checklist[step]) checklist[step] = {};
       const wasDone = !!checklist[step][task];
@@ -523,51 +518,12 @@ export default function ShopFloor() {
     return updateStatus(order, nextStatus);
   }
 
-  // Full completion flow — invoice creation, performance rows, broker
-  // PDF attachment, notification — via the shared runOrderCompletion
-  // helper. Same path Orders.jsx and Production.jsx use, so the three
-  // surfaces can't drift on what "completed" actually means.
-  async function handleComplete(order) {
-    setUpdating(true);
-    try {
-      const updated = await runOrderCompletion({
-        order,
-        user,
-        base44,
-      });
-      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
-      // Floor operators usually move on after marking complete; clear
-      // the selection so they see the next job in the queue.
-      setSelected(null);
-    } catch (err) {
-      notify.error("Couldn't complete the order", err);
-    } finally {
-      setUpdating(false);
-    }
+  // Completed goes through the same shared path (runOrderCompletion inside
+  // changeOrderStatus): invoice, performance rows, broker PDF, notification.
+  function handleComplete(order) {
+    return updateStatus(order, "Completed");
   }
 
-  async function sendNote(order) {
-    if (!note.trim()) return;
-    setSending(true);
-    try {
-      const stepNotes = { ...(order.step_notes || {}) };
-      const step = order.status || "Pre-Press";
-      if (!stepNotes[step]) stepNotes[step] = [];
-      stepNotes[step].push({
-        text: note.trim(),
-        by: user?.full_name || user?.email || "Employee",
-        at: new Date().toISOString(),
-      });
-      const updated = await base44.entities.Order.update(order.id, { step_notes: stepNotes });
-      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
-      setSelected(updated);
-      setNote("");
-    } catch (err) {
-      notify.error("Update failed", err);
-    } finally {
-      setSending(false);
-    }
-  }
 
   const getQty = (order) => (order.line_items || []).reduce((sum, li) =>
     sum + Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0), 0);
@@ -626,7 +582,7 @@ export default function ShopFloor() {
     if (!op) return false;
     return op === norm(displayFullName(user)) || op === norm(user?.full_name) || op === norm(user?.email);
   };
-  const myActive = orders.filter(o => isMine(o) && o.status !== "Completed" && o.status !== "Shipped");
+  const myActive = orders.filter(o => isMine(o) && o.status !== "Completed");
 
   // Work queues surface the most urgent job first; orders arrive from the API
   // newest-created-first, which is the wrong order for a press operator.
@@ -634,14 +590,14 @@ export default function ShopFloor() {
     String(a.scheduled_date || a.due_date || "9999").localeCompare(String(b.scheduled_date || b.due_date || "9999"));
 
   const filtered = filter === "Active"
-    ? orders.filter(o => o.status !== "Completed" && o.status !== "Shipped").sort(byDueSoonest)
+    ? orders.filter(o => o.status !== "Completed").sort(byDueSoonest)
     : filter === "Completed"
-      ? orders.filter(o => o.status === "Completed" || o.status === "Shipped")
+      ? orders.filter(o => o.status === "Completed")
       : filter === "Mine"
         ? [...myActive].sort(byDueSoonest)
         : orders;
 
-  const currentStepIdx = selected ? STEPS.indexOf(selected.status || "Pre-Press") : -1;
+  const currentStepIdx = selected ? STEPS.indexOf(effectiveStatus(selected)) : -1;
   const nextStep = currentStepIdx >= 0 && currentStepIdx < STEPS.length - 1 ? STEPS[currentStepIdx + 1] : null;
   const prevStep = currentStepIdx > 0 ? STEPS[currentStepIdx - 1] : null;
 
@@ -689,7 +645,7 @@ export default function ShopFloor() {
           <button key={f} onClick={() => { setFilter(f); setSelected(null); }}
             className={`text-sm font-semibold px-5 py-2 rounded-lg transition ${filter === f ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
             {f === "Mine" ? `My Jobs (${myActive.length})` : f}
-            {f === "Active" && ` (${orders.filter(o => o.status !== "Completed" && o.status !== "Shipped").length})`}
+            {f === "Active" && ` (${orders.filter(o => o.status !== "Completed").length})`}
           </button>
         ))}
       </div>
@@ -711,14 +667,14 @@ export default function ShopFloor() {
           {filtered.map(order => {
             const active = selected?.id === order.id;
             const overdue = isOverdue(order);
-            const colors = STEP_COLORS[order.status] || STEP_COLORS["Pre-Press"];
+            const colors = STEP_COLORS[effectiveStatus(order)];
             return (
               <button key={order.id} onClick={() => setSelected(order)}
                 className={`w-full text-left px-5 py-4 border-b border-slate-100 transition ${active ? "bg-teal-50 border-l-4 border-l-teal-600" : "hover:bg-slate-50"} ${overdue ? "bg-red-50" : ""}`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-slate-800">{(customers[order.customer_id] ? getDisplayName(customers[order.customer_id]) : order.customer_name) || "—"}</span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${colors.light}`}>
-                    {order.status || "Pre-Press"}
+                    {effectiveStatus(order)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500">
@@ -845,15 +801,15 @@ export default function ShopFloor() {
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Production Status</h3>
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border whitespace-nowrap ${STEP_COLORS[selected.status]?.light || "bg-slate-50"}`}>
-                    {selected.status || "Pre-Press"}
+                    {effectiveStatus(selected)}
                   </span>
                 </div>
                 {/* Labeled stage bar — five unlabeled color segments made the
                     operator guess which stage was which (Joe, 2026-09-22). */}
                 <div className="flex gap-1 mb-4">
                   {STEPS.map((step) => {
-                    const isCurrent = step === (selected.status || "Pre-Press");
-                    const isDone = STEPS.indexOf(step) < STEPS.indexOf(selected.status || "Pre-Press");
+                    const isCurrent = step === (effectiveStatus(selected));
+                    const isDone = STEPS.indexOf(step) < STEPS.indexOf(effectiveStatus(selected));
                     const colors = STEP_COLORS[step];
                     return (
                       <div key={step} className="flex-1 min-w-0" title={step}>
@@ -889,7 +845,7 @@ export default function ShopFloor() {
 
               {/* Checklist */}
               {(() => {
-                const step = selected.status || "Pre-Press";
+                const step = effectiveStatus(selected);
                 const tasks = getStageTasks(step);
                 if (tasks.length === 0) return null;
                 const checklist = selected.checklist || {};
@@ -898,7 +854,7 @@ export default function ShopFloor() {
                 // Order Goods auto-derives Place blank order + Receive
                 // goods from the per-size counts (pure logic in lib).
                 const counts = countGoodsProgress(selected);
-                const autoDone = (task) => autoCheckOrderGoodsTask(step, task, counts);
+                const autoDone = (task) => autoCheckTask(step, task, selected, counts);
                 const isDone = (task) => {
                   const a = autoDone(task);
                   return a === null ? !!stepChecks[task] : a;
@@ -928,16 +884,20 @@ export default function ShopFloor() {
                           task === "Place blank order" ? "ordered" :
                           task === "Receive goods"     ? "received" :
                           null;
+                        // A derived task (customer art approval) is a fact,
+                        // not a tap — the floor can't grant it.
+                        const derived = auto !== null && !bulkTarget;
                         const handleClick = bulkTarget
                           ? () => bulkOrderGoodsStep(selected, bulkTarget)
                           : () => toggleTask(selected, task);
                         return (
                           <button key={task}
-                            onClick={handleClick}
+                            onClick={derived ? undefined : handleClick}
+                            disabled={derived}
                             title={bulkTarget
                               ? `Marks every size as ${bulkTarget}. Or tap individual sizes below for partial.`
-                              : undefined}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"}`}>
+                              : derived ? "Set automatically when the customer approves the proof from their art-approval link." : undefined}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"} ${derived ? "cursor-default" : ""}`}>
                             <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
                               {done && <CheckCircle2 className="w-4 h-4 text-white" />}
                             </div>
@@ -948,6 +908,9 @@ export default function ShopFloor() {
                               )}
                               {bulkTarget && !done && (
                                 <p className="text-[10px] text-slate-500 mt-0.5">Tap to mark all sizes</p>
+                              )}
+                              {derived && !done && (
+                                <p className="text-[10px] text-amber-600 mt-0.5">Waiting on the customer — set when they approve the proof</p>
                               )}
                             </div>
                           </button>
@@ -1002,7 +965,7 @@ export default function ShopFloor() {
                   Printing:    per-imprint print tracking (print_progress).
                   Other stages: read-only quantity. */}
               {(() => {
-                const stage = selected.status || "Pre-Press";
+                const stage = effectiveStatus(selected);
                 const goodsProgress = selected.checklist?.goods_progress || {};
                 const printProgress = selected.checklist?.print_progress || {};
 
@@ -1029,7 +992,8 @@ export default function ShopFloor() {
                     <div className="space-y-3">
                       {(selected.line_items || []).map((li, idx) => {
                         const qty = Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
-                        const imprints = (li.imprints || []).filter(imp => (imp.colors || 0) > 0);
+                        // Embroidery stores a stitch-tier INDEX in colors (can be 0) — keep any imprint with a location.
+                        const imprints = (li.imprints || []).filter(imp => imp && (imp.location || (imp.colors || 0) > 0));
 
                         const lineProof = getLineProof(selected, li);
                         return (
@@ -1247,21 +1211,6 @@ export default function ShopFloor() {
                   </div>
                 );
               })()}
-
-              {/* Add note */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Add Update</h3>
-                <div className="flex gap-2">
-                  <input value={note} onChange={e => setNote(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && sendNote(selected)}
-                    placeholder="Add a note or update..."
-                    className="flex-1 text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-300" />
-                  <button onClick={() => sendNote(selected)} disabled={sending || !note.trim()}
-                    className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-3 rounded-xl transition disabled:opacity-50">
-                    <Send className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
             </div>
           )}
         </div>
