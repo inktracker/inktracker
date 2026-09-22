@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
-import { fmtDate, sortSizeEntries, O_STATUSES, getDisplayName, getShopPricingConfig } from "../components/shared/pricing";
+import { fmtDate, sortSizeEntries, O_STATUSES, getDisplayName, getShopPricingConfig, getShortfallQty } from "../components/shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import ProductionTicket from "../components/orders/ProductionTicket";
 import { displayFullName } from "@/lib/displayName";
@@ -1035,6 +1035,16 @@ export default function ShopFloor() {
                         const imprints = (li.imprints || []).filter(imp => imp && (imp.location || (imp.colors || 0) > 0));
 
                         const lineProof = getLineProof(selected, li);
+                        // Shortfall recorded at PO check-in (applyCheckInToOrder writes
+                        // li._shortfall[size] = ordered − received). The press operator
+                        // must see it here — otherwise they set up for 49 and find 46.
+                        const shortMap = li._shortfall || {};
+                        const shortQty = getShortfallQty(li);
+                        const shortOf = (size) => parseInt(shortMap[size], 10) || 0;
+                        const ShortTag = ({ size, className = "" }) => {
+                          const n = shortOf(size);
+                          return n > 0 ? <span className={`text-[10px] font-bold uppercase tracking-wide text-red-600 ${className}`}>short {n}</span> : null;
+                        };
                         return (
                           <div key={idx} className="bg-slate-50 rounded-xl p-4">
                             <div className="flex items-center justify-between mb-2">
@@ -1057,7 +1067,15 @@ export default function ShopFloor() {
                                   {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
                                 </div>
                               )}
-                              <span className="text-lg font-bold text-teal-600">{qty}</span>
+                              <span className="flex items-center gap-2">
+                                {shortQty > 0 && (
+                                  <span title="Blanks came in short at check-in — printable quantity is reduced until the shortfall is reordered."
+                                    className="text-[11px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-0.5 whitespace-nowrap">
+                                    Short {shortQty} · {qty - shortQty} printable
+                                  </span>
+                                )}
+                                <span className="text-lg font-bold text-teal-600">{qty}</span>
+                              </span>
                             </div>
 
                             {/* Imprint locations — lead with the imprint's
@@ -1127,6 +1145,7 @@ export default function ShopFloor() {
                                             : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
                                       }`}>
                                       <span>{size}: {count}</span>
+                                      <ShortTag size={size} className="mt-0.5" />
                                       {label && (
                                         <span className={`text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${
                                           status === "received" ? "text-emerald-600" : "text-amber-600"
@@ -1165,6 +1184,7 @@ export default function ShopFloor() {
                                         {size}: {count}
                                         {allDone && <span className="ml-1">✓</span>}
                                       </button>
+                                      <ShortTag size={size} className="mt-1" />
                                       {totalPrints > 1 && (
                                         <div className="flex gap-0.5 mt-1">
                                           {imprints.map((imp, ii) => (
@@ -1185,8 +1205,9 @@ export default function ShopFloor() {
                                 // ── Other stages: read-only quantity ──
                                 return (
                                   <span key={size}
-                                    className="text-sm rounded-xl px-4 py-2.5 font-bold border-2 bg-white border-slate-200 text-slate-700">
-                                    {size}: {count}
+                                    className={`text-sm rounded-xl px-4 py-2.5 font-bold border-2 bg-white text-slate-700 flex flex-col items-center ${shortOf(size) > 0 ? "border-red-200" : "border-slate-200"}`}>
+                                    <span>{size}: {count}</span>
+                                    <ShortTag size={size} className="mt-0.5" />
                                   </span>
                                 );
                               })}
