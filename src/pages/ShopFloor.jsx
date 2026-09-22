@@ -396,11 +396,18 @@ export default function ShopFloor() {
     try {
       const updated = await changeOrderStatus({
         order, newStatus, user, base44,
+        // The floor finishes PRODUCTION; invoicing stays with the office
+        // (order shows "Needs invoicing" until they click Create Invoice).
+        completionMode: "floor",
         onAutoPo: (res) => { const msg = autoPoToast(res, order.order_id); if (msg) notify.success(msg); },
       });
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
-      if (newStatus === "Completed") setSelected(null); // operator moves to the next job
-      else setSelected(updated);
+      if (newStatus === "Completed") {
+        setSelected(null); // operator moves to the next job
+        notify.success("Marked complete", "The office will create the invoice.");
+      } else {
+        setSelected(updated);
+      }
     } catch (err) {
       notify.error(newStatus === "Completed" ? "Couldn't complete the order" : "Update failed", err);
     } finally {
@@ -518,8 +525,9 @@ export default function ShopFloor() {
     return updateStatus(order, nextStatus);
   }
 
-  // Completed goes through the same shared path (runOrderCompletion inside
-  // changeOrderStatus): invoice, performance rows, broker PDF, notification.
+  // Completed from the floor = production done + "Needs invoicing" for the
+  // office (changeOrderStatus completionMode "floor"). No invoice is written
+  // here — floor staff don't have (or need) invoice access.
   function handleComplete(order) {
     return updateStatus(order, "Completed");
   }

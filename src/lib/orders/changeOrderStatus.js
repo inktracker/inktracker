@@ -10,8 +10,13 @@
 // identical side effects:
 //
 //   • "Completed"      → runOrderCompletion (completed_date, invoice link/
-//                        create, performance rows, broker file + notify).
-//                        There is no "light" Completed anymore.
+//                        create, performance rows, broker file + notify)…
+//                        EXCEPT from the Shop Floor (completionMode "floor"):
+//                        the floor stamps status + completed_date +
+//                        floor_completed_at ("production done, needs
+//                        invoicing") and the office finishes the money side
+//                        with Create Invoice, which clears the flag. Floor
+//                        staff never write invoices.
 //   • backward move    → the re-entered stage's checklist is cleared so it
 //                        can't bounce forward from stale ticks.
 //   • "Order Goods"    → ensurePoDraftsForOrder (idempotent draft PO(s) per
@@ -23,6 +28,7 @@
 import { O_STATUSES } from "@/components/shared/pricing";
 import { runOrderCompletion } from "./runOrderCompletion";
 import { ensurePoDraftsForOrder } from "./autoPoFromOrder";
+import { todayInShopTz } from "@/lib/shopTimezone";
 
 export const FIRST_STATUS = O_STATUSES[0];
 
@@ -40,6 +46,11 @@ export function nextStatusOf(order) {
 export function prevStatusOf(order) {
   const idx = O_STATUSES.indexOf(effectiveStatus(order));
   return idx > 0 ? O_STATUSES[idx - 1] : null;
+}
+
+/** Pure: the Shop Floor's completion payload — production done, money side deferred to the office. */
+export function floorCompletionPayload(today = todayInShopTz(), now = new Date().toISOString()) {
+  return { status: "Completed", completed_date: today, floor_completed_at: now };
 }
 
 /**
@@ -65,14 +76,19 @@ export function buildStatusPayload(order, newStatus) {
  * @param {(res:{created:any[], warnings?:any[]}) => void} [args.onAutoPo]
  *        called after draft POs are (or aren't) created on entering Order Goods
  * @param {object} [args.autoPoOptions]  passed through to ensurePoDraftsForOrder
+ * @param {"full"|"floor"} [args.completionMode="full"]  "floor" = stamp Completed +
+ *        floor_completed_at and leave invoicing to the office
  * @returns {Promise<object>} updated order
  */
-export async function changeOrderStatus({ order, newStatus, user, base44, onAutoPo, autoPoOptions }) {
+export async function changeOrderStatus({ order, newStatus, user, base44, onAutoPo, autoPoOptions, completionMode = "full" }) {
   if (!order?.id) throw new Error("changeOrderStatus: order required");
   if (!O_STATUSES.includes(newStatus)) throw new Error(`changeOrderStatus: unknown status "${newStatus}"`);
 
   if (newStatus === "Completed") {
     if (order.status === "Completed") return order;
+    if (completionMode === "floor") {
+      return base44.entities.Order.update(order.id, floorCompletionPayload());
+    }
     return runOrderCompletion({ order, user, base44 });
   }
 

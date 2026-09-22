@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { NeedsInvoicingFlag } from "@/components/shared/OrderFlags";
 import Badge from "../../shared/Badge";
 import { fmtDate, O_STATUSES } from "../../shared/pricing";
 import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
@@ -60,7 +61,7 @@ export default function OrderDetailHeader({
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <Badge s={order.status} />
+          <Badge s={order.status} /><NeedsInvoicingFlag order={order} className="ml-1.5" />
           {qbPushPending && (
             <span
               className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full"

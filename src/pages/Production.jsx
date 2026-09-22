@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { NeedsInvoicingFlag } from "@/components/shared/OrderFlags";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
@@ -920,7 +921,7 @@ export default function Production() {
                             </div>
                           ) : <span className="text-xs text-slate-300">—</span>}
                         </td>
-                        <td className="px-3 py-3.5"><Badge s={o.status} /></td>
+                        <td className="px-3 py-3.5"><Badge s={o.status} /><NeedsInvoicingFlag order={o} className="ml-1.5" /></td>
                         <td className="px-3 py-3.5 text-right text-teal-400 text-xs font-semibold">View →</td>
                       </tr>
                     );
@@ -948,7 +949,7 @@ export default function Production() {
                           </div>
                         )}
                       </div>
-                      <Badge s={o.status} />
+                      <Badge s={o.status} /><NeedsInvoicingFlag order={o} className="ml-1.5" />
                     </div>
                     <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
                       <span>Due: {o.due_date ? fmtDate(o.due_date) : "—"}</span>
@@ -1628,7 +1629,7 @@ export default function Production() {
                                 {!dueRel && end && <span className="ml-2">· Due {end}</span>}
                               </div>
                               <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                                <Badge s={o.status} />
+                                <Badge s={o.status} /><NeedsInvoicingFlag order={o} className="ml-1.5" />
                                 <OrderNotesIcon order={o} />
                                 {key === "overdue" && (
                                   <span className="text-[10px] font-semibold uppercase tracking-widest bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded">

@@ -135,7 +135,7 @@ export default function OrderInvoiceActions({
             title={readOnly ? roTitle : undefined}
             className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {creatingInvoice ? "Creating…" : "Create Invoice"}
+            {creatingInvoice ? "Creating…" : order.floor_completed_at ? "Create Invoice & finish" : "Create Invoice"}
           </button>
         )}
         {/* Packing slip — finished orders only. Opens the confirm-quantities

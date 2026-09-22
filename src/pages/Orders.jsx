@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { NeedsInvoicingFlag } from "@/components/shared/OrderFlags";
 import { useLocation, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
 import { cachedFilter } from "@/lib/queries/cachedEntity";
@@ -373,7 +374,7 @@ export default function Orders() {
                     </td>
                     <td className="px-3 py-3.5 text-slate-500">{o.due_date ? fmtDate(o.due_date) : "—"}</td>
                     <td className="px-3 py-3.5 font-bold text-slate-800 dark:text-slate-200">{canSeeMoney(user) ? fmtMoney(o.total || 0) : "—"}</td>
-                    <td className="px-3 py-3.5"><Badge s={o.status} /></td>
+                    <td className="px-3 py-3.5"><Badge s={o.status} /><NeedsInvoicingFlag order={o} className="ml-1.5" /></td>
                     <td className="px-3 py-3.5 text-right text-teal-400 text-xs font-semibold">View →</td>
                   </tr>
                 );
@@ -402,7 +403,7 @@ export default function Orders() {
                       </div>
                     )}
                   </div>
-                  <Badge s={o.status} />
+                  <Badge s={o.status} /><NeedsInvoicingFlag order={o} className="ml-1.5" />
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
                   <span>Due: {o.due_date ? fmtDate(o.due_date) : "—"}</span>

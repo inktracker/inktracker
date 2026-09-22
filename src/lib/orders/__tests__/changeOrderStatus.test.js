@@ -7,7 +7,7 @@ vi.mock("../autoPoFromOrder", () => ({ ensurePoDraftsForOrder: vi.fn(async () =>
 
 import { runOrderCompletion } from "../runOrderCompletion";
 import { ensurePoDraftsForOrder } from "../autoPoFromOrder";
-import { changeOrderStatus, buildStatusPayload, effectiveStatus, nextStatusOf, prevStatusOf, autoPoToast } from "../changeOrderStatus";
+import { changeOrderStatus, buildStatusPayload, effectiveStatus, nextStatusOf, prevStatusOf, autoPoToast, floorCompletionPayload } from "../changeOrderStatus";
 import { autoCheckTask, autoCheckArtApprovalTask } from "@/lib/orderGoodsProgress";
 
 const user = { email: "owner@example.com", shop_owner: "owner@example.com" };
@@ -47,6 +47,20 @@ describe("changeOrderStatus side effects", () => {
     expect(runOrderCompletion).toHaveBeenCalledWith({ order, user, base44 });
     expect(update).not.toHaveBeenCalled();
     expect(res.status).toBe("Completed");
+  });
+
+  it("FLOOR completion stamps Completed + completed_date + floor_completed_at and writes NO invoice", async () => {
+    const { base44, update } = client();
+    const order = { id: "o1", status: "Printing" };
+    const res = await changeOrderStatus({ order, newStatus: "Completed", user, base44, completionMode: "floor" });
+    expect(runOrderCompletion).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(1);
+    const [, payload] = update.mock.calls[0];
+    expect(payload.status).toBe("Completed");
+    expect(payload.completed_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(payload.floor_completed_at).toMatch(/^\d{4}-/);
+    expect(res.status).toBe("Completed");
+    expect(floorCompletionPayload("2026-09-22", "T")).toEqual({ status: "Completed", completed_date: "2026-09-22", floor_completed_at: "T" });
   });
 
   it("entering Order Goods creates draft POs from EVERY page (was missing on the floor)", async () => {
