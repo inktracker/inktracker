@@ -723,9 +723,16 @@ export default function ShopFloor() {
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500">
                   <span>{order.order_id} · {getQty(order)} pcs</span>
-                  <span className={overdue ? "text-red-500 font-semibold" : ""}>
-                    {overdue && "LATE · "}Due {fmtDate(order.due_date)}
-                  </span>
+                  {/* A job with no due date must not read as "Due —" on the
+                      floor — that looks like a date the operator can ignore.
+                      Amber "No due date" says a decision is missing. */}
+                  {order.due_date ? (
+                    <span className={overdue ? "text-red-500 font-semibold" : ""}>
+                      {overdue && "LATE · "}Due {fmtDate(order.due_date)}
+                    </span>
+                  ) : (
+                    <span className="text-amber-600 font-semibold">No due date</span>
+                  )}
                 </div>
               </button>
             );
@@ -762,7 +769,11 @@ export default function ShopFloor() {
                   )}
                 </div>
                 <div className="flex items-center gap-4 text-sm text-slate-500">
-                  {selected.due_date && <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> Due {fmtDate(selected.due_date)}</span>}
+                  {selected.due_date ? (
+                    <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> Due {fmtDate(selected.due_date)}</span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-amber-700 font-semibold bg-amber-50 border border-amber-200 rounded-lg px-2 py-0.5 text-xs"><Clock className="w-3.5 h-3.5" /> No due date set</span>
+                  )}
                   {normalizeAssignedPress(selected.assigned_press) && <span>Press: {normalizeAssignedPress(selected.assigned_press)}</span>}
                   {selected.assigned_operator && <span>Operator: {selected.assigned_operator}</span>}
                   <button
@@ -837,14 +848,20 @@ export default function ShopFloor() {
                     {selected.status || "Pre-Press"}
                   </span>
                 </div>
+                {/* Labeled stage bar — five unlabeled color segments made the
+                    operator guess which stage was which (Joe, 2026-09-22). */}
                 <div className="flex gap-1 mb-4">
                   {STEPS.map((step) => {
                     const isCurrent = step === (selected.status || "Pre-Press");
                     const isDone = STEPS.indexOf(step) < STEPS.indexOf(selected.status || "Pre-Press");
                     const colors = STEP_COLORS[step];
                     return (
-                      <div key={step} className={`flex-1 h-2 rounded-full transition ${isCurrent ? colors.bg : isDone ? colors.bg + " opacity-40" : "bg-slate-200"}`}
-                        title={step} />
+                      <div key={step} className="flex-1 min-w-0" title={step}>
+                        <div className={`h-2 rounded-full transition ${isCurrent ? colors.bg : isDone ? colors.bg + " opacity-40" : "bg-slate-200"}`} />
+                        <div className={`mt-1 text-[10px] leading-tight text-center truncate ${isCurrent ? "font-bold text-slate-800" : isDone ? "text-slate-500" : "text-slate-400"}`}>
+                          {step}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
