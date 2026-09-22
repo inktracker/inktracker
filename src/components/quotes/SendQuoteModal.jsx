@@ -835,6 +835,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
            <QuoteSentConfirmation
              recipients={recipientEmails}
              quoteId={quote.quote_id}
+             paymentLinkIncluded={!!qbPaymentLink}
              onClose={onClose}
            />
          ) : (
