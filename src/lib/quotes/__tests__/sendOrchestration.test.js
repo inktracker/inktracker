@@ -18,7 +18,9 @@ describe("extractProofImageUrls", () => {
   const Q = { id: "qid-1", public_token: "tok-1" };
   const proxy = (path) =>
     `${SUPA}/functions/v1/artworkProof?type=quote&id=${encodeURIComponent(Q.id)}` +
-    `&token=${encodeURIComponent(Q.public_token)}&path=${encodeURIComponent(path)}`;
+    // w=1024: email bodies render ~600px wide — the proxy serves a 1024px
+    // transform instead of the print-res original (top egress driver).
+    `&token=${encodeURIComponent(Q.public_token)}&path=${encodeURIComponent(path)}&w=1024`;
   beforeEach(() => vi.stubEnv("VITE_SUPABASE_URL", SUPA));
   afterEach(() => vi.unstubAllEnvs());
 
@@ -525,7 +527,9 @@ describe("extractProofImageUrls — edge cases", () => {
   const Q = { id: "qid-1", public_token: "tok-1" };
   const proxy = (path) =>
     `${SUPA}/functions/v1/artworkProof?type=quote&id=${encodeURIComponent(Q.id)}` +
-    `&token=${encodeURIComponent(Q.public_token)}&path=${encodeURIComponent(path)}`;
+    // w=1024: email bodies render ~600px wide — the proxy serves a 1024px
+    // transform instead of the print-res original (top egress driver).
+    `&token=${encodeURIComponent(Q.public_token)}&path=${encodeURIComponent(path)}&w=1024`;
   beforeEach(() => vi.stubEnv("VITE_SUPABASE_URL", SUPA));
   afterEach(() => vi.unstubAllEnvs());
 

@@ -11,9 +11,10 @@ import { resolveArtworkPath } from "@/lib/artworkPath";
 // still public).
 // `width` (optional) requests a server-side thumbnail from the proxy
 // (Supabase Image Transformations, PRO). Must be one of the proxy's
-// whitelisted widths (320 / 640 / 1024) — anything else is ignored
-// server-side and the original is served. Use for grid/thumb contexts
-// only; enlarge/download surfaces omit it so the customer approves the
+// whitelisted widths (320 / 640 / 1024 / 1600 / 2048) — anything else is
+// ignored server-side and the original is served. Use for grid/thumb/inline
+// contexts (2048 = retina srcset variant for the approval page; 1024 = email
+// bodies); enlarge/download surfaces omit it so the customer approves the
 // full-quality original.
 export function artworkProxyUrl({ type, id, token, pathOrUrl, width }) {
   // MUST be the bare `import.meta.env.X` form — optional chaining

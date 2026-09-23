@@ -63,10 +63,14 @@ function ProofThumb({ art, onOpen }) {
       ) : (
         <img
           src={art._thumbSrc || art._src}
+          srcSet={art._thumbSrc && art._thumbSrc2x
+            ? `${art._thumbSrc} 1x, ${art._thumbSrc2x} 2x`
+            : undefined}
           onError={(e) => {
             // Thumbnail transform failed (unsupported format, transform
             // hiccup) → retry the untransformed original before giving up.
             if (art._thumbSrc && art._src && e.currentTarget.src !== art._src) {
+              e.currentTarget.removeAttribute("srcset");
               e.currentTarget.src = art._src;
               return;
             }
@@ -581,11 +585,14 @@ export default function QuotePayment() {
             .map((a) => {
               const fallback = a.url || a.file_url;
               const src = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback }) || fallback;
-              // Grid tiles get a 640px server-side thumbnail (PRO image
-              // transforms) — the enlarge lightbox keeps the original so
-              // what the customer approves is full quality.
+              // Grid tiles: 640px thumbnail for 1x screens + a 1024px srcset
+              // variant for retina (PRO image transforms) — crisp tiles where
+              // the hardware can show it, same data for everyone else. The
+              // enlarge lightbox keeps the original so what the customer
+              // approves is full quality.
               const thumb = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback, width: 640 });
-              return { ...a, _src: src, _thumbSrc: thumb || src };
+              const thumb2x = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback, width: 1024 });
+              return { ...a, _src: src, _thumbSrc: thumb || src, _thumbSrc2x: thumb2x || null };
             });
           if (proofs.length === 0) return null;
           return (

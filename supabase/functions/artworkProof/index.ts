@@ -45,7 +45,12 @@ const REDIRECT_CACHE_SECS = 60 * 60;   // 1h browser cache on the 302
 // only to raster formats the transformer supports — PDFs, SVGs, and
 // anything else pass through untransformed. Enlarge/download surfaces
 // simply omit `w` and get the original, so approval quality is unchanged.
-const THUMB_WIDTHS = new Set([320, 640, 1024]);
+// 1600/2048 added 2026-09-23: the approval page serves srcset 1024/2048 so
+// retina screens get a genuinely crisp proof while 1x screens keep paying
+// 1024 prices; quote emails pin w=1024 instead of shipping print-res
+// originals into ~600px-wide email clients. Still a closed set — each width
+// is a distinct transform + CDN cache entry, so unbounded values stay banned.
+const THUMB_WIDTHS = new Set([320, 640, 1024, 1600, 2048]);
 const RASTER_RE = /\.(jpe?g|png|gif|webp)$/i;
 
 const CORS = {

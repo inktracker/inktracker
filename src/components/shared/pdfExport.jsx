@@ -143,8 +143,22 @@ async function appendArtworkPages(doc, record) {
           const c = document.createElement('canvas');
           c.width = Math.max(1, Math.round(i.width * capScale));
           c.height = Math.max(1, Math.round(i.height * capScale));
-          c.getContext('2d').drawImage(i, 0, 0, c.width, c.height);
-          resolve({ dataUrl: c.toDataURL('image/png'), w: i.width, h: i.height });
+          const ctx = c.getContext('2d');
+          // Flatten on white so a JPEG encode is honest — the PDF page is
+          // white, so transparent art composites identically either way.
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(i, 0, 0, c.width, c.height);
+          // Smallest-wins encoding: photographic/complex proofs are 5-10×
+          // smaller as JPEG q0.9; flat spot-color art often compresses
+          // better as PNG. Paying PNG prices for everything is what forced
+          // the old 2000px cap — picking the smaller encode is what pays
+          // for the higher cap (more detail AND usually a smaller PDF; the
+          // 546-OOM guard this cap exists for stays intact).
+          const png = c.toDataURL('image/png');
+          const jpg = c.toDataURL('image/jpeg', 0.9);
+          const useJpg = jpg.length < png.length;
+          resolve({ dataUrl: useJpg ? jpg : png, fmt: useJpg ? 'JPEG' : 'PNG', w: i.width, h: i.height });
         };
         i.onerror = reject;
         i.src = src;
@@ -169,7 +183,7 @@ async function appendArtworkPages(doc, record) {
     const drawH = img.h * scale;
     const drawX = m + (cw - drawW) / 2;
     const drawY = m + 24;
-    doc.addImage(img.dataUrl, 'PNG', drawX, drawY, drawW, drawH);
+    doc.addImage(img.dataUrl, img.fmt || 'PNG', drawX, drawY, drawW, drawH);
   }
 }
 
@@ -250,7 +264,7 @@ function loadImage(src) {
 // to addImage. Returns a canvas (jsPDF accepts one directly) or the original
 // image when it's already within bounds or the canvas is tainted/unusable.
 const MAX_PDF_LOGO_PX = 512;      // logos draw at 14mm — 512px is 3x-retina headroom
-const MAX_PDF_ARTWORK_PX = 2000;  // artwork pages are proofs — keep more detail
+const MAX_PDF_ARTWORK_PX = 2600;  // artwork pages are proofs — smallest-wins JPEG/PNG encoding (appendArtworkPages) pays for the extra detail
 
 function capImagePixels(img, maxDim) {
   const w = img.naturalWidth || img.width;
