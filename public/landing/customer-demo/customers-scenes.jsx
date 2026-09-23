@@ -93,7 +93,7 @@ function CMSidebar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '20px 20px 18px' }}>
         <CMLogo size={36} />
         <div>
-          <div style={{ fontFamily: CMF, fontSize: 16, fontWeight: 800, color: CM.text1, letterSpacing: '-0.015em' }}>Northwind Print</div>
+          <div style={{ fontFamily: CMF, fontSize: 16, fontWeight: 800, color: CM.text1, letterSpacing: '-0.015em' }}>Summit Screen Printing</div>
           <div style={{ fontFamily: CMF, fontSize: 11.5, color: CM.text3, marginTop: 1 }}>Shop Manager</div>
         </div>
       </div>
@@ -215,9 +215,9 @@ function SceneCMHook() {
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
         <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: CM.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Every customer.</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>One source of truth.</div>
-      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: CMF, fontSize: 20, color: CM.darkText2, marginTop: 36, textAlign: 'center' }}>Contacts, history, artwork — all in one place.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: CM.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Every customer,</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>every job they've run.</div>
+      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: CMF, fontSize: 20, color: CM.darkText2, marginTop: 36, textAlign: 'center' }}>Contacts, order history, and saved artwork.</div>
     </div>
   );
 }
@@ -264,7 +264,7 @@ function SceneCMGrid() {
           );
         })}
       </div>
-      <CMCaption text="All your customers — invoices, totals, tax status at a glance." time={localTime} duration={duration} delay={0.6} />
+      <CMCaption text="Every customer, with their invoices and tax status." time={localTime} duration={duration} delay={0.6} />
     </CMApp>
   );
 }
@@ -376,7 +376,7 @@ function SceneCMAdd() {
         }}>Add Customer</button>
       </div>
 
-      <CMCaption text="Add new customers in seconds — full record from day one." time={localTime} duration={duration} delay={0.6} />
+      <CMCaption text="New customers start with a full record." time={localTime} duration={duration} delay={0.6} />
     </CMApp>
   );
 }
@@ -559,7 +559,7 @@ function SceneCMEdit() {
         </div>
       </div>
 
-      <CMCaption text="Saved imprints and artwork — ready for the next quote." time={localTime} duration={duration} delay={0.6} />
+      <CMCaption text="Saved imprints and artwork carry to the next job." time={localTime} duration={duration} delay={0.6} />
     </CMApp>
   );
 }

@@ -49,13 +49,13 @@ const DEMO_INVENTORY = [
   // ── Blanks ──
   { category: 'Blanks',   swatch: '#F4F4F5', sku: 'BELLA-3001', name: 'Bella+Canvas 3001 Unisex Tee',  variant: 'White · L',              stock: 14, par: 36, vendor: 'S&S',       unit: '$3.18',  status: 'low' },
   { category: 'Blanks',   swatch: '#374151', sku: 'CHAMP-S700', name: 'Champion S700 Pullover Hoodie', variant: 'Athletic Gray · L',      stock: 38, par: 18, vendor: 'S&S',       unit: '$11.42', status: 'ok'  },
-  { category: 'Blanks',   swatch: '#0F172A', sku: 'ASC-5050',   name: 'AS Colour 5050 Heavy Hood',     variant: 'Black · M',              stock: 0,  par: 18, vendor: 'AS Colour', unit: '$22.50', status: 'out' },
+  { category: 'Blanks',   swatch: '#0F172A', sku: 'G18500',     name: 'Gildan 18500 Heavy Hood',     variant: 'Navy · M',               stock: 0,  par: 18, vendor: 'S&S', unit: '$11.40', status: 'out' },
   // ── Inks ──
-  { category: 'Inks',     swatch: '#FFFFFF', sku: 'INK-PL-WHT', name: 'Plastisol — Bright White',      variant: 'Wilflex Genesis · gallon',    stock: 3, par: 4, vendor: 'Ryonet', unit: '$48.00', status: 'ok'  },
-  { category: 'Inks',     swatch: '#0F172A', sku: 'INK-PL-BLK', name: 'Plastisol — Soft Hand Black',   variant: 'Wilflex Equinox · gallon',    stock: 1, par: 4, vendor: 'Ryonet', unit: '$52.00', status: 'low' },
+  { category: 'Inks',     swatch: '#FFFFFF', sku: 'INK-PL-WHT', name: 'Bright White Plastisol',      variant: 'Wilflex Genesis · gallon',    stock: 3, par: 4, vendor: 'Ryonet', unit: '$48.00', status: 'ok'  },
+  { category: 'Inks',     swatch: '#0F172A', sku: 'INK-PL-BLK', name: 'Soft Hand Black Plastisol',   variant: 'Wilflex Equinox · gallon',    stock: 1, par: 4, vendor: 'Ryonet', unit: '$52.00', status: 'low' },
   // ── Supplies ──
-  { category: 'Supplies', swatch: null, icon: 'screen', sku: 'SCRN-156', name: 'Screen — 156 mesh aluminum',    variant: '23 × 31 · pre-stretched', stock: 18, par: 12, vendor: 'Ryonet', unit: '$24.00', status: 'ok'  },
-  { category: 'Supplies', swatch: null, icon: 'jar',    sku: 'EMUL-DPX', name: 'Emulsion — photopolymer',       variant: 'DirectPro X · quart',     stock: 0,  par: 2,  vendor: 'Saati',  unit: '$36.00', status: 'out' },
+  { category: 'Supplies', swatch: null, icon: 'screen', sku: 'SCRN-156', name: 'Aluminum Screen, 156 Mesh',    variant: '23 × 31 · pre-stretched', stock: 18, par: 12, vendor: 'Ryonet', unit: '$24.00', status: 'ok'  },
+  { category: 'Supplies', swatch: null, icon: 'jar',    sku: 'EMUL-DPX', name: 'Photopolymer Emulsion',       variant: 'DirectPro X · quart',     stock: 0,  par: 2,  vendor: 'Saati',  unit: '$36.00', status: 'out' },
 ];
 
 // Per-category totals shown in the filter strip
@@ -108,7 +108,7 @@ function INSidebar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '20px 20px 18px' }}>
         <INLogo size={36} />
         <div>
-          <div style={{ fontFamily: INF, fontSize: 16, fontWeight: 800, color: IN.text1, letterSpacing: '-0.015em' }}>Northwind Print</div>
+          <div style={{ fontFamily: INF, fontSize: 16, fontWeight: 800, color: IN.text1, letterSpacing: '-0.015em' }}>Summit Screen Printing</div>
           <div style={{ fontFamily: INF, fontSize: 11.5, color: IN.text3, marginTop: 1 }}>Shop Manager</div>
         </div>
       </div>
@@ -331,8 +331,8 @@ function SceneINHook() {
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
         <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: IN.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Never run out.</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Restock in seconds.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: IN.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Know your shelf.</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Restock before you're out.</div>
       <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: INF, fontSize: 20, color: IN.darkText2, marginTop: 36, textAlign: 'center' }}>Blanks, inks, supplies — live pricing and Shopify sync built in.</div>
     </div>
   );
@@ -418,7 +418,7 @@ function SceneINGrid() {
         })}
       </div>
 
-      <INCaption text="Blanks, inks, supplies — every SKU you stock, in one view." time={localTime} duration={duration} delay={0.7} />
+      <INCaption text="Blanks, inks, and supplies, counted against par." time={localTime} duration={duration} delay={0.7} />
     </INApp>
   );
 }
@@ -442,7 +442,7 @@ function StatCard({ label, value, trend, color, alert }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // SCENE 3 — RESTOCK MODAL (9–15s)
 // ═══════════════════════════════════════════════════════════════════════════
-// Restock the out-of-stock AS Colour 5050 hoodie (Black).
+// Restock the out-of-stock Gildan 18500 hoodie (Navy) from S&S.
 // Animate: modal in (0–0.5s), size qty fields fill (0.7–2.2s),
 // running total counts up (1.2–2.6s), Place Order button (3.4s+).
 function SceneINRestock() {
@@ -464,7 +464,7 @@ function SceneINRestock() {
     const k = inclamp((t - s.start) / 0.25, 0, 1);
     return acc + s.qty * k;
   }, 0);
-  const subtotal = totalQty * 22.50; // unit price from inventory data
+  const subtotal = totalQty * 11.40; // unit price from inventory data
   const shipping = totalQty > 0 ? 14.00 : 0;
   const total = subtotal + shipping;
 
@@ -494,10 +494,10 @@ function SceneINRestock() {
         <div style={{ padding: '22px 32px', borderBottom: `1px solid ${IN.border}`, display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{ width: 46, height: 46, borderRadius: 0, background: '#0F172A' }} />
           <div>
-            <div style={{ fontFamily: INF, fontSize: 20, fontWeight: 800, color: IN.text1, letterSpacing: '-0.02em' }}>AS Colour 5050 — Black</div>
-            <div style={{ fontFamily: INM, fontSize: 12, color: IN.text3, marginTop: 2 }}>ASC-5050 · Heavy Hood · live price from AS Colour API</div>
+            <div style={{ fontFamily: INF, fontSize: 20, fontWeight: 800, color: IN.text1, letterSpacing: '-0.02em' }}>Gildan 18500 Heavy Hood</div>
+            <div style={{ fontFamily: INM, fontSize: 12, color: IN.text3, marginTop: 2 }}>G18500 · Navy · live price from S&S</div>
           </div>
-          <div style={{ marginLeft: 'auto' }}><VendorChip vendor="AS Colour" /></div>
+          <div style={{ marginLeft: 'auto' }}><VendorChip vendor="S&S" /></div>
         </div>
 
         {/* Size matrix */}
@@ -528,8 +528,8 @@ function SceneINRestock() {
         {/* Live pricing */}
         <div style={{ padding: '14px 32px 4px', display: 'flex', justifyContent: 'flex-end' }}>
           <div style={{ width: 320, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <Row label={`${Math.round(totalQty)} units × $22.50`} value={fmt(subtotal)} />
-            <Row label="Ground shipping (S&S consolidation)" value={fmt(shipping)} />
+            <Row label={`${Math.round(totalQty)} units × $11.40`} value={fmt(subtotal)} />
+            <Row label="S&S ground shipping" value={fmt(shipping)} />
             <div style={{ display: 'flex', alignItems: 'center', borderTop: `1px solid ${IN.border}`, paddingTop: 10, marginTop: 4 }}>
               <div style={{ fontFamily: INF, fontSize: 14, color: IN.text1, fontWeight: 700, letterSpacing: '0.02em' }}>Total</div>
               <div style={{ marginLeft: 'auto', fontFamily: INF, fontSize: 24, color: IN.accent, fontWeight: 800, letterSpacing: '-0.02em' }}>{fmt(total)}</div>
@@ -544,7 +544,7 @@ function SceneINRestock() {
             {placed && (
               <div style={{ opacity: placedT, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IN.greenSoft, color: IN.green, border: `1px solid ${IN.greenBorder}`, borderRadius: 0, fontFamily: INF, fontSize: 13, fontWeight: 700 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={IN.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>
-                PO #AS-2026-0182
+                PO #SS-2026-0182
               </div>
             )}
             <button style={{
@@ -561,13 +561,13 @@ function SceneINRestock() {
               {placing && (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" style={{ transform: `rotate(${t * 720}deg)` }}><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
               )}
-              {placed ? 'Order placed ✓' : (placing ? 'Placing…' : 'Place AS Colour order')}
+              {placed ? 'Order placed ✓' : (placing ? 'Placing…' : 'Place S&S order')}
             </button>
           </div>
         </div>
       </div>
 
-      <INCaption text="Live pricing. Vendor APIs. One-click PO." time={localTime} duration={duration} delay={0.6} />
+      <INCaption text="Restock straight from the vendor at today's price." time={localTime} duration={duration} delay={0.6} />
     </INApp>
   );
 }
@@ -588,7 +588,7 @@ function fmt(n) {
 // ═══════════════════════════════════════════════════════════════════════════
 // SCENE 4 — STOCK UPDATED (15–20s)
 // ═══════════════════════════════════════════════════════════════════════════
-// Show the inventory list again — the AS Colour 5050 row is now "On order"
+// Show the inventory list again — the Gildan 18500 row is now "On order"
 // with a fresh badge, count animates from 0 to 40, status flips out→ok.
 function SceneINUpdated() {
   const { localTime, duration } = useSprite();
@@ -695,7 +695,7 @@ function SceneINUpdated() {
         </div>
       </div>
 
-      <INCaption text="Stock updates everywhere it matters — instantly." time={localTime} duration={duration} delay={2.0} />
+      <INCaption text="The PO lands back in your stock counts." time={localTime} duration={duration} delay={2.0} />
     </INApp>
   );
 }
@@ -713,7 +713,7 @@ function SceneINLockup() {
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: INF, fontSize: 26, color: IN.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>Inventory you can trust.</div>
+      <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: INF, fontSize: 26, color: IN.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>Counted, priced, and on order when it runs low.</div>
     </div>
   );
 }

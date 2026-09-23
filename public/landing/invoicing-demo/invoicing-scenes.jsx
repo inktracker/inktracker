@@ -95,7 +95,7 @@ function IVSidebar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '20px 20px 18px' }}>
         <IVLogo size={36} />
         <div>
-          <div style={{ fontFamily: IVF, fontSize: 16, fontWeight: 800, color: IV.text1, letterSpacing: '-0.015em' }}>Northwind Print</div>
+          <div style={{ fontFamily: IVF, fontSize: 16, fontWeight: 800, color: IV.text1, letterSpacing: '-0.015em' }}>Summit Screen Printing</div>
           <div style={{ fontFamily: IVF, fontSize: 11.5, color: IV.text3, marginTop: 1 }}>Shop Manager</div>
         </div>
       </div>
@@ -218,9 +218,9 @@ function SceneIVHook() {
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
         <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: IV.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Send. Track.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: IV.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Invoice the job.</div>
       <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Get paid.</div>
-      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: IVF, fontSize: 20, color: IV.darkText2, marginTop: 36, textAlign: 'center' }}>Invoices, QuickBooks sync, and one-click payment links.</div>
+      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: IVF, fontSize: 20, color: IV.darkText2, marginTop: 36, textAlign: 'center' }}>Invoices synced to QuickBooks, payment link included.</div>
     </div>
   );
 }
@@ -279,7 +279,7 @@ function SceneIVList() {
         })}
       </div>
 
-      <IVCaption text="Every invoice — issued, paid, and overdue — at a glance." time={localTime} duration={duration} delay={0.7} />
+      <IVCaption text="Issued, paid, and overdue, on one screen." time={localTime} duration={duration} delay={0.7} />
     </IVApp>
   );
 }
@@ -364,9 +364,9 @@ function SceneIVSend() {
             <div style={{ fontFamily: IVF, fontSize: 11.5, fontWeight: 700, color: IV.text3, letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'right' }}>Total</div>
           </div>
           {[
-            { item: "Bella 3001 — 2-color screen print",  qty: 84,  unit: '$13.50', total: '$1,134.00' },
-            { item: "Champion S700 hoodie — embroidery", qty: 24,  unit: '$22.00', total: '$528.00' },
-            { item: "Setup fee — 2 screens",              qty: 1,   unit: '$45.00', total: '$45.00' },
+            { item: "Bella 3001, 2-color front print",  qty: 84,  unit: '$13.50', total: '$1,134.00' },
+            { item: "Champion S700, left-chest embroidery", qty: 24,  unit: '$22.00', total: '$528.00' },
+            { item: "Setup fee · 2 screens",              qty: 1,   unit: '$45.00', total: '$45.00' },
           ].map((row, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 110px 120px', gap: 16, padding: '12px 4px', borderBottom: `1px solid ${IV.border}` }}>
               <div style={{ fontFamily: IVF, fontSize: 14, color: IV.text1, fontWeight: 600 }}>{row.item}</div>
@@ -448,7 +448,7 @@ function SceneIVSend() {
         </div>
       </div>
 
-      <IVCaption text="One-click QuickBooks payment link. Sent in seconds." time={localTime} duration={duration} delay={0.6} />
+      <IVCaption text="Send a QuickBooks payment link from the invoice." time={localTime} duration={duration} delay={0.6} />
     </IVApp>
   );
 }
@@ -546,7 +546,7 @@ function SceneIVReceived() {
         </div>
       </div>
 
-      <IVCaption text="Customer pays. Numbers update. QuickBooks reconciled." time={localTime} duration={duration} delay={2.2} />
+      <IVCaption text="They pay, and QuickBooks stays matched." time={localTime} duration={duration} delay={2.2} />
     </IVApp>
   );
 }
@@ -564,7 +564,7 @@ function SceneIVLockup() {
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: IVF, fontSize: 26, color: IV.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>Invoicing built into the workflow.</div>
+      <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: IVF, fontSize: 26, color: IV.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>Billed straight from the order.</div>
     </div>
   );
 }

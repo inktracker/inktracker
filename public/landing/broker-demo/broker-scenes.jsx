@@ -44,7 +44,7 @@ function BRLogo({ size = 32 }) {
 
 // ─── Demo: shops the broker reps + their recent activity ───────────────────
 const BROKER_SHOPS = [
-  { name: 'Northwind Print', initials: 'NP', color: '#FEF3C7', mtd: '$3,420', open: 4  },
+  { name: 'Summit Screen Printing', initials: 'NP', color: '#FEF3C7', mtd: '$3,420', open: 4  },
   { name: 'Summit Threads',  initials: 'ST', color: '#DBEAFE', mtd: '$1,860', open: 2  },
   { name: 'Pinegrove Apparel', initials: 'PA', color: '#E9D5FF', mtd: '$5,210', open: 7 },
 ];
@@ -52,10 +52,10 @@ const BROKER_SHOPS = [
 // Recent quotes the broker has submitted (shown on broker dashboard)
 const BROKER_QUOTES = [
   { id: 'Q-2026-187', shop: 'Pinegrove Apparel', initials: 'PA', color: '#E9D5FF', client: 'Greenbriar Athletics',    amount: '$3,210.00', status: 'sent',    days: '2d ago' },
-  { id: 'Q-2026-184', shop: 'Northwind Print',   initials: 'NP', color: '#FEF3C7', client: 'Bayside Coffee Roasters', amount: '$1,460.00', status: 'paid',    days: '3d ago' },
+  { id: 'Q-2026-184', shop: 'Summit Screen Printing',   initials: 'NP', color: '#FEF3C7', client: 'Bayside Coffee Roasters', amount: '$1,460.00', status: 'paid',    days: '3d ago' },
   { id: 'Q-2026-182', shop: 'Summit Threads',    initials: 'ST', color: '#DBEAFE', client: 'Cypress Ridge HS',        amount: '$4,080.50', status: 'open',    days: '5d ago' },
   { id: 'Q-2026-180', shop: 'Pinegrove Apparel', initials: 'PA', color: '#E9D5FF', client: 'Driftwood Theatre Co.',   amount: '$780.00',   status: 'paid',    days: '1w ago' },
-  { id: 'Q-2026-176', shop: 'Northwind Print',   initials: 'NP', color: '#FEF3C7', client: 'Foxtail Brewing',         amount: '$920.00',   status: 'sent',    days: '1w ago' },
+  { id: 'Q-2026-176', shop: 'Summit Screen Printing',   initials: 'NP', color: '#FEF3C7', client: 'Foxtail Brewing',         amount: '$920.00',   status: 'sent',    days: '1w ago' },
 ];
 
 // Broker nav (Clients / Quotes / Orders / Commissions / Messages)
@@ -344,7 +344,7 @@ function SceneBRDashboard() {
         </div>
       </div>
 
-      <BRCaption text="Brokers see their shops, their quotes, their commissions — all in one portal." time={localTime} duration={duration} delay={1.8} />
+      <BRCaption text="Your resellers get their own portal." time={localTime} duration={duration} delay={1.8} />
     </BrokerApp>
   );
 }
@@ -458,7 +458,7 @@ function SceneBRSubmit() {
 
         {/* Customer / Date strip */}
         <div style={{ padding: '14px 28px 0', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
-          <SmallField label="Customer" value="Greenbriar Athletics — diego@greenbriar.example" />
+          <SmallField label="Customer" value="Greenbriar Athletics · diego@greenbriar.example" />
           <SmallField label="Date"     value="May 13, 2026" />
           <SmallField label="In-Hands" value="May 27, 2026" />
         </div>
@@ -685,7 +685,7 @@ function SceneBRSubmit() {
         </div>
       </div>
 
-      <BRCaption text="Live vendor pricing. Broker price next to shop price. Profit in real time." time={localTime} duration={duration} delay={3.6} />
+      <BRCaption text="They quote with your pricing and their markup." time={localTime} duration={duration} delay={3.6} />
     </BrokerApp>
   );
 }
@@ -866,7 +866,7 @@ function SceneBRShop() {
         </div>
       </div>
 
-      <BRCaption text="Shows up in the shop's queue with the broker tagged. Commission auto-tracked." time={localTime} duration={duration} delay={1.6} />
+      <BRCaption text="Their orders land in your queue with the commission tracked." time={localTime} duration={duration} delay={1.6} />
     </ShopApp>
   );
 }
@@ -884,7 +884,7 @@ function SceneBRLockup() {
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: BRF, fontSize: 26, color: BR.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>Brokers built in. Commissions tracked.</div>
+      <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: BRF, fontSize: 26, color: BR.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>Reseller quoting and commissions, built in.</div>
     </div>
   );
 }
