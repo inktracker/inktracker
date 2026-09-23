@@ -57,7 +57,7 @@ Dashboard, Quotes, Production, Orders, Customers, Inventory, Invoices, Expenses,
 | `createQuoteFromPayload` | Create quote from wizard submission |
 | `_shared/ascolour.ts` | Shared AS Colour auth helpers |
 
-Most edge functions have `verify_jwt = false` in `supabase/config.toml` (auth handled internally); `profileSecrets` and `redditScan` keep the default `verify_jwt = true`.
+All edge functions have `verify_jwt = false` in `supabase/config.toml` (auth handled internally).
 
 ## Multi-Tenancy
 

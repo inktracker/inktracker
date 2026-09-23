@@ -121,10 +121,11 @@ verify_jwt = false
 verify_jwt = false
 
 # Declared explicitly so the JWT posture is reviewed, not inherited silently.
-# Both currently run with the default verify_jwt = true: profileSecrets is
-# called with a user JWT; redditScan is cron-invoked with the service role.
+# Both handle auth internally like every other function: profileSecrets
+# validates the caller's user JWT itself (401s without one); redditScan gates
+# on CRON_SECRET/REDDIT_SCAN_CRON_TOKEN via timingSafeEqual.
 [functions.profileSecrets]
-verify_jwt = true
+verify_jwt = false
 
 [functions.redditScan]
-verify_jwt = true
+verify_jwt = false
