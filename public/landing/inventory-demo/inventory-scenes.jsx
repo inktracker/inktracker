@@ -54,8 +54,8 @@ const DEMO_INVENTORY = [
   { category: 'Inks',     swatch: '#FFFFFF', sku: 'INK-PL-WHT', name: 'Bright White Plastisol',      variant: 'Wilflex Genesis · gallon',    stock: 3, par: 4, vendor: 'Ryonet', unit: '$48.00', status: 'ok'  },
   { category: 'Inks',     swatch: '#0F172A', sku: 'INK-PL-BLK', name: 'Soft Hand Black Plastisol',   variant: 'Wilflex Equinox · gallon',    stock: 1, par: 4, vendor: 'Ryonet', unit: '$52.00', status: 'low' },
   // ── Supplies ──
-  { category: 'Supplies', swatch: null, icon: 'screen', sku: 'SCRN-156', name: 'Aluminum Screen, 156 Mesh',    variant: '23 × 31 · pre-stretched', stock: 18, par: 12, vendor: 'Ryonet', unit: '$24.00', status: 'ok'  },
-  { category: 'Supplies', swatch: null, icon: 'jar',    sku: 'EMUL-DPX', name: 'Photopolymer Emulsion',       variant: 'DirectPro X · quart',     stock: 0,  par: 2,  vendor: 'Saati',  unit: '$36.00', status: 'out' },
+  { category: 'Supplies', swatch: null, icon: 'screen', sku: 'SCRN-156', name: 'Aluminum Screen, 156 Mesh',    variant: '23 × 31 · pre-stretched', stock: 18, par: 12, vendor: 'NorCal', unit: '$24.00', status: 'ok'  },
+  { category: 'Supplies', swatch: null, icon: 'jar',    sku: 'EMUL-DPX', name: 'Photopolymer Emulsion',       variant: 'DirectPro X · quart',     stock: 0,  par: 2,  vendor: 'NorCal',  unit: '$36.00', status: 'out' },
 ];
 
 // Per-category totals shown in the filter strip
@@ -282,10 +282,9 @@ function CategoryChip({ category }) {
 
 function VendorChip({ vendor }) {
   const styles = {
-    'S&S':       { bg: '#EFF6FF', fg: '#1D4ED8', br: '#BFDBFE' },
-    'AS Colour': { bg: '#FEF3C7', fg: '#92400E', br: '#FDE68A' },
-    'Ryonet':    { bg: '#FCE7F3', fg: '#9D174D', br: '#FBCFE8' },
-    'Saati':     { bg: '#ECFDF5', fg: '#065F46', br: '#A7F3D0' },
+    'S&S':    { bg: '#EFF6FF', fg: '#1D4ED8', br: '#BFDBFE' },
+    'NorCal': { bg: '#FFE4E6', fg: '#9F1239', br: '#FECDD3' },
+    'Ryonet': { bg: '#ECFDF5', fg: '#065F46', br: '#A7F3D0' },
   };
   const s = styles[vendor] || styles['S&S'];
   return (
@@ -451,27 +450,21 @@ function SceneINRestock() {
   const modalT = inclamp(t / 0.5, 0, 1);
   const modalE = ineaseOut(modalT);
 
-  // Size qty progression (S=6, M=12, L=12, XL=6, 2XL=4)
-  const sizes = [
-    { label: 'S',   qty: 6,  start: 0.7 },
-    { label: 'M',   qty: 12, start: 1.0 },
-    { label: 'L',   qty: 12, start: 1.3 },
-    { label: 'XL',  qty: 6,  start: 1.6 },
-    { label: '2XL', qty: 4,  start: 1.9 },
+  // The Reorder Cart — how the real Inventory page restocks supplies:
+  // low items are added from the NorCal / Ryonet catalogs, and Submit
+  // opens each vendor's Shopify cart pre-filled (cart permalink, no API).
+  const items = [
+    { name: 'Soft Hand Black Plastisol', variant: 'Wilflex Equinox · gallon', vendor: 'Ryonet', qty: 2, unit: 52.00, start: 0.7 },
+    { name: 'Photopolymer Emulsion',     variant: 'DirectPro X · quart',      vendor: 'NorCal', qty: 2, unit: 36.00, start: 1.1 },
+    { name: 'Aluminum Screen, 156 Mesh', variant: '23 × 31 · pre-stretched',  vendor: 'NorCal', qty: 6, unit: 24.00, start: 1.5 },
   ];
+  const norcalTotal = 2 * 36 + 6 * 24;   // 216
+  const ryonetTotal = 2 * 52;            // 104
 
-  const totalQty = sizes.reduce((acc, s) => {
-    const k = inclamp((t - s.start) / 0.25, 0, 1);
-    return acc + s.qty * k;
-  }, 0);
-  const subtotal = totalQty * 11.40; // unit price from inventory data
-  const shipping = totalQty > 0 ? 14.00 : 0;
-  const total = subtotal + shipping;
-
-  const placeAt = 3.4;
-  const placing = t >= placeAt && t < placeAt + 0.7;
-  const placed = t >= placeAt + 0.7;
-  const placedT = inclamp((t - placeAt - 0.7) / 0.4, 0, 1);
+  const submitAt = 3.3;
+  const placing = t >= submitAt && t < submitAt + 0.7;
+  const placed = t >= submitAt + 0.7;
+  const placedT = inclamp((t - submitAt - 0.7) / 0.4, 0, 1);
 
   return (
     <INApp opacity={1}>
@@ -492,59 +485,60 @@ function SceneINRestock() {
       }}>
         {/* Modal header */}
         <div style={{ padding: '22px 32px', borderBottom: `1px solid ${IN.border}`, display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ width: 46, height: 46, borderRadius: 0, background: '#0F172A' }} />
+          <div style={{ width: 46, height: 46, borderRadius: 0, background: IN.accentSoft, border: `1px solid ${IN.accentBorder}`, display: 'grid', placeItems: 'center' }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={IN.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
+          </div>
           <div>
-            <div style={{ fontFamily: INF, fontSize: 20, fontWeight: 800, color: IN.text1, letterSpacing: '-0.02em' }}>Gildan 18500 Heavy Hood</div>
-            <div style={{ fontFamily: INM, fontSize: 12, color: IN.text3, marginTop: 2 }}>G18500 · Navy · live price from S&S</div>
+            <div style={{ fontFamily: INF, fontSize: 20, fontWeight: 800, color: IN.text1, letterSpacing: '-0.02em' }}>Reorder Cart</div>
+            <div style={{ fontFamily: INM, fontSize: 12, color: IN.text3, marginTop: 2 }}>Low supplies from the NorCal and Ryonet catalogs</div>
           </div>
-          <div style={{ marginLeft: 'auto' }}><VendorChip vendor="S&S" /></div>
+          <div style={{ marginLeft: 'auto', fontFamily: INF, fontSize: 13, color: IN.text3, fontWeight: 700 }}>3 items · 2 vendors</div>
         </div>
 
-        {/* Size matrix */}
-        <div style={{ padding: '24px 32px 8px' }}>
-          <div style={{ fontFamily: INF, fontSize: 12, fontWeight: 700, color: IN.text3, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>Order quantities</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
-            {sizes.map((s) => {
-              const k = inclamp((t - s.start) / 0.25, 0, 1);
-              const active = k > 0;
-              return (
-                <div key={s.label} style={{
-                  background: active ? IN.accentSoft : IN.surface2,
-                  border: `1px solid ${active ? IN.accentBorder : IN.border}`,
-                  borderRadius: 0, padding: '12px 14px',
-                  display: 'flex', flexDirection: 'column', gap: 6,
-                  transition: 'background 0.25s, border-color 0.25s',
-                }}>
-                  <div style={{ fontFamily: INF, fontSize: 12, color: IN.text3, fontWeight: 700, letterSpacing: '0.04em' }}>{s.label}</div>
-                  <div style={{ fontFamily: INF, fontSize: 26, fontWeight: 800, color: active ? IN.accent : IN.text4, letterSpacing: '-0.02em' }}>
-                    {Math.round(s.qty * k)}
-                  </div>
+        {/* Cart items */}
+        <div style={{ padding: '18px 32px 6px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {items.map((it) => {
+            const k = ineaseOut(inclamp((t - it.start) / 0.35, 0, 1));
+            return (
+              <div key={it.name} style={{
+                opacity: k, transform: `translateY(${(1 - k) * 10}px)`,
+                display: 'flex', alignItems: 'center', gap: 16,
+                padding: '13px 16px', background: IN.surface2, border: `1px solid ${IN.border}`, borderRadius: 0,
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: INF, fontSize: 15, fontWeight: 700, color: IN.text1, letterSpacing: '-0.01em' }}>{it.name}</div>
+                  <div style={{ fontFamily: INM, fontSize: 11.5, color: IN.text3, marginTop: 2 }}>{it.variant}</div>
                 </div>
-              );
-            })}
-          </div>
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 18 }}>
+                  <VendorChip vendor={it.vendor} />
+                  <div style={{ fontFamily: INF, fontSize: 14, color: IN.text2, fontWeight: 700, width: 46, textAlign: 'center', border: `1px solid ${IN.border}`, padding: '6px 0', background: '#fff' }}>{it.qty}</div>
+                  <div style={{ fontFamily: INF, fontSize: 15, color: IN.text1, fontWeight: 800, width: 84, textAlign: 'right' }}>{fmt(it.qty * it.unit)}</div>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Live pricing */}
-        <div style={{ padding: '14px 32px 4px', display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{ width: 320, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <Row label={`${Math.round(totalQty)} units × $11.40`} value={fmt(subtotal)} />
-            <Row label="S&S ground shipping" value={fmt(shipping)} />
+        {/* Per-vendor totals */}
+        <div style={{ padding: '10px 32px 4px', display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ width: 340, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Row label="NorCal cart · 2 items" value={fmt(norcalTotal)} />
+            <Row label="Ryonet cart · 1 item" value={fmt(ryonetTotal)} />
             <div style={{ display: 'flex', alignItems: 'center', borderTop: `1px solid ${IN.border}`, paddingTop: 10, marginTop: 4 }}>
               <div style={{ fontFamily: INF, fontSize: 14, color: IN.text1, fontWeight: 700, letterSpacing: '0.02em' }}>Total</div>
-              <div style={{ marginLeft: 'auto', fontFamily: INF, fontSize: 24, color: IN.accent, fontWeight: 800, letterSpacing: '-0.02em' }}>{fmt(total)}</div>
+              <div style={{ marginLeft: 'auto', fontFamily: INF, fontSize: 24, color: IN.accent, fontWeight: 800, letterSpacing: '-0.02em' }}>{fmt(norcalTotal + ryonetTotal)}</div>
             </div>
           </div>
         </div>
 
         {/* Footer */}
         <div style={{ padding: '18px 32px 22px', background: IN.surface2, borderTop: `1px solid ${IN.border}`, display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ fontFamily: INF, fontSize: 12.5, color: IN.text3 }}>Estimated delivery <span style={{ color: IN.text1, fontWeight: 700 }}>2–3 business days</span></div>
+          <div style={{ fontFamily: INF, fontSize: 12.5, color: IN.text3 }}>Submit opens each vendor's store with the cart already filled</div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             {placed && (
               <div style={{ opacity: placedT, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IN.greenSoft, color: IN.green, border: `1px solid ${IN.greenBorder}`, borderRadius: 0, fontFamily: INF, fontSize: 13, fontWeight: 700 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={IN.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>
-                PO #SS-2026-0182
+                NorCal + Ryonet carts opened
               </div>
             )}
             <button style={{
@@ -561,13 +555,13 @@ function SceneINRestock() {
               {placing && (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" style={{ transform: `rotate(${t * 720}deg)` }}><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
               )}
-              {placed ? 'Order placed ✓' : (placing ? 'Placing…' : 'Place S&S order')}
+              {placed ? 'Submitted ✓' : (placing ? 'Opening carts…' : 'Submit to vendors')}
             </button>
           </div>
         </div>
       </div>
 
-      <INCaption text="Restock straight from the vendor at today's price." time={localTime} duration={duration} delay={0.6} />
+      <INCaption text="Low supplies build one cart for NorCal and Ryonet." time={localTime} duration={duration} delay={0.6} />
     </INApp>
   );
 }
@@ -595,17 +589,17 @@ function SceneINUpdated() {
   const t = localTime;
   const pageT = inclamp(t / 0.3, 0, 1);
 
-  // Stock count tick on the AS Colour row 0 → 40 between 0.6–1.8s
+  // Stock count tick on the restocked emulsion row 0 → 2 between 0.6–1.8s
   const tickT = inclamp((t - 0.6) / 1.2, 0, 1);
   const tickE = ineaseOut(tickT);
-  const newStock = 40 * tickE;
+  const newStock = 2 * tickE;
   const flipped = tickE >= 1;
   const flashing = flipped && t < 3.5;
 
   const toastT = inclamp((t - 0.3) / 0.4, 0, 1);
 
   const invs = DEMO_INVENTORY.map((item) => {
-    if (item.sku === 'ASC-5050') {
+    if (item.sku === 'EMUL-DPX') {
       return { ...item, stock: newStock, status: flipped ? 'ok' : 'out' };
     }
     return item;
@@ -630,7 +624,7 @@ function SceneINUpdated() {
         <StatCard label="Total SKUs"        value="124"      trend="blanks · inks · supplies" color={IN.text1} />
         <StatCard label="Low stock"         value="8"        trend="need restock"             color={IN.amber} alert />
         <StatCard label="Out of stock"      value={flipped ? '1' : '2'} trend="ship date risk" color={IN.rose} alert />
-        <StatCard label="Restock on order"  value="$1,732.00" trend="4 POs"                   color={IN.accent} />
+        <StatCard label="Restock on order"  value="$1,162.00" trend="4 POs"                   color={IN.accent} />
       </div>
 
       <div style={{ padding: '20px 56px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -666,7 +660,7 @@ function SceneINUpdated() {
 
       <div style={{ padding: '0 56px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {invs.map((item, i) => {
-          const isTarget = item.sku === 'ASC-5050';
+          const isTarget = item.sku === 'EMUL-DPX';
           return (
             <InvRow key={i} item={item} flashEmerald={isTarget && flashing} />
           );
@@ -690,12 +684,12 @@ function SceneINUpdated() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={IN.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>
         </div>
         <div>
-          <div style={{ fontFamily: INF, fontSize: 14, fontWeight: 800, color: IN.text1, letterSpacing: '-0.005em' }}>AS Colour PO confirmed · 40 units</div>
-          <div style={{ fontFamily: INF, fontSize: 12.5, color: IN.text3, marginTop: 2 }}>5050 Heavy Hood (Black) · arriving Tue · $1,028.00</div>
+          <div style={{ fontFamily: INF, fontSize: 14, fontWeight: 800, color: IN.text1, letterSpacing: '-0.005em' }}>Carts submitted · NorCal + Ryonet</div>
+          <div style={{ fontFamily: INF, fontSize: 12.5, color: IN.text3, marginTop: 2 }}>3 supplies · $320.00 · marked on order</div>
         </div>
       </div>
 
-      <INCaption text="The PO lands back in your stock counts." time={localTime} duration={duration} delay={2.0} />
+      <INCaption text="Restocks land back in your counts." time={localTime} duration={duration} delay={2.0} />
     </INApp>
   );
 }
