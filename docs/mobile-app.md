@@ -50,9 +50,14 @@ All native-only, guarded to **no-op on web** (browser build unchanged):
   now open via `openExternal`.
 
 ### App icon + splash ✅ (sources staged, this branch)
-- `assets/icon.png` (1024², opaque — the drop logo), `assets/splash.png` +
-  `assets/splash-dark.png` (2732², logo centered on white). `@capacitor/assets`
-  installed (dev).
+- `assets/icon.png` (1024², opaque — the drop logo), `assets/splash.png`
+  (2732², logo centered on white) + `assets/splash-dark.png` (2732², a TRUE
+  dark variant since 2026-09-22: full-bleed brand green with the drop —
+  previously it was byte-identical to the light file, so dark mode flashed
+  white). The Splash.imageset copies are pngquant-quantized (~8.5 MB → ~1 MB
+  in the IPA). Splash changes only ship with the NEXT iOS build/release —
+  the app loads the live site for everything else, but launch assets are
+  baked into the binary. `@capacitor/assets` installed (dev).
 - After `cap add ios`, generate every required size in one command:
   `npx capacitor-assets generate --ios` → writes into `ios/App/App/Assets.xcassets`.
 

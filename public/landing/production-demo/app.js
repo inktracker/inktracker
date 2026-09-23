@@ -1,0 +1,1 @@
+function App(){return React.createElement(Stage,{width:1920,height:1080,duration:25,background:"#0B0B0E",persistKey:"inktracker-prod-demo"},React.createElement(ProductionDemo,null))}ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App,null));
