@@ -1,3 +1,4 @@
+import { round2 } from "@/lib/pricing/round2";
 // Click-to-apply sale pricing (Joe 2026-07-20): clicking a supplier's sale
 // line under Garment Cost used to fill one flat number and wipe the line's
 // per-size prices — a 2XL that costs $2 more than a Small suddenly priced
@@ -24,9 +25,6 @@
 // normalization untouched, which is why this reads the colors channel and
 // not sizePriceMap (getResultCandidates drops top-level sizePriceMap).
 
-function round2(n) {
-  return Math.round(n * 100) / 100;
-}
 
 export function buildSaleSizePrices(option, colorName, salePrice) {
   const sale = Number(salePrice);

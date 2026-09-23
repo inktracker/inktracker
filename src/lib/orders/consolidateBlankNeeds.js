@@ -1,3 +1,4 @@
+import { round2 } from "@/lib/pricing/round2";
 // Consolidated blank buying — given the OPEN orders that still need goods
 // ordered, work out every blank to buy, grouped by supplier and summed across
 // jobs, so the shop places ONE purchase order per supplier for the week
@@ -37,7 +38,6 @@ function sumSizes(sizes) {
   return total;
 }
 
-const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 // Orders whose blanks still need ordering: active (not terminal) and NOT
 // already covered by a SUBMITTED purchase order (via the scalar source_order_id

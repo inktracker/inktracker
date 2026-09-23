@@ -16,9 +16,6 @@ verify_jwt = false
 [functions.ssLookupStyle]
 verify_jwt = false
 
-[functions.ssSearchCatalog]
-verify_jwt = false
-
 [functions.ssPlaceOrder]
 verify_jwt = false
 
@@ -28,16 +25,7 @@ verify_jwt = false
 [functions.acLookupStyle]
 verify_jwt = false
 
-[functions.acSearchCatalog]
-verify_jwt = false
-
 [functions.norcalCatalog]
-verify_jwt = false
-
-[functions.acGetInventory]
-verify_jwt = false
-
-[functions.acGetPriceList]
 verify_jwt = false
 
 [functions.acPlaceOrder]
@@ -88,9 +76,6 @@ verify_jwt = false
 [functions.fedexShipping]
 verify_jwt = false
 
-[functions.dailyStats]
-verify_jwt = false
-
 [functions.billing]
 verify_jwt = false
 
@@ -134,3 +119,12 @@ verify_jwt = false
 
 [functions.statusCustomerEmail]
 verify_jwt = false
+
+# Declared explicitly so the JWT posture is reviewed, not inherited silently.
+# Both currently run with the default verify_jwt = true: profileSecrets is
+# called with a user JWT; redditScan is cron-invoked with the service role.
+[functions.profileSecrets]
+verify_jwt = true
+
+[functions.redditScan]
+verify_jwt = true

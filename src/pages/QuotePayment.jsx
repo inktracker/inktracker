@@ -33,6 +33,7 @@ import { localDateStr } from "@/lib/dateRangeUtils";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
+import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 
 // Proof-grid tile. PDFs get a static tile instead of a live <object> embed —
 // an embedded PDF thumbnail downloads the whole file per tile AND renders the
@@ -82,34 +83,10 @@ function ProofThumb({ art, onOpen }) {
   );
 }
 
-function cleanText(value) {
-  return String(value || "").trim();
-}
 
-function looksLikeCode(value) {
-  const txt = cleanText(value);
-  if (!txt) return false;
-  return /^[A-Z0-9-]{2,30}$/i.test(txt) && /\d/.test(txt) && !txt.includes(" ");
-}
 
-function isWarehouseSku(value) {
-  const txt = cleanText(value).toUpperCase();
-  if (!txt) return false;
-  return /^0\d{3,}$/.test(txt) || /^\d{5,}$/.test(txt);
-}
 
-function extractTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  const match = txt.match(/-\s*([A-Z0-9-]{2,30})$/i);
-  return match ? cleanText(match[1]).toUpperCase() : "";
-}
 
-function stripTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  return txt.replace(/\s*-\s*[A-Z0-9-]{2,30}\s*$/i, "").trim();
-}
 
 function getPreferredGarmentNumber(li) {
   const candidates = [

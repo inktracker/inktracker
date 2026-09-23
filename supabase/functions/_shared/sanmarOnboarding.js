@@ -1,3 +1,4 @@
+import { escapeHtml as esc } from "./emailSanitize.js";
 // SanMar PO-integration onboarding — PURE logic shared by the smOnboarding
 // edge function (Deno) and the frontend/tests (Node). No I/O here.
 //
@@ -101,10 +102,6 @@ export function testShipToFromProfile(profile) {
     return { error: `Add your shop's ${missing.join(", ")} under Account → Business details first — SanMar ships test and production orders to that address.` };
   }
   return { shipTo: { name, address1, address2: "", city, state, zip, email, residence: false } };
-}
-
-function esc(s) {
-  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function addressLine(shipTo) {

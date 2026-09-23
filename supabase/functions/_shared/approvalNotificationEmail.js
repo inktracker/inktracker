@@ -1,4 +1,5 @@
 import { sendResendEmail } from "./resendClient.js";
+import { escapeHtml } from "./emailSanitize.js";
 
 // Email notifications fired when a client approves something via the
 // public links (quote-approval, artwork-approval). Reaches the shop
@@ -467,14 +468,4 @@ function formatDate(d) {
     month: "short", day: "numeric", year: "numeric",
     hour: "numeric", minute: "2-digit",
   });
-}
-
-function escapeHtml(s) {
-  if (s === null || s === undefined) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }

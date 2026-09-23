@@ -24,6 +24,8 @@ import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { depositAmountFor } from "@/lib/deposits";
 import { slipSize } from "@/lib/orders/packingSlipLayout";
 import { drawCompactSlip } from "@/lib/orders/packingSlipDraw";
+import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
+import { cleanText, looksLikeCode } from "@/lib/quotes/lineItemText";
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -171,9 +173,6 @@ async function appendArtworkPages(doc, record) {
   }
 }
 
-function isBrokerQuote(q) {
-  return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
-}
 
 // Saved totals win over live recompute — the PDF is a snapshot of
 // what the customer paid for, so it must match the email + the
@@ -228,9 +227,6 @@ function fmtDate(d) {
 const INKTRACKER_LOGO =
   'https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png';
 
-function cleanText(value) {
-  return String(value || '').trim();
-}
 
 function moneyNoWeirdMinus(value) {
   const n = Number(value || 0);
@@ -287,11 +283,6 @@ function stripTrailingGarmentNumber(title) {
   return txt.replace(/\s*-\s*[A-Z0-9-]{3,12}\s*$/i, '').trim();
 }
 
-function looksLikeCode(value) {
-  const txt = cleanText(value);
-  if (!txt) return false;
-  return /^[A-Z0-9-]{2,12}$/i.test(txt) && /\d/.test(txt) && !txt.includes(' ');
-}
 
 function isLikelySku(value) {
   const txt = cleanText(value);

@@ -9,6 +9,7 @@
 //      Events: checkout.session.completed, checkout.session.expired
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { escapeHtml } from "../_shared/emailSanitize.js";
 import { captureError } from "../_shared/observability.ts";
 import { resolvePaidQuoteUpdate, isPaymentAccountAuthorized } from "../_shared/stripePaymentEffect.js";
 import Stripe from "npm:stripe@14.25.0";
@@ -32,9 +33,6 @@ import { escapeQbStringLiteral } from "../_shared/qbInvoice.js";
 // HTML-escape user-controlled fields (customer_name comes from the public
 // wizard) before interpolating into email HTML, so a crafted name can't inject
 // markup/scripts/links into the shop owner's or customer's inbox.
-const escapeHtml = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (ch) => ({
-  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-}[ch] || ch));
 
 const STRIPE_SECRET_KEY      = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const STRIPE_WEBHOOK_SECRET  = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";

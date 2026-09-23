@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { base44, supabase } from "@/api/supabaseClient";
+import { base44 } from "@/api/supabaseClient";
 import { cachedFilter, cachedList } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
-import { Loader2, Mail, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
 import {
@@ -27,16 +27,13 @@ import { isConvertedToOrder } from "../lib/quotes/approvalState";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
 import { useBillingGate, useReadOnly } from "../lib/billing-gate";
 import ReactivateLink from "../components/shared/ReactivateLink";
-import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { notify } from "@/lib/notify";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { shopScope } from "@/lib/shopScope";
 import { buildQuoteDuplicate } from "@/lib/quotes/customerSwitch";
+import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 
-function isBrokerQuote(q) {
-  return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
-}
 
 // A saved quote is a snapshot — read what was stamped at save time. We
 // only fall back to live calc for legacy rows that never got stamped
@@ -86,10 +83,6 @@ export default function Quotes() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
-  const [showEmailPaste, setShowEmailPaste] = useState(false);
-  const [emailText, setEmailText] = useState("");
-  const [parsing, setParsing] = useState(false);
-  const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
   useEffect(() => {
     async function loadData() {
@@ -530,54 +523,6 @@ export default function Quotes() {
           <ReactivateLink show={readOnly} href={reactivateHref} />
         </div>
       </div>
-      {showEmailPaste && (
-        <ModalBackdrop onClose={() => setShowEmailPaste(false)} z="z-50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">Quote from Email</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Paste the email content and we'll create a draft quote</p>
-            </div>
-            <div className="px-6 py-4">
-              <textarea value={emailText} onChange={e => setEmailText(e.target.value)}
-                placeholder={"Paste the email here...\n\nExample:\nHey Joe,\nNeed 50 Gildan 5000 Black t-shirts\nFront print, 3 colors\nSizes: S:5 M:15 L:15 XL:10 2XL:5"}
-                rows={10}
-                className="w-full text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none" />
-            </div>
-            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
-              <button onClick={() => { setShowEmailPaste(false); setEmailText(""); }}
-                className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
-              <button onClick={async () => {
-                if (!emailText.trim()) return;
-                setParsing(true);
-                try {
-                  const { data: { session } } = await supabase.auth.getSession();
-                  const { data, error: invErr } = await base44.functions.invoke("emailScanner", {
-                    action: "parseAndCreate",
-                    accessToken: session?.access_token,
-                    emailBody: emailText.trim(),
-                  });
-                  if (invErr) { notify.error("Couldn't create quote from email", invErr); }
-                  else if (data?.error) { notify.error("Couldn't create quote from email", data.error); }
-                  else if (data?.quoteId) {
-                    const fresh = await base44.entities.Quote.list("-created_date", 500);
-                    setQuotes(fresh);
-                    setShowEmailPaste(false);
-                    setEmailText("");
-                    const created = fresh.find(q => q.quote_id === data.quoteId);
-                    if (created) setViewing(created);
-                  }
-                } catch (err) { notify.error("Couldn't create quote from email", err); }
-                setParsing(false);
-              }} disabled={parsing || !emailText.trim()}
-                className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
-                {parsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                {parsing ? "Creating Quote..." : "Create Draft Quote"}
-              </button>
-            </div>
-          </div>
-        </ModalBackdrop>
-      )}
-
       <div className="space-y-3">
         <div className="flex gap-1.5 flex-wrap">
           {["All", ...Q_STATUSES].map((s) => (

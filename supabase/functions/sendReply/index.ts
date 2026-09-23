@@ -11,6 +11,7 @@
 // the frontend logs the row.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { escapeHtml } from "../_shared/emailSanitize.js";
 import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { renderEmailLayout, EMAIL_INK } from "../_shared/emailLayout.ts";
 import { sendResendEmail } from "../_shared/resendClient.js";
@@ -23,13 +24,6 @@ const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-function escapeHtml(s: string): string {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
 
 function bodyToHtml(body: string, shopName?: string, shopLogoUrl?: string): string {
   const safe = escapeHtml(body).replace(/\n/g, "<br>");

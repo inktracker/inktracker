@@ -14,6 +14,7 @@
 // blocked. Falls back to the anonymous public JSON endpoints otherwise.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { timingSafeEqual } from "../_shared/qbWebhookSignature.js";
 import { sendResendEmail } from "../_shared/resendClient.js";
 import {
   SUBREDDITS,
@@ -50,13 +51,6 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
-function timingSafeEqual(a: string, b: string): boolean {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return mismatch === 0;
-}
 
 function authorized(req: Request): boolean {
   const header = req.headers.get("Authorization") || "";

@@ -39,6 +39,8 @@ import AttachmentGallery from "../shared/AttachmentGallery";
 import { DEPOSITS_ENABLED, depositAmountFor } from "@/lib/deposits";
 import ReactivateLink from "../shared/ReactivateLink";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
+import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode } from "@/lib/quotes/lineItemText";
+import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 
 // Shown on every disabled write affordance when the shop is read-only
 // (subscription lapsed). Viewing stays fully intact — only DB-mutating
@@ -47,9 +49,6 @@ const RO_TITLE = "Your subscription has ended — reactivate to create and edit"
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
-function isBrokerQuote(q) {
-  return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
-}
 
 // Render qb_event_log timestamps as "5 min ago" / "2h ago" up to 24h,
 // then switch to short absolute "May 28 12:14". Operators usually want
@@ -155,34 +154,10 @@ function getImprintArtwork(imp) {
   };
 }
 
-function cleanText(value) {
-  return String(value || "").trim();
-}
 
-function extractTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  const match = txt.match(/-\s*([A-Z0-9-]{2,20})$/i);
-  return match ? cleanText(match[1]) : "";
-}
 
-function stripTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  return txt.replace(/\s*-\s*[A-Z0-9-]{2,20}\s*$/i, "").trim();
-}
 
-function looksLikeCode(value) {
-  const txt = cleanText(value);
-  if (!txt) return false;
-  return /^[A-Z0-9-]{2,20}$/i.test(txt) && /\d/.test(txt) && !txt.includes(" ");
-}
 
-function isWarehouseSku(value) {
-  const txt = cleanText(value);
-  if (!txt) return false;
-  return /^0\d{3,}$/.test(txt);
-}
 
 function getPreferredGarmentNumber(li) {
   const candidates = [

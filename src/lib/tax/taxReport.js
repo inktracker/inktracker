@@ -1,10 +1,8 @@
+import { round2 } from "@/lib/pricing/round2";
 // Aggregate immutable tax_records (Phase 3) into a by-state filing report.
 // A shop files a sales-tax return in each state where it has nexus; this rolls
 // the per-invoice records into the per-state totals that return needs.
 
-function round2(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
-}
 
 /**
  * Roll tax records up by ship-to state. Returns rows sorted by tax collected

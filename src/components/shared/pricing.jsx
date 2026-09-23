@@ -91,7 +91,6 @@ export function activeSizeNames(sizes) {
     .map(([sz]) => sz);
 }
 export const LOCATIONS = ["Front", "Back", "Left Chest", "Right Chest", "Left Sleeve", "Right Sleeve", "Pocket", "Hood", "Other"];
-export const ALL_TECHNIQUES = ["Screen Print", "DTG", "Embroidery", "DTF", "Heat Transfer", "Sublimation"];
 // Returns only techniques the shop has set up. Screen Print is always
 // available. Embroidery shows if the shop has either explicitly toggled
 // the enabled flag OR filled in any pricing tiers — the second check
@@ -187,7 +186,6 @@ export function getTechniqueRates(tech, configOverride) {
     maxColors:  Number.isFinite(Number(custom.maxColors)) && Number(custom.maxColors) > 0 ? Number(custom.maxColors) : baseMax,
   };
 }
-export const TECHNIQUES = ALL_TECHNIQUES; // backward compat for code that imports it directly
 export const Q_STATUSES = ["Draft", "Sent", "Pending", "Approved", "Approved and Paid", "Declined"];
 // Canonical order pipeline. Single source of truth — OrderDetailModal,
 // Production, Calendar, broker analytics all import this constant.

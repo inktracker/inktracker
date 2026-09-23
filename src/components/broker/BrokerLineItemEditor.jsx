@@ -22,6 +22,7 @@ import { supabase } from "@/api/supabaseClient";
 import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from "@/lib/suppliers/preference";
 import { buildSaleSizePrices } from "@/lib/suppliers/salePricing";
 import { notify } from "@/lib/notify";
+import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 
 // Query both S&S Activewear and AS Colour in parallel and merge results,
 // matching the shop-side LineItemEditor. Either supplier failing/returning
@@ -56,38 +57,14 @@ async function lookupStyle(styleNumber) {
   };
 }
 
-function cleanText(value) {
-  return String(value || "").trim();
-}
 
 function normalizeTypedStyleNumber(value) {
   return cleanText(value).toUpperCase();
 }
 
-function looksLikeCode(value) {
-  const txt = cleanText(value);
-  if (!txt) return false;
-  return /^[A-Z0-9-]{2,30}$/i.test(txt) && /\d/.test(txt) && !txt.includes(" ");
-}
 
-function isWarehouseSku(value) {
-  const txt = cleanText(value).toUpperCase();
-  if (!txt) return false;
-  return /^0\d{3,}$/.test(txt) || /^\d{5,}$/.test(txt);
-}
 
-function extractTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  const match = txt.match(/-\s*([A-Z0-9-]{2,30})$/i);
-  return match ? cleanText(match[1]).toUpperCase() : "";
-}
 
-function stripTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  return txt.replace(/\s*-\s*[A-Z0-9-]{2,30}\s*$/i, "").trim();
-}
 
 export function getResultCandidates(result) {
   const rawMatches = Array.isArray(result?.matches)

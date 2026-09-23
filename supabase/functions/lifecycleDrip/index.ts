@@ -19,6 +19,7 @@
 // PER_RUN_CAP bounds a pathological backlog; the cron catches up daily.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { timingSafeEqual } from "../_shared/qbWebhookSignature.js";
 import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 import { buildDay2NudgeEmail, buildTrialEndingEmail } from "../_shared/dripEmails.ts";
@@ -34,13 +35,6 @@ const DAY2_MAX_AGE_DAYS = 7;
 const REMINDER_WINDOW_DAYS = 3;
 const PER_RUN_CAP = 50;
 
-function timingSafeEqual(a: string, b: string): boolean {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return mismatch === 0;
-}
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {

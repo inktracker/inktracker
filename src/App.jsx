@@ -535,7 +535,6 @@ function PublicLandingPage() {
               className="absolute inset-0 w-full h-full object-cover"
             >
               <source src="/landing/hero.mp4" type="video/mp4" />
-              <source src="/landing/hero.webm" type="video/webm" />
             </video>
             {/* Forest tint overlay — keeps the headline contrast high
                 without muddying the video. Vertical so the bottom (where
