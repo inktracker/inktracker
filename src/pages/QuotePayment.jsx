@@ -33,6 +33,7 @@ import { localDateStr } from "@/lib/dateRangeUtils";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
+import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 
 // Proof-grid tile. PDFs get a static tile instead of a live <object> embed —
 // an embedded PDF thumbnail downloads the whole file per tile AND renders the
@@ -62,10 +63,14 @@ function ProofThumb({ art, onOpen }) {
       ) : (
         <img
           src={art._thumbSrc || art._src}
+          srcSet={art._thumbSrc && art._thumbSrc2x
+            ? `${art._thumbSrc} 1x, ${art._thumbSrc2x} 2x`
+            : undefined}
           onError={(e) => {
             // Thumbnail transform failed (unsupported format, transform
             // hiccup) → retry the untransformed original before giving up.
             if (art._thumbSrc && art._src && e.currentTarget.src !== art._src) {
+              e.currentTarget.removeAttribute("srcset");
               e.currentTarget.src = art._src;
               return;
             }
@@ -82,34 +87,10 @@ function ProofThumb({ art, onOpen }) {
   );
 }
 
-function cleanText(value) {
-  return String(value || "").trim();
-}
 
-function looksLikeCode(value) {
-  const txt = cleanText(value);
-  if (!txt) return false;
-  return /^[A-Z0-9-]{2,30}$/i.test(txt) && /\d/.test(txt) && !txt.includes(" ");
-}
 
-function isWarehouseSku(value) {
-  const txt = cleanText(value).toUpperCase();
-  if (!txt) return false;
-  return /^0\d{3,}$/.test(txt) || /^\d{5,}$/.test(txt);
-}
 
-function extractTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  const match = txt.match(/-\s*([A-Z0-9-]{2,30})$/i);
-  return match ? cleanText(match[1]).toUpperCase() : "";
-}
 
-function stripTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  return txt.replace(/\s*-\s*[A-Z0-9-]{2,30}\s*$/i, "").trim();
-}
 
 function getPreferredGarmentNumber(li) {
   const candidates = [
@@ -604,11 +585,14 @@ export default function QuotePayment() {
             .map((a) => {
               const fallback = a.url || a.file_url;
               const src = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback }) || fallback;
-              // Grid tiles get a 640px server-side thumbnail (PRO image
-              // transforms) — the enlarge lightbox keeps the original so
-              // what the customer approves is full quality.
+              // Grid tiles: 640px thumbnail for 1x screens + a 1024px srcset
+              // variant for retina (PRO image transforms) — crisp tiles where
+              // the hardware can show it, same data for everyone else. The
+              // enlarge lightbox keeps the original so what the customer
+              // approves is full quality.
               const thumb = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback, width: 640 });
-              return { ...a, _src: src, _thumbSrc: thumb || src };
+              const thumb2x = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback, width: 1024 });
+              return { ...a, _src: src, _thumbSrc: thumb || src, _thumbSrc2x: thumb2x || null };
             });
           if (proofs.length === 0) return null;
           return (

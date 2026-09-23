@@ -40,7 +40,9 @@ export function qbModifiedState(row) {
   return { modified: centsDelta(localTotal, qbTotal) > TOLERANCE, localTotal, qbTotal, delta };
 }
 
-const fmtUsd = (n) => `$${Number(n).toFixed(2)}`;
+// ?? 0: the editOrderEngine/changeLog siblings coerce nullish to 0 — without
+// it a missing total renders "$NaN" in the sync-audit note.
+const fmtUsd = (n) => `$${Number(n ?? 0).toFixed(2)}`;
 
 // Matches lines produced by buildSyncNote. Anchored on the dated prefix
 // so ordinary shop notes that merely mention QuickBooks survive.

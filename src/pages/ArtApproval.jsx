@@ -48,10 +48,18 @@ function ProofPreviewBlock({ art, onEnlarge }) {
         {imgFailed ? unavailable : (
           <img
             src={art._thumbSrc || art._src}
+            // Retina srcset: 1x screens keep the 1024 thumbnail (same data
+            // as before); 2x/3x screens pull the 2048 variant so the inline
+            // proof is genuinely crisp — detail scales with the hardware
+            // that can show it instead of everyone paying print-res prices.
+            srcSet={art._thumbSrc && art._thumbSrc2x
+              ? `${art._thumbSrc} 1x, ${art._thumbSrc2x} 2x`
+              : undefined}
             onError={(e) => {
               // Thumbnail transform failed → retry the untransformed
               // original before showing the unavailable state.
               if (art._thumbSrc && art._src && e.currentTarget.src !== art._src) {
+                e.currentTarget.removeAttribute("srcset");
                 e.currentTarget.src = art._src;
                 return;
               }
@@ -264,12 +272,14 @@ export default function ArtApproval() {
   const artwork = getOrderArtwork(order).map((art) => {
     const fallback = art.url;
     const src = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback }) || fallback;
-    // Inline preview gets a 1024px server-side thumbnail (PRO image
-    // transforms; this preview renders up to max-h-96 so 1024 wide keeps
-    // it crisp on retina) — the full-screen enlarge keeps the original,
-    // so what the customer APPROVES is always full quality.
+    // Inline preview: 1024px server-side thumbnail for 1x screens, with a
+    // 2048px srcset variant so retina (2x/3x) screens get a genuinely crisp
+    // proof — better detail only where the hardware can show it, no extra
+    // data for anyone else. The full-screen enlarge keeps the original, so
+    // what the customer APPROVES is always full quality.
     const thumb = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback, width: 1024 });
-    return { ...art, _src: src, _thumbSrc: thumb || src };
+    const thumb2x = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback, width: 2048 });
+    return { ...art, _src: src, _thumbSrc: thumb || src, _thumbSrc2x: thumb2x || null };
   });
   const alreadyApproved = order?.art_approved;
 

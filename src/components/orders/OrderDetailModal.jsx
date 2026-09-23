@@ -10,6 +10,7 @@ import { PARTNER_STATUS_LABELS } from "@/lib/partners";
 import PackingSlipModal from "./PackingSlipModal";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { cachedList } from "@/lib/queries/cachedEntity";
 import { uploadFile } from "@/lib/uploadFile";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { buildShortfallReorderPayloads, totalOrderShortfall } from "@/lib/orders/shortfallReorder";
@@ -543,7 +544,10 @@ export default function OrderDetailModal({
         if (!cancelled) setPresses([]);
       }
       try {
-        const all = await base44.entities.User.list();
+        // Cached: the roster barely changes and this effect re-runs on every
+        // modal open — an uncached User.list() was a full table read per
+        // order click (10 orders browsed = 10 reads).
+        const all = await cachedList("User");
         if (cancelled) return;
         // Pull employees + managers — both are eligible to run a job
         // (manager doubles as senior operator at small shops). Filter

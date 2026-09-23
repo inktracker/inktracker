@@ -1,3 +1,4 @@
+import { escapeHtml } from "./emailSanitize.js";
 // Builds the operator alert digest from a batch of qb_event_log rows
 // with status='error'. Pure logic so the daily cron's "what happened
 // overnight" summary can be unit-tested without standing up Resend.
@@ -120,13 +121,6 @@ export function buildQbErrorDigestText(summary, opts = {}) {
  */
 export function buildQbErrorDigestHtml(summary, opts = {}) {
   const window = opts.windowLabel || "last 24 hours";
-  const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (ch) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  }[ch]));
   const actionRows = Object.entries(summary.byAction)
     .sort((a, b) => b[1] - a[1])
     .map(([action, count]) => `<li><code>${escapeHtml(action)}</code>: ${count}</li>`)

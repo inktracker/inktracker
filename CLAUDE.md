@@ -51,8 +51,8 @@ Dashboard, Quotes, Production, Orders, Customers, Inventory, Invoices, Expenses,
 | `qbSync` | QuickBooks: invoices, expenses, reports, connection check |
 | `qbOAuthCallback` | QuickBooks OAuth flow |
 | `qbWebhook` | QuickBooks webhook handler |
-| `ssLookupStyle` / `ssSearchCatalog` / `ssPlaceOrder` | S&S Activewear API |
-| `acLookupStyle` / `acSearchCatalog` / `acGetInventory` / `acGetPriceList` | AS Colour API |
+| `ssLookupStyle` / `ssPlaceOrder` | S&S Activewear API |
+| `acLookupStyle` / `acPlaceOrder` | AS Colour API |
 | `adminAction` | User management (invite, delete, list) |
 | `createQuoteFromPayload` | Create quote from wizard submission |
 | `_shared/ascolour.ts` | Shared AS Colour auth helpers |

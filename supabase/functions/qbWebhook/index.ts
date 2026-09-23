@@ -312,7 +312,7 @@ async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: 
       quote_id: quote.id,
       response_body: { converted: true, quote_id_human: quote.quote_id, order_id: orderId },
     });
-    await sendPaymentNotification(supabase, quote, orderId);
+    await sendPaymentNotification(supabase, quote, orderId, { qbInvoiceId });
     return;
   }
 
@@ -335,7 +335,9 @@ async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: 
     // Only notify if something was newly flipped — re-deliveries of the
     // same webhook event would otherwise spam the shop owner.
     if (updates.quoteUpdated || updates.orderUpdated || updates.invoiceUpdated) {
-      await sendPaymentNotification(supabase, quote, quote.converted_order_id);
+      await sendPaymentNotification(supabase, quote, quote.converted_order_id, {
+        qbInvoiceId, alreadyConverted: true,
+      });
     }
     return;
   }
@@ -403,7 +405,12 @@ async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: 
 // CONVERT path so the new MARK_LINKED_PAID path can call it too without
 // drift. Best-effort: a Resend failure must never block the cascade or
 // the conversion that already committed.
-async function sendPaymentNotification(supabase: any, quote: any, orderId: string | null) {
+async function sendPaymentNotification(
+  supabase: any,
+  quote: any,
+  orderId: string | null,
+  opts: { qbInvoiceId?: string; alreadyConverted?: boolean } = {},
+) {
   try {
     const recipient = chooseQuotePaymentRecipient(quote);
     let email: any = null;
@@ -413,9 +420,27 @@ async function sendPaymentNotification(supabase: any, quote: any, orderId: strin
         .select("shop_name")
         .eq("owner_email", quote.shop_owner)
         .maybeSingle();
+      // Report what QB actually collected, not the quote's stored total —
+      // they diverge when the invoice was edited after conversion (e.g. a
+      // discount added on the invoice only). The linked invoice row mirrors
+      // QB (qb_total via modified-sync, total via local edits); the stale
+      // quote.total is the LAST resort. Cold Stream 2026-09-22: QB collected
+      // $315 but the email said $375 (the pre-discount quote total).
+      let amountPaid = Number(quote.total) || 0;
+      if (opts.qbInvoiceId) {
+        const { data: invRow } = await supabase
+          .from("invoices")
+          .select("total, qb_total")
+          .eq("shop_owner", quote.shop_owner)
+          .eq("qb_invoice_id", String(opts.qbInvoiceId))
+          .maybeSingle();
+        const collected = Number(invRow?.qb_total ?? invRow?.total);
+        if (Number.isFinite(collected) && collected > 0) amountPaid = collected;
+      }
       email = buildQuotePaymentEmail({
         quote, shop: shopRow, customer: null, recipient,
-        orderId, amountPaid: quote.total,
+        orderId, amountPaid,
+        alreadyConverted: Boolean(opts.alreadyConverted),
       });
     }
     await sendAndLogApprovalNotification(supabase, {

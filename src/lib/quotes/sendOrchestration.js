@@ -193,8 +193,13 @@ export function extractProofImageUrls(quote) {
     if (!path) continue;
     const clean = path.split("?")[0].toLowerCase();
     if (!/\.(png|jpe?g|gif|webp)$/.test(clean)) continue; // images only
+    // w=1024: email clients render bodies at ~600px wide, so shipping the
+    // print-res original was pure egress waste (the artwork proxy is the
+    // shop's top egress driver) with zero visible benefit. 1024 stays crisp
+    // on retina email clients; the approval page's enlarge still serves the
+    // full original when the customer wants real detail.
     const url = `${base}/functions/v1/artworkProof?type=quote&id=${encodeURIComponent(id)}` +
-      `&token=${encodeURIComponent(token)}&path=${encodeURIComponent(path)}`;
+      `&token=${encodeURIComponent(token)}&path=${encodeURIComponent(path)}&w=1024`;
     out.push({ url, name: a?.name || "Art proof" });
     if (out.length >= 6) break;
   }

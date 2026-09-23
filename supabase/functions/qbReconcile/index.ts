@@ -1,8 +1,8 @@
 // QuickBooks nightly reconciliation cron.
 //
-// Authenticated by CRON_SECRET header (NOT user JWT). Invoked by the
-// Vercel cron route /api/qb-reconcile-cron, which proxies to here so
-// the secret stays on the server side.
+// Authenticated by CRON_SECRET header (NOT user JWT). Invoked nightly by
+// the GitHub Actions workflow .github/workflows/qb-reconcile.yml, which
+// holds the secret in repo secrets.
 //
 // For every shop with a valid QB connection, this function:
 //   1. Selects quotes with a linked qb_invoice_id that aren't yet
@@ -28,6 +28,7 @@
 // (CRON_SECRET is the actual auth, not the Supabase JWT.)
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { timingSafeEqual } from "../_shared/qbWebhookSignature.js";
 import { captureError } from "../_shared/observability.ts";
 import {
   loadProfileWithSecrets,
@@ -126,13 +127,6 @@ const ALERT_FROM_EMAIL     = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktrack
 // and leaks character-position timing under a high-resolution clock.
 // The secret is high-entropy and Vercel rate-limits, so the practical
 // risk is near-zero, but the standard mitigation is essentially free.
-function timingSafeEqual(a: string, b: string): boolean {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return mismatch === 0;
-}
 
 // ── Token loading (same shape as qbSync/qbWebhook) ──────────────────
 
@@ -568,9 +562,16 @@ async function reconcileCascadeQuote(
           .select("shop_name")
           .eq("owner_email", shopOwner)
           .maybeSingle();
+        // Report what QB actually collected (TotalAmt from the fresh QB read),
+        // not the quote's stored total — they diverge when the invoice was
+        // edited after conversion (e.g. discount added invoice-side).
+        const collected = Number(freshInvoice?.TotalAmt);
         email = buildQuotePaymentEmail({
           quote, shop: shopRow, customer: null, recipient,
-          orderId: quote.converted_order_id, amountPaid: quote.total,
+          orderId: quote.converted_order_id,
+          amountPaid: Number.isFinite(collected) && collected > 0 ? collected : quote.total,
+          // Cascade path = the quote was converted before this payment landed.
+          alreadyConverted: true,
         });
       }
       await sendAndLogApprovalNotification(adminClient, {
@@ -708,9 +709,13 @@ async function reconcileOneQuote(
             .select("shop_name")
             .eq("owner_email", shopOwner)
             .maybeSingle();
+          // Same as the cascade path: the QB invoice's TotalAmt is the truth
+          // for what was collected; the quote total can be stale.
+          const collected = Number(freshInvoice?.TotalAmt);
           email = buildQuotePaymentEmail({
             quote: q, shop: shopRow, customer: null, recipient,
-            orderId, amountPaid: q?.total,
+            orderId,
+            amountPaid: Number.isFinite(collected) && collected > 0 ? collected : q?.total,
           });
         }
         await sendAndLogApprovalNotification(adminClient, {

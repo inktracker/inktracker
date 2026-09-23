@@ -16,9 +16,6 @@ verify_jwt = false
 [functions.ssLookupStyle]
 verify_jwt = false
 
-[functions.ssSearchCatalog]
-verify_jwt = false
-
 [functions.ssPlaceOrder]
 verify_jwt = false
 
@@ -28,16 +25,7 @@ verify_jwt = false
 [functions.acLookupStyle]
 verify_jwt = false
 
-[functions.acSearchCatalog]
-verify_jwt = false
-
 [functions.norcalCatalog]
-verify_jwt = false
-
-[functions.acGetInventory]
-verify_jwt = false
-
-[functions.acGetPriceList]
 verify_jwt = false
 
 [functions.acPlaceOrder]
@@ -88,9 +76,6 @@ verify_jwt = false
 [functions.fedexShipping]
 verify_jwt = false
 
-[functions.dailyStats]
-verify_jwt = false
-
 [functions.billing]
 verify_jwt = false
 
@@ -133,4 +118,14 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.statusCustomerEmail]
+verify_jwt = false
+
+# Declared explicitly so the JWT posture is reviewed, not inherited silently.
+# Both handle auth internally like every other function: profileSecrets
+# validates the caller's user JWT itself (401s without one); redditScan gates
+# on CRON_SECRET/REDDIT_SCAN_CRON_TOKEN via timingSafeEqual.
+[functions.profileSecrets]
+verify_jwt = false
+
+[functions.redditScan]
 verify_jwt = false

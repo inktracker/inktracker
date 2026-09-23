@@ -1,0 +1,1 @@
+function App(){return React.createElement(Stage,{width:1920,height:1080,duration:22,background:"#0B0B0E",persistKey:"inktracker-invoicing-demo"},React.createElement(InvoicingDemo,null))}ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App,null));

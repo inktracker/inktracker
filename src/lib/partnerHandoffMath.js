@@ -1,3 +1,4 @@
+import { round2 } from "@/lib/pricing/round2";
 // Keep-vs-send economics for a partner handoff. Pure — tested in
 // __tests__/partnerHandoffMath.test.js.
 //
@@ -29,7 +30,6 @@ export function lineBlanksCost(li) {
   return cost * lineQty(li);
 }
 
-const round2 = (n) => Math.round(n * 100) / 100;
 
 /**
  * @returns {{revenue, blanks, keepGross, sendMargin, delta, valid}}

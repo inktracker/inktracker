@@ -16,6 +16,7 @@
 // (so a Resend outage can't mute its own alarm).
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { timingSafeEqual } from "../_shared/qbWebhookSignature.js";
 import { extractConnectionStatus } from "../_shared/connectionLogic.js";
 import {
   summarizeHealth,
@@ -48,13 +49,6 @@ const SS_ACCOUNT_NUMBER = Deno.env.get("SS_ACCOUNT_NUMBER") ?? "";
 const SS_API_KEY = Deno.env.get("SS_API_KEY") ?? "";
 const AC_SUB_KEY = Deno.env.get("ASCOLOUR_SUBSCRIPTION_KEY") ?? "";
 
-function timingSafeEqual(a: string, b: string): boolean {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return mismatch === 0;
-}
 
 interface Probe {
   name: string;

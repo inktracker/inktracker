@@ -1,3 +1,4 @@
+import { escapeHtml as esc } from "./emailSanitize.js";
 // S&S Activewear + AS Colour in-app setup — PURE logic shared by the
 // supplierSetup edge function (Deno) and the frontend/tests (Node). Sibling
 // of sanmarOnboarding.js. No I/O here.
@@ -91,10 +92,6 @@ export function applyAcCreditApproved(raw, approved, now = new Date().toISOStrin
   const o = normalizeSupplierSetup(raw);
   if (approved && !o.ac.verified_at) throw new Error("Verify your AS Colour connection before marking credit terms approved.");
   return { ...o, ac: { ...o.ac, credit_requested_at: o.ac.credit_requested_at || (approved ? now : null), credit_approved_at: approved ? now : null } };
-}
-
-function esc(s) {
-  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 function toHtml(lines) {
   return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111">${lines.map((l) => (l ? `<p style="margin:0 0 6px">${esc(l)}</p>` : `<p style="margin:0 0 6px">&nbsp;</p>`)).join("")}</div>`;

@@ -8,35 +8,12 @@ import {
   overrideRushFee,
 } from "../shared/pricing";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
+import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 
-function cleanText(value) {
-  return String(value || "").trim();
-}
 
-function extractTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  const match = txt.match(/-\s*([A-Z0-9-]{2,20})$/i);
-  return match ? cleanText(match[1]) : "";
-}
 
-function stripTrailingCode(title) {
-  const txt = cleanText(title);
-  if (!txt) return "";
-  return txt.replace(/\s*-\s*[A-Z0-9-]{2,20}\s*$/i, "").trim();
-}
 
-function looksLikeCode(value) {
-  const txt = cleanText(value);
-  if (!txt) return false;
-  return /^[A-Z0-9-]{2,20}$/i.test(txt) && /\d/.test(txt) && !txt.includes(" ");
-}
 
-function isWarehouseSku(value) {
-  const txt = cleanText(value);
-  if (!txt) return false;
-  return /^0\d{3,}$/.test(txt);
-}
 
 function getDisplayStyleNumber(li) {
   const strongCandidates = [

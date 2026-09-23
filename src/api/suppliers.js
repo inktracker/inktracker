@@ -15,15 +15,11 @@ export const SUPPLIERS = {
 
 const FN = {
   [SUPPLIERS.SS]: {
-    search: "ssSearchCatalog",
     lookup: "ssLookupStyle",
     placeOrder: "ssPlaceOrder",
   },
   [SUPPLIERS.AC]: {
-    search: "acSearchCatalog",
     lookup: "acLookupStyle",
-    inventory: "acGetInventory",
-    pricelist: "acGetPriceList",
     placeOrder: "acPlaceOrder",
     shippingMethods: "acGetShippingMethods",
   },

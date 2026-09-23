@@ -38,7 +38,7 @@ function mclamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 // ─── Logo ───────────────────────────────────────────────────────────────────
 function MLogo({ size = 32 }) {
   return (
-    <img src="assets/inktracker-logo.png" alt="InkTracker"
+    <img src="/landing/shared/inktracker-logo.png" alt="InkTracker"
       style={{ width: size, height: size, display: 'block', objectFit: 'contain', flexShrink: 0 }} />
   );
 }

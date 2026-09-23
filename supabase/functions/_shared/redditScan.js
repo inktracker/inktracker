@@ -1,3 +1,4 @@
+import { escapeHtml as esc } from "./emailSanitize.js";
 // Pure logic for the hourly Reddit lead scan (see functions/redditScan).
 // Node/Deno portable, no I/O — the edge handler does the fetching + email;
 // everything decision-shaped lives here so vitest can pin it.
@@ -142,10 +143,6 @@ export function buildDigestSubject(leads, total) {
   const n = total ?? leads.length;
   const subs = [...new Set(leads.map((l) => `r/${l.subreddit}`))].slice(0, 3).join(", ");
   return `🧵 ${n} Reddit lead${n === 1 ? "" : "s"} to check${subs ? ` — ${subs}` : ""}`;
-}
-
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
 function snippet(text, n = 220) {

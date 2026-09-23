@@ -20,21 +20,11 @@
     try { const u = new URLSearchParams(location.search); const t = u.get("t"); if (t !== null) localStorage.setItem("inktracker-shopfloor-demo:t", t); else localStorage.removeItem("inktracker-shopfloor-demo:t"); } catch (_) {}
   </script>
 
-  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+  <script src="/landing/vendor/react.production.min.js"></script>
+  <script src="/landing/vendor/react-dom.production.min.js"></script>
 
-  <script type="text/babel" src="animations.jsx"></script>
-  <script type="text/babel" src="shopfloor-scenes.jsx"></script>
-  <script type="text/babel">
-    function App() {
-      return (
-        <Stage width={1920} height={1080} duration={22.0} background="#0B0B0E" persistKey="inktracker-shopfloor-demo">
-          <ShopFloorDemo />
-        </Stage>
-      );
-    }
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-  </script>
+  <script src="animations.js"></script>
+  <script src="shopfloor-scenes.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

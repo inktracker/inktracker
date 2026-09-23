@@ -10,10 +10,8 @@
 
 import { BROKER_MARKUP } from "../../components/shared/pricing";
 import { effectiveQuoteTotals } from "../quotes/effectiveTotals";
+import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 
-function isBrokerQuote(q) {
-  return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
-}
 
 export function generateOrderId(now = Date.now()) {
   const year = new Date(now).getFullYear();

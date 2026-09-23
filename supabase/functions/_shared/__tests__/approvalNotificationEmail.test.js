@@ -313,6 +313,33 @@ describe("buildQuotePaymentEmail (BPE)", () => {
     expect(r.html).toContain(`/Quotes?id=abc-123`);
   });
 
+  it("BPE-amt — amountPaid wins over a stale quote.total (Cold Stream case)", () => {
+    // Quote stored $375 but QB collected $315 (discount added on the invoice
+    // after conversion). The email must report what was actually paid.
+    const r = buildQuotePaymentEmail({
+      quote: { ...baseQuote, total: 375 }, shop: null, customer: null,
+      recipient: shopRecipient, orderId: "ORD-77", amountPaid: 315,
+    });
+    expect(r.subject).toContain("$315.00");
+    expect(r.subject).not.toContain("$375.00");
+    expect(r.html).toContain("$315.00");
+  });
+
+  it("BPE-conv — alreadyConverted swaps 'now an order on your production board' copy", () => {
+    const fresh = buildQuotePaymentEmail({
+      quote: baseQuote, shop: null, customer: null, recipient: shopRecipient,
+      orderId: "ORD-77", amountPaid: 100,
+    });
+    expect(fresh.html).toContain("now an order on your production board");
+
+    const existing = buildQuotePaymentEmail({
+      quote: baseQuote, shop: null, customer: null, recipient: shopRecipient,
+      orderId: "ORD-77", amountPaid: 100, alreadyConverted: true,
+    });
+    expect(existing.html).not.toContain("now an order on your production board");
+    expect(existing.html).toContain("Nothing new was added to your production board");
+  });
+
   it("BPE4 — broker recipient → /BrokerDashboard regardless of orderId", () => {
     const r = buildQuotePaymentEmail({
       quote: baseQuote, shop: null, customer: null, recipient: brokerRecipient,

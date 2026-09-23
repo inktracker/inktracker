@@ -1,3 +1,4 @@
+import { escapeHtml as esc } from "./emailSanitize.js";
 // Pure logic for the daily systemHealthCheck edge function. No I/O here —
 // the function's index.ts runs the network probes and hands the results to
 // these builders. Contract-tested in __tests__/systemHealthCheck.test.js.
@@ -133,8 +134,4 @@ export function buildHealthHtml(summary, probes, dateStr) {
   <table style="border-collapse:collapse;width:100%;font-size:14px">${rows}</table>
   <p style="color:#94a3b8;font-size:12px;margin-top:18px">InkTracker daily system check · runs 6am · green mornings still send on purpose.</p>
 </body></html>`;
-}
-
-function esc(s) {
-  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
