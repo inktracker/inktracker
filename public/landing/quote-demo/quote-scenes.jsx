@@ -832,7 +832,7 @@ function QuoteBuilderModal({ t, modalT }) {
                   }}>{total} pcs</span>
                 </div>
                 <PriceRow
-                  label="1st Print — Front (1c)"
+                  label="1st Print · Front (1c)"
                   sub={`Tier: 50+ from ${total} pcs · linked`}
                   value={priceCount > 0 ? `$${(PRINT_TOTAL * priceCount).toFixed(2)}` : '—'}
                   right="$5.67/pc"
@@ -1174,7 +1174,7 @@ function SceneBuilder() {
   if (t < 3.0)       { captionStep = 'Step 02'; captionLine = 'Pick the customer and job.'; }
   else if (t < 6.5)  { captionStep = 'Step 03'; captionLine = 'Add garments and sizes.'; }
   else if (t < 8.0)  { captionStep = 'Step 04'; captionLine = 'Define the print.'; }
-  else if (t < 11.5) { captionStep = 'Step 05'; captionLine = 'Pricing — live as you type.'; }
+  else if (t < 11.5) { captionStep = 'Step 05'; captionLine = 'Pricing updates as you type.'; }
   else               { captionStep = 'Step 06'; captionLine = 'Save and it lands on the board.'; }
 
   const capT = clamp((t - 0.4) / 0.4, 0, 1);

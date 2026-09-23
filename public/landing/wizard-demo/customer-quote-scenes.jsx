@@ -243,7 +243,7 @@ function SceneCQHook() {
         opacity: subT, transform: `translateY(${(1-subT)*8}px)`,
         fontFamily: FF, fontSize: 20, color: CQ.darkText2, marginTop: 36,
         letterSpacing: '-0.005em', textAlign: 'center',
-      }}>Embedded widget. Three steps. Quote in their inbox.</div>
+      }}>A quote form that lives on your own website.</div>
 
       {/* connector dots */}
       <div style={{
@@ -432,7 +432,7 @@ function SceneCQStyle() {
           </div>
         </div>
 
-        <CQCaption text="Pick a garment — built into the shop's website." time={localTime} duration={duration} delay={0.5} />
+        <CQCaption text="Customers pick a garment on your website." time={localTime} duration={duration} delay={0.5} />
       </div>
     </ShopChrome>
   );
@@ -633,7 +633,7 @@ function SceneCQConfig() {
           </div>
         </div>
 
-        <CQCaption text="Pick a color, set print details and sizes — pricing updates live." time={localTime} duration={duration} delay={0.4} />
+        <CQCaption text="Colors, sizes, and print details price as they go." time={localTime} duration={duration} delay={0.4} />
       </div>
     </ShopChrome>
   );
@@ -746,7 +746,7 @@ function SceneCQDetails() {
           </div>
         </div>
 
-        <CQCaption text="Your customer fills out their details — no commitment required." time={localTime} duration={duration} delay={0.4} />
+        <CQCaption text="They leave their details. No payment, no account." time={localTime} duration={duration} delay={0.4} />
       </div>
     </ShopChrome>
   );
@@ -844,7 +844,7 @@ function SceneCQReview() {
             <Card>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontFamily: FF, fontSize: 15, fontWeight: 500, color: CQ.text2 }}>Turnaround</div>
-                <div style={{ fontFamily: FF, fontSize: 15, fontWeight: 700, color: CQ.text1 }}>Standard — 14 days</div>
+                <div style={{ fontFamily: FF, fontSize: 15, fontWeight: 700, color: CQ.text1 }}>Standard · 14 days</div>
               </div>
             </Card>
 
@@ -899,7 +899,7 @@ function SceneCQReview() {
           </div>
         </div>
 
-        <CQCaption text="Review the order — submit for a final quote." time={localTime} duration={duration} delay={0.4} />
+        <CQCaption text="They review and submit for a quote." time={localTime} duration={duration} delay={0.4} />
       </div>
     </ShopChrome>
   );
@@ -1010,14 +1010,14 @@ function SceneCQSuccess() {
           <SumRow k="Garment"    v="AS Colour 5001 · PLUM" />
           <SumRow k="Quantity"   v="80 pcs" />
           <SumRow k="Print"      v="Front (1c)" />
-          <SumRow k="Turnaround" v="Standard — 14 days" />
+          <SumRow k="Turnaround" v="Standard · 14 days" />
           <div style={{ borderTop: `1px solid ${CQ.border}`, marginTop: 14, paddingTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontFamily: FF, fontSize: 15, fontWeight: 700, color: CQ.text1 }}>Estimated Total</div>
             <div style={{ fontFamily: FF, fontSize: 22, fontWeight: 800, color: CQ.accent, letterSpacing: '-0.02em' }}>$1,108.80</div>
           </div>
         </div>
 
-        <CQCaption text="Quote request lands in their inbox — and in your shop." time={localTime} duration={duration} delay={0.5} />
+        <CQCaption text="The request shows up in your Quotes list." time={localTime} duration={duration} delay={0.5} />
       </div>
     </ShopChrome>
   );

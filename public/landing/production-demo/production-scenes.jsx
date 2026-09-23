@@ -577,7 +577,7 @@ function SceneCalendar() {
       </PAppWindow>
 
       {/* Caption */}
-      <SceneCaption text="See every job across the month — one glance." time={localTime} duration={duration} delay={0.6} />
+      <SceneCaption text="The month's jobs on one calendar." time={localTime} duration={duration} delay={0.6} />
     </div>
   );
 }
@@ -801,7 +801,7 @@ function SceneTable() {
 
       <SceneCaption
         text={isPrePress
-          ? 'Filter by stage — find every Pre-Press job instantly.'
+          ? 'Filter down to just the Pre-Press jobs.'
           : 'One table. Every order. Every status.'}
         time={localTime} duration={duration} delay={0.6}
       />
@@ -996,7 +996,7 @@ function SceneFloor() {
       </PAppWindow>
 
       <SceneCaption
-        text="Pop open any job — sizes, decorations, real-time progress."
+        text="Open a job for sizes, prints, and progress."
         time={localTime} duration={duration} delay={2.4}
       />
     </div>

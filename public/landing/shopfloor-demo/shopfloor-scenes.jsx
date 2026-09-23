@@ -143,7 +143,7 @@ function ShopFloorHeader({ employeeName = 'Aiden Vega' }) {
         <SFLogo size={36} />
         <div>
           <div style={{ fontFamily: SFF, fontSize: 19, fontWeight: 800, letterSpacing: '-0.015em' }}>Shop Floor</div>
-          <div style={{ fontFamily: SFF, fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 2 }}>Northwind Print · {employeeName}</div>
+          <div style={{ fontFamily: SFF, fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 2 }}>Summit Screen Printing · {employeeName}</div>
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -219,9 +219,9 @@ function SceneSFHook() {
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
         <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: SF.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Built for the floor.</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Real-time updates.</div>
-      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: SFF, fontSize: 20, color: SF.darkText2, marginTop: 36, textAlign: 'center' }}>Tablet-ready. Touch-friendly. Synced to the office in seconds.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: SF.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Built for the floor,</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>seen in the office.</div>
+      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: SFF, fontSize: 20, color: SF.darkText2, marginTop: 36, textAlign: 'center' }}>Runs on the tablet next to the press.</div>
     </div>
   );
 }
@@ -280,7 +280,7 @@ function SceneSFQueue() {
         })}
       </div>
 
-      <SFCaption text="Big, tappable job tickets. Color-coded by stage. Rush flagged in red." time={localTime} duration={duration} delay={1.6} />
+      <SFCaption text="Job tickets sized for a phone on the floor." time={localTime} duration={duration} delay={1.6} />
     </TabletFrame>
   );
 }
@@ -443,7 +443,7 @@ function SceneSFTicket() {
         </button>
       </div>
 
-      <SFCaption text="Tap to check off. Tap to advance the stage. The office sees it live." time={localTime} duration={duration} delay={3.6} />
+      <SFCaption text="Tap through the checklist to move the job along." time={localTime} duration={duration} delay={3.6} />
     </TabletFrame>
   );
 }
@@ -502,7 +502,7 @@ function SceneSFDesktop() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px 16px' }}>
               <SFLogo size={28} />
-              <div style={{ fontFamily: SFF, fontSize: 13.5, fontWeight: 800, color: SF.text1, letterSpacing: '-0.01em' }}>Northwind Print</div>
+              <div style={{ fontFamily: SFF, fontSize: 13.5, fontWeight: 800, color: SF.text1, letterSpacing: '-0.01em' }}>Summit Screen Printing</div>
             </div>
             {[
               { label: 'Dashboard' },
@@ -587,7 +587,7 @@ function SceneSFDesktop() {
         </div>
       </div>
 
-      <SFCaption text="What the team finishes on the floor, the office sees instantly." time={localTime} duration={duration} delay={2.0} />
+      <SFCaption text="The office sees what the floor finishes." time={localTime} duration={duration} delay={2.0} />
     </div>
   );
 }

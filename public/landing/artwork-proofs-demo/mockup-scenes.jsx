@@ -698,9 +698,9 @@ function MSceneHook() {
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
         <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: MDARK1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Art proofs,</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>made easy.</div>
-      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: MF, fontSize: 20, color: MDARK2, marginTop: 36, textAlign: 'center' }}>Garment, artwork, and a signature-ready PDF — in one screen.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: MDARK1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>The proof,</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>ready to send.</div>
+      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: MF, fontSize: 20, color: MDARK2, marginTop: 36, textAlign: 'center' }}>Garment, art, and print specs on one page.</div>
       <div style={{ opacity: trailT, marginTop: 56, display: 'flex', alignItems: 'center', gap: 18, fontFamily: MF, fontSize: 13, fontWeight: 700, color: MDARK3, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
         <span>Garment</span>
         <span style={{ color: 'rgba(244,244,245,0.25)' }}>→</span>
@@ -786,7 +786,7 @@ function MSceneArtwork() {
     (t > 4.45 && t < 4.85);
   let captionStep = 'Step 02', captionText = 'Drop in artwork.';
   if (t >= 2.25 && t < 4.85) { captionStep = 'Step 03'; captionText = 'Drop the background — one color, print-ready.'; }
-  else if (t >= 4.85)        { captionStep = 'Step 04'; captionText = 'Mockup ready in seconds.'; }
+  else if (t >= 4.85)        { captionStep = 'Step 04'; captionText = 'The art drops onto the garment.'; }
 
   return (
     <div style={{ position: 'absolute', inset: 0, background: MK.appBg }}>
@@ -951,7 +951,7 @@ function MScenePDF() {
       )}
 
       {/* Caption */}
-      <SceneCaption step="Step 06" text="One click. Client-ready PDF." opacity={mclamp((t - 0.4) / 0.4, 0, 1)} />
+      <SceneCaption step="Step 06" text="Export the proof as a PDF." opacity={mclamp((t - 0.4) / 0.4, 0, 1)} />
     </div>
   );
 }
@@ -1190,7 +1190,7 @@ function MSceneMid() {
   if (t >= 3.5 && t < 5.5)      { captionStep = 'Step 02'; captionText = 'Drop in artwork.'; }
   else if (t >= 5.5 && t < 7.4) { captionStep = 'Step 03'; captionText = 'One-color mode — background drops out.'; }
   else if (t >= 7.4 && t < 14.0){ captionStep = 'Step 04'; captionText = 'Fill in the proof details.'; }
-  else if (t >= 14.0)           { captionStep = 'Step 05'; captionText = 'One click. Client-ready PDF.'; }
+  else if (t >= 14.0)           { captionStep = 'Step 05'; captionText = 'Export the proof as a PDF.'; }
   // Cross-fade caption around transitions
   const BOUNDARIES = [3.5, 5.5, 7.4, 14.0];
   let capFade = 1;
