@@ -119,7 +119,10 @@ export function buildQuoteApprovalEmail({ quote, shop, customer, recipient }) {
 // kind: "full" (default) | "deposit". A deposit payment gets its own
 // subject/copy — the amount is the deposit, the job still carries a
 // remaining balance, and the CTA copy must not read "paid in full".
-export function buildQuotePaymentEmail({ quote, shop, customer, recipient, orderId, amountPaid, kind = "full" }) {
+// alreadyConverted: true when the quote was converted to an order BEFORE this
+// payment landed (webhook cascade path) — the copy must not announce a new
+// job on the production board; the order may already be mid-run or Completed.
+export function buildQuotePaymentEmail({ quote, shop, customer, recipient, orderId, amountPaid, kind = "full", alreadyConverted = false }) {
   if (!quote) throw new Error("buildQuotePaymentEmail: quote required");
   if (!recipient) throw new Error("buildQuotePaymentEmail: recipient required");
 
@@ -154,7 +157,9 @@ export function buildQuotePaymentEmail({ quote, shop, customer, recipient, order
     : isBroker
       ? "Your client paid. The shop has been notified to start production."
       : orderId
-        ? "The quote is now an order on your production board. Time to get to work."
+        ? (alreadyConverted
+            ? "Payment recorded on the existing order — it's marked paid. Nothing new was added to your production board."
+            : "The quote is now an order on your production board. Time to get to work.")
         : "Open the quote to review the payment status.";
 
   const subject = isDeposit

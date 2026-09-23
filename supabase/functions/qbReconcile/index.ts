@@ -568,9 +568,16 @@ async function reconcileCascadeQuote(
           .select("shop_name")
           .eq("owner_email", shopOwner)
           .maybeSingle();
+        // Report what QB actually collected (TotalAmt from the fresh QB read),
+        // not the quote's stored total — they diverge when the invoice was
+        // edited after conversion (e.g. discount added invoice-side).
+        const collected = Number(freshInvoice?.TotalAmt);
         email = buildQuotePaymentEmail({
           quote, shop: shopRow, customer: null, recipient,
-          orderId: quote.converted_order_id, amountPaid: quote.total,
+          orderId: quote.converted_order_id,
+          amountPaid: Number.isFinite(collected) && collected > 0 ? collected : quote.total,
+          // Cascade path = the quote was converted before this payment landed.
+          alreadyConverted: true,
         });
       }
       await sendAndLogApprovalNotification(adminClient, {
@@ -708,9 +715,13 @@ async function reconcileOneQuote(
             .select("shop_name")
             .eq("owner_email", shopOwner)
             .maybeSingle();
+          // Same as the cascade path: the QB invoice's TotalAmt is the truth
+          // for what was collected; the quote total can be stale.
+          const collected = Number(freshInvoice?.TotalAmt);
           email = buildQuotePaymentEmail({
             quote: q, shop: shopRow, customer: null, recipient,
-            orderId, amountPaid: q?.total,
+            orderId,
+            amountPaid: Number.isFinite(collected) && collected > 0 ? collected : q?.total,
           });
         }
         await sendAndLogApprovalNotification(adminClient, {

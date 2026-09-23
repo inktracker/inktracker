@@ -3160,9 +3160,14 @@ async function handleRefreshInvoice(
           .select("shop_name")
           .eq("owner_email", q.shop_owner)
           .maybeSingle();
+        // Report what QB actually collected (TotalAmt), not the quote's
+        // stored total — they diverge when the invoice was edited after the
+        // quote was sent (e.g. discount added invoice-side).
+        const collected = Number(freshInvoice?.TotalAmt);
         email = buildQuotePaymentEmail({
           quote: q, shop: shopRow, customer: null, recipient,
-          orderId, amountPaid: q.total,
+          orderId,
+          amountPaid: Number.isFinite(collected) && collected > 0 ? collected : q.total,
         });
       }
       await sendAndLogApprovalNotification(adminClient, {
