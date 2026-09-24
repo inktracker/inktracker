@@ -48,6 +48,12 @@ export function describeEntityError(err, fallback = "Something went wrong. Pleas
       return "You don't have permission to do that. Try refreshing the page and signing in again.";
     case "PGRST301": // PostgREST: JWT expired
       return "Your session expired. Refresh the page and sign in again, then try that once more.";
+    case "PGRST204": // PostgREST: payload names a column the table doesn't have
+    case "PGRST200": // PostgREST: relationship not found in schema cache
+      // A code/schema mismatch — our bug, not the user's input. Used to fall
+      // through to the generic fallback, which hid a broker quote-save outage
+      // (quotes.broker_phone missing) behind "Something went wrong".
+      return "Something's misconfigured on our end. Please try again — and contact support if it keeps happening.";
     case "PGRST116": // PostgREST: no rows from .single()
       return "That record couldn't be found — it may have been deleted. Refresh and try again.";
     default:

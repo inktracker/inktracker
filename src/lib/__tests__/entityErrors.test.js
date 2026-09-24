@@ -53,6 +53,12 @@ describe("describeEntityError — no raw SQL reaches the user", () => {
     expect(describeEntityError(pg("PGRST301", "JWT expired"))).toMatch(/session expired|sign in again/i);
   });
 
+  it("PGRST204 unknown column is treated as our bug, not the generic fallback", () => {
+    const msg = describeEntityError(pg("PGRST204", "Could not find the 'broker_phone' column of 'quotes' in the schema cache"));
+    expect(msg).toMatch(/misconfigured|contact support/i);
+    expect(msg).not.toMatch(/broker_phone|schema cache|PGRST204/i);
+  });
+
   it("undefined column (42703) is treated as our bug, not dumped at the user", () => {
     const msg = describeEntityError(pg("42703", 'column "foo" does not exist'));
     expect(msg).toMatch(/misconfigured|contact support/i);
