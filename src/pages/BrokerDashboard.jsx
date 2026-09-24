@@ -235,8 +235,9 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
       status: "Client Rejected",
       client_status: "Rejected",
     }, "clientRejected");
-    // Notify shop
-    if (quote.shop_owner) {
+    // Notify shop — only once it's actually a shop's quote, not a
+    // pre-submit `broker:<email>` placeholder tenant.
+    if (quote.shop_owner && !quote.shop_owner.startsWith("broker:")) {
       await base44.entities.BrokerNotification.create({
         shop_owner: quote.shop_owner,
         broker_id: quote.broker_id || quote.broker_email || "",
@@ -944,7 +945,13 @@ export default function BrokerDashboard({ initialTab } = {}) {
       // editor only set it on a throwaway preview object), so the shop's
       // copy always showed a blank broker phone. Broker audit 2026-08-17.
       broker_phone: user.phone || "",
-      shop_owner: isSubmittingToShop ? assignedShop : null,
+      // Pre-submit broker quotes are tenanted to `broker:<email>` (the same
+      // convention broker-owned customers use) so the shop can't see them
+      // yet. Was `null`, but quotes.shop_owner has been NOT NULL since
+      // 20260806 — every broker draft save failed with "A required field is
+      // missing". The broker_write RLS policy keys on broker_id, so the
+      // broker still reads/writes these rows.
+      shop_owner: isSubmittingToShop ? assignedShop : `broker:${user.email}`,
     };
 
     let saved;
