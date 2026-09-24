@@ -7,8 +7,11 @@
 //     at "Converted to Order", which the Quotes page filters out — so a deleted
 //     order silently vanished with no way back.
 //   - Broker order → hand the quote back to the broker: "Client Approved",
-//     shop_owner cleared (un-queues it from the shop), plus a BrokerNotification
-//     so it surfaces in their ShopActionFeed.
+//     re-tenanted to `broker:<email>` (un-queues it from the shop), plus a
+//     BrokerNotification so it surfaces in their ShopActionFeed. Goes through
+//     the return_quote_to_broker RPC: the shop's own RLS can't move a row out
+//     of its tenant, and shop_owner is NOT NULL — the old direct update
+//     (shop_owner: null) always failed silently and stranded the quote.
 //   - Order not created from a quote → nothing to restore.
 //
 // Best-effort: any sub-step failure is logged and swallowed. The order is
@@ -18,7 +21,7 @@
 //
 // Callers: shop-side handleDelete in Orders.jsx + Production.jsx.
 
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 
 export async function revertQuoteOnOrderDelete(order) {
   if (!order?.order_id) return;
@@ -38,9 +41,14 @@ export async function revertQuoteOnOrderDelete(order) {
   // just gets deleted — nothing to restore.
   if (sourceQuote) {
     try {
-      await base44.entities.Quote.update(sourceQuote.id, brokerId
-        ? { status: "Client Approved", converted_order_id: null, shop_owner: null } // hand back to broker
-        : { status: "Approved", converted_order_id: null });                        // back to shop's Quotes
+      if (brokerId) {
+        // Hand back to broker (server-side; see header).
+        const { error } = await supabase.rpc("return_quote_to_broker", { p_quote_id: String(sourceQuote.id) });
+        if (error) throw error;
+      } else {
+        // Back to the shop's Quotes list.
+        await base44.entities.Quote.update(sourceQuote.id, { status: "Approved", converted_order_id: null });
+      }
     } catch (err) {
       console.warn("[revertQuoteOnOrderDelete] quote restore failed:", err);
     }
