@@ -4,7 +4,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
-import { escapeHtml, sanitizeEmailBody } from "../_shared/emailSanitize.js";
+import { escapeHtml, sanitizeEmailBody, asBareEmail } from "../_shared/emailSanitize.js";
 import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 import {
@@ -172,8 +172,12 @@ Deno.serve(async (req) => {
       // Prefer the profile so the email brand never shows a stale shop name.
       shopName = ownerProfile?.shop_name || shop?.shop_name || "InkTracker";
       shopLogoUrl = ownerProfile?.logo_url || null;
-      // Force Reply-To / Bcc target to the legitimate shop owner.
-      shopOwnerEmail = quote.shop_owner;
+      // Force Reply-To / Bcc target to the legitimate shop owner. Broker-
+      // portal quotes carry the `broker:<email>` tenancy sentinel here
+      // (pre-submission there is no shop) — asBareEmail resolves it to the
+      // broker's real address instead of letting the sentinel reach Resend,
+      // which 422'd the whole send and the customer never got the quote.
+      shopOwnerEmail = asBareEmail(quote.shop_owner);
       // Force subject/body/CTA label to the server template. The gate here is
       // only possession of the human quote_id (rendered in every quote email's
       // subject, "Q-2026-XXXX") — no public_token — so any recipient of any
@@ -345,8 +349,11 @@ Deno.serve(async (req) => {
       ? escapeQuotes(brokerName)
       : escapeQuotes(shopName || "InkTracker");
     const fromHeader = `${displayName} <${SEND_FROM}>`;
+    // Normalize ONCE: on the authed path shopOwnerEmail arrives from the
+    // request body, so it can carry the broker sentinel or garbage too.
+    shopOwnerEmail = asBareEmail(shopOwnerEmail);
     const replyTo = isBrokerSend
-      ? (brokerEmail || shopOwnerEmail)
+      ? (asBareEmail(brokerEmail) || shopOwnerEmail || undefined)
       : (shopOwnerEmail || undefined);
 
     // Sequential, retried sends (resendClient). This was a Promise.all of
@@ -360,7 +367,9 @@ Deno.serve(async (req) => {
     );
     const results: Array<{ to: string; ok: boolean; reason?: string | null }> = [];
     for (const to of customerEmails as string[]) {
-      const bccList = [shopOwnerEmail, brokerEmail].filter(Boolean);
+      // Every bcc entry must be a real address — one bad entry fails the
+      // ENTIRE send (Resend 422), taking the customer's copy down with it.
+      const bccList = [...new Set([asBareEmail(shopOwnerEmail), asBareEmail(brokerEmail)])].filter(Boolean);
       const result = await sendResendEmail({
         from: fromHeader,
         to: [to],

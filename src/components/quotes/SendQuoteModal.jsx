@@ -773,6 +773,16 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         throw new Error(realMessage || invokeErr.message || "Couldn't send the quote email. Please try again.");
       }
       if (res?.error) throw new Error(res.error);
+      // A failed delivery comes back HTTP 200 with { sent: false, results } —
+      // not an error field. Treating that as success marked quotes "Sent"
+      // while the customer got NOTHING (Ethan → Resend 422, 2026-09-25).
+      // Fail loudly and leave the quote un-marked so the sender retries.
+      if (res && res.sent === false) {
+        const failed = (res.results || []).filter((r) => !r.ok);
+        const who = failed.map((r) => r.to).join(", ");
+        const why = failed[0]?.reason ? ` (${failed[0].reason})` : "";
+        throw new Error(`The quote email couldn't be delivered${who ? ` to ${who}` : ""}${why}. The quote was NOT marked sent — please try again.`);
+      }
 
       // Post-send patch: status / sent_to / sent_date / totals /
       // customer_email + tax_rate (forced to 0 for broker quotes).

@@ -40,7 +40,28 @@ export function isRetryableResendStatus(status) {
  *   notification_log.resend_id). `reason` mirrors the existing
  *   'resend_<status>' / 'no_api_key' / 'network' vocabulary.
  */
+// Optional-courier fields must never sink the send: one malformed bcc or
+// reply_to entry makes Resend 422 the ENTIRE request, so the CUSTOMER'S
+// copy dies because an internal CC was bad (broker `broker:<email>`
+// tenancy sentinel reached bcc — Ethan/ttrsupply, 2026-09-25). `to` stays
+// untouched: an invalid recipient SHOULD fail loudly.
+const BARE_EMAIL_RE = /^[^\s@:;,<>]+@[^\s@:;,<>]+\.[^\s@:;,<>]+$/;
+const FRIENDLY_RE = /^[^<>]*<[^\s@:;,<>]+@[^\s@:;,<>]+\.[^\s@:;,<>]+>$/; // Name <a@b.c>
+const validAddr = (v) => { const s = String(v ?? "").trim(); return BARE_EMAIL_RE.test(s) || FRIENDLY_RE.test(s); };
+export function sanitizeCourierFields(payload) {
+  const out = { ...payload };
+  for (const key of ["bcc", "cc"]) {
+    if (key in out) {
+      const list = (Array.isArray(out[key]) ? out[key] : [out[key]]).filter(validAddr);
+      if (list.length > 0) out[key] = list; else delete out[key];
+    }
+  }
+  if ("reply_to" in out && !validAddr(out.reply_to)) delete out.reply_to;
+  return out;
+}
+
 export async function sendResendEmail(payload, opts = {}) {
+  payload = sanitizeCourierFields(payload);
   const runtimeEnv = opts.env ?? (typeof Deno !== "undefined" ? Deno.env : undefined);
   const apiKey = opts.apiKey ?? runtimeEnv?.get?.("RESEND_API_KEY") ?? "";
   const fetchImpl = opts.fetchImpl ?? fetch;

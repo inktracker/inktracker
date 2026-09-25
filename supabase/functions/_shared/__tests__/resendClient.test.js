@@ -7,8 +7,7 @@ import {
   sendResendEmails,
   resendRetryDelayMs,
   isRetryableResendStatus,
-  RESEND_MAX_ATTEMPTS,
-} from "../resendClient.js";
+  RESEND_MAX_ATTEMPTS, sanitizeCourierFields } from "../resendClient.js";
 
 const okResponse = (id = "re_123") => ({
   ok: true,
@@ -136,5 +135,29 @@ describe("pure helpers", () => {
     expect(isRetryableResendStatus(503)).toBe(true);
     expect(isRetryableResendStatus(422)).toBe(false);
     expect(isRetryableResendStatus(401)).toBe(false);
+  });
+});
+
+describe("sanitizeCourierFields (bcc-poison guard)", () => {
+  it("drops the broker tenancy sentinel from bcc instead of failing the send", () => {
+    const out = sanitizeCourierFields({ to: ["c@x.com"], bcc: ["broker:ethan@ttrsupply.com", "ethan@ttrsupply.com"] });
+    expect(out.bcc).toEqual(["ethan@ttrsupply.com"]);
+  });
+  it("removes bcc entirely when nothing valid remains", () => {
+    const out = sanitizeCourierFields({ to: ["c@x.com"], bcc: ["broker:", "unknown"] });
+    expect("bcc" in out).toBe(false);
+  });
+  it("keeps friendly-format addresses", () => {
+    const out = sanitizeCourierFields({ to: ["c@x.com"], bcc: ["Shop <owner@shop.com>"] });
+    expect(out.bcc).toEqual(["Shop <owner@shop.com>"]);
+  });
+  it("drops an invalid reply_to but never touches to", () => {
+    const out = sanitizeCourierFields({ to: ["not-an-email"], reply_to: "broker:x@y.com" });
+    expect(out.to).toEqual(["not-an-email"]);
+    expect("reply_to" in out).toBe(false);
+  });
+  it("passes a fully valid payload through unchanged", () => {
+    const p = { to: ["c@x.com"], bcc: ["a@b.co"], reply_to: "r@s.io", subject: "hi" };
+    expect(sanitizeCourierFields(p)).toEqual(p);
   });
 });
