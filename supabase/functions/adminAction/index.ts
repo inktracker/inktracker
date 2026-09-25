@@ -81,6 +81,40 @@ serve(async (req) => {
       }
     }
 
+    // ── inspectSubscription (platform admin only) ─────────────────────
+    // Read-only Stripe forensics for one shop: customer discount,
+    // subscriptions (+ their discounts), recent invoices (amount before/after
+    // discount), and the account's coupons + promotion codes. Built
+    // 2026-09-25 when a shop with an intended 50% discount was billed full
+    // price and the dashboard wasn't reachable from the agent session.
+    if (action === "inspectSubscription") {
+      if (callerRole !== "admin") {
+        return new Response(JSON.stringify({ error: "Forbidden: platform admin only" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const email = String(body.email || "").trim().toLowerCase();
+      if (!email) return new Response(JSON.stringify({ error: "email required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const { data: target } = await adminClient.from("profiles").select("id, email, subscription_tier, subscription_status").ilike("email", email).maybeSingle();
+      if (!target) return new Response(JSON.stringify({ error: "No profile for that email" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const { data: sec } = await adminClient.from("profile_secrets").select("stripe_customer_id, stripe_subscription_id").eq("profile_id", target.id).maybeSingle();
+      const stripeKey = Deno.env.get("STRIPE_SECRET_KEY") || "";
+      const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
+      const custId = sec?.stripe_customer_id || null;
+      const out: Record<string, unknown> = { profile: target, stripe_customer_id: custId, stripe_subscription_id: sec?.stripe_subscription_id || null };
+      if (custId) {
+        const customer = await stripe.customers.retrieve(custId, { expand: ["discount.coupon"] }) as Stripe.Customer;
+        out.customer = { id: customer.id, email: customer.email, name: customer.name, discount: customer.discount ? { coupon: customer.discount.coupon?.id, name: customer.discount.coupon?.name, percent_off: customer.discount.coupon?.percent_off, amount_off: customer.discount.coupon?.amount_off, duration: customer.discount.coupon?.duration, start: customer.discount.start, end: customer.discount.end } : null };
+        const subs = await stripe.subscriptions.list({ customer: custId, status: "all", limit: 10, expand: ["data.discount.coupon"] });
+        out.subscriptions = subs.data.map((s) => ({ id: s.id, status: s.status, created: s.created, current_period_end: s.current_period_end, cancel_at_period_end: s.cancel_at_period_end, canceled_at: s.canceled_at, price: s.items.data[0]?.price?.id, unit_amount: s.items.data[0]?.price?.unit_amount, interval: s.items.data[0]?.price?.recurring?.interval, discount: s.discount ? { coupon: s.discount.coupon?.id, name: s.discount.coupon?.name, percent_off: s.discount.coupon?.percent_off, amount_off: s.discount.coupon?.amount_off, duration: s.discount.coupon?.duration, duration_in_months: s.discount.coupon?.duration_in_months, start: s.discount.start, end: s.discount.end, promotion_code: s.discount.promotion_code } : null }));
+        const invs = await stripe.invoices.list({ customer: custId, limit: 8 });
+        out.invoices = invs.data.map((i) => ({ id: i.id, number: i.number, created: i.created, status: i.status, subscription: i.subscription, subtotal: i.subtotal, total: i.total, amount_paid: i.amount_paid, discounts: (i.total_discount_amounts || []).map((d) => d.amount), period_end: i.period_end }));
+      }
+      const coupons = await stripe.coupons.list({ limit: 25 });
+      out.coupons = coupons.data.map((c) => ({ id: c.id, name: c.name, percent_off: c.percent_off, amount_off: c.amount_off, duration: c.duration, duration_in_months: c.duration_in_months, valid: c.valid, times_redeemed: c.times_redeemed }));
+      const promos = await stripe.promotionCodes.list({ limit: 25 });
+      out.promotion_codes = promos.data.map((p) => ({ id: p.id, code: p.code, coupon: p.coupon?.id, active: p.active, times_redeemed: p.times_redeemed, customer: p.customer }));
+      return new Response(JSON.stringify(out), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "listUsers") {
       // For a manager the roster tenant is the OWNER's email — their own
       // email would match nothing. The extra email.eq clause pulls the
