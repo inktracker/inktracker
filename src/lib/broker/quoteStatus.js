@@ -10,6 +10,13 @@ export function normalizeQuoteStatus(status) {
   if (status === "Approved and Paid") return "Shop Approved";
   if (status === "Approved") return "Shop Approved";
   if (status === "Sent") return "Pending";
+  // "Client Rejected" (broker portal: the end client turned the quote
+  // down) is a flavor of Declined. Folding it here lets it flow into the
+  // Declined count, the Declined filter chip, and the declined bucket —
+  // otherwise these quotes vanished from every count and filter and could
+  // only be seen by scrolling the raw list. The per-row chip still reads
+  // the raw quote.status, so it keeps its own "Client Rejected" label.
+  if (status === "Client Rejected") return "Declined";
   return status || "Draft";
 }
 

@@ -168,6 +168,12 @@ export default function BrokerQuoteEditor({
     () => ({
       ...q,
       tax_rate: 0,
+      // The "Discount" field is the broker discounting THEIR end client — it
+      // reduces the client price only. Wholesale (what the shop bills the
+      // broker) is a contract price and must stay whole; leaving the discount
+      // on here made the broker's client discount silently cut the shop's
+      // receivable by the same percentage.
+      discount: 0,
     }),
     [q]
   );
@@ -187,7 +193,10 @@ export default function BrokerQuoteEditor({
     shopConfig
   );
 
-  const brokerProfit = Math.max(0, retailTotals.total - totals.total);
+  // NOT clamped to 0: if the broker prices their client below their own
+  // wholesale cost (heavy discount / low override), they need to SEE the loss,
+  // not a false break-even. The margin readout flags negatives below.
+  const brokerProfit = retailTotals.total - totals.total;
   // (brokerRemaining removed with the live deposit control — broker
   // deposits are out-of-band; see the read-only terms note below.)
   const retailRemaining = Math.max(0, retailTotals.total - retailTotals.deposit);
@@ -354,7 +363,9 @@ export default function BrokerQuoteEditor({
       const brokerLineSub = stampedItems.reduce((s, li) => s + (li._lineTotal || 0), 0);
       const brokerRushSum = stampedItems.reduce((s, li) => s + (li._rushFee || 0), 0);
       const brokerSub = Math.round((brokerLineSub + brokerRushSum) * 100) / 100;
-      const brokerAfterDisc = isFlat ? Math.max(0, brokerSub - discVal) : brokerSub * (1 - discVal / 100);
+      // Wholesale is NOT discounted — the broker's discount applies to their
+      // client only (see brokerQuote memo). Broker owes the shop full contract.
+      const brokerAfterDisc = brokerSub;
       // Additional fees (incl. per_job "jobfee_*" toggles) pass through at face
       // value — flat, post-discount, no markup. Broker side is untaxed, so all
       // charges just add on. Mirrors the shop model + the live calcQuoteTotals.
@@ -933,13 +944,18 @@ export default function BrokerQuoteEditor({
                 )}
 
                 <div className="flex justify-between items-center border-t border-slate-200 pt-2 mt-2">
-                  <span className="text-xs font-bold text-green-700">
-                    Total Broker Profit
+                  <span className={`text-xs font-bold ${brokerProfit < 0 ? "text-red-700" : "text-green-700"}`}>
+                    {brokerProfit < 0 ? "Total Broker LOSS" : "Total Broker Profit"}
                   </span>
-                  <span className="text-base font-bold text-green-700">
+                  <span className={`text-base font-bold ${brokerProfit < 0 ? "text-red-700" : "text-green-700"}`}>
                     {fmtMoney(brokerProfit)}
                   </span>
                 </div>
+                {brokerProfit < 0 && (
+                  <div className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-1.5 border border-red-100 mt-1.5">
+                    You're pricing this client below your wholesale cost — you'd lose {fmtMoney(Math.abs(brokerProfit))} on this order.
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -433,12 +433,19 @@ async function addHeader(
     customerSecondary = "";
   }
 
-  const logoSrc = logoUrl || INKTRACKER_LOGO;
-  try {
-    const img = await loadImage(logoSrc);
-    doc.addImage(capImagePixels(img, MAX_PDF_LOGO_PX), 'PNG', margin, yPos - 2, 14, 14);
-  } catch (e) {
-    // ignore logo errors
+  // Mirror the headerBrand guard: an explicitly-empty shopName means a
+  // white-labeled broker client PDF whose broker set no logo. Falling back to
+  // INKTRACKER_LOGO there stamped the InkTracker logo on the client's quote —
+  // breaking the white-label the brand-text guard is trying to preserve. Draw
+  // NO logo in that case; normal shop PDFs keep the legacy INKTRACKER default.
+  const logoSrc = shopName === '' ? (logoUrl || '') : (logoUrl || INKTRACKER_LOGO);
+  if (logoSrc) {
+    try {
+      const img = await loadImage(logoSrc);
+      doc.addImage(capImagePixels(img, MAX_PDF_LOGO_PX), 'PNG', margin, yPos - 2, 14, 14);
+    } catch (e) {
+      // ignore logo errors
+    }
   }
 
   doc.setFontSize(8);

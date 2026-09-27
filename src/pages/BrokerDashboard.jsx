@@ -106,9 +106,13 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
         const { path, file_url } = await uploadFile(file);
         next.push({ id: path, name: file.name, url: file_url, path, note: "", source: "broker upload" });
       }
-      await base44.entities.Quote.update(quote.id, { selected_artwork: next });
+      const saved = await base44.entities.Quote.update(quote.id, { selected_artwork: next });
       setBrokerArtwork(next);
-      onUpdate?.();
+      // Pass the updated row — onUpdate's parent does `updated.id`, so calling
+      // it with no arg threw a TypeError that was swallowed into a spurious
+      // "upload failed" error on a write that actually SUCCEEDED, and left the
+      // list/drawer desynced until reload.
+      onUpdate?.(saved || { ...quote, selected_artwork: next });
     } catch (err) {
       setBrokerUploadError(err?.message || "Upload failed.");
     } finally {
@@ -120,9 +124,9 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
   async function removeBrokerArtwork(art) {
     const next = brokerArtwork.filter((a) => (a.id || a.url || a.name) !== (art.id || art.url || art.name));
     try {
-      await base44.entities.Quote.update(quote.id, { selected_artwork: next });
+      const saved = await base44.entities.Quote.update(quote.id, { selected_artwork: next });
       setBrokerArtwork(next);
-      onUpdate?.();
+      onUpdate?.(saved || { ...quote, selected_artwork: next });
     } catch (err) {
       setBrokerUploadError(err?.message || "Couldn't remove attachment.");
     }
@@ -191,8 +195,11 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
   const canMarkClientResponse = sentToClient;
   // Submit to Shop is gated on client approval.
   const canSubmitToShop = clientApproved;
-  const canRecordPayment = clientApproved || shopApproved;
   const isConverted = quote.status === "Converted to Order";
+  // A quote that's been converted to an order can still be awaiting the
+  // client's payment — brokers must be able to record it after conversion,
+  // not only in the approval window before it.
+  const canRecordPayment = clientApproved || shopApproved || isConverted;
 
   async function doUpdate(fields, loadingKey) {
     setActionLoading(loadingKey);

@@ -228,6 +228,19 @@ export function loadShopPricingConfig(config, owner = null) {
 export function getShopPricingConfig() { return _pc; }
 export function getShopPricingConfigOwner() { return _pcOwner; }
 
+// Opt-in "below minimum" warning threshold for the quote line editors,
+// from pricing_config.minOrderQty. Default 0 = off (no warning). This is
+// DISTINCT from getMinOrderQty() below, which derives the wizard's pricing
+// floor from the first tier (default 25). The editors previously hardcoded
+// a red "Minimum order: 25 pcs" warning that fired on every shop — a false
+// alarm for the many shops that happily take small runs. Now a shop only
+// sees it if it deliberately sets a minimum. Non-negative integer; missing
+// or invalid → 0.
+export function getOrderMinimumWarnQty() {
+  const n = Number(_pc?.minOrderQty);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
 // CACHE-01 Stage 2a — snapshot / restore the module pricing-config globals.
 // A surface that temporarily borrows another shop's config (an editor modal, a
 // multi-shop render) can capture the session state, borrow, then put it back —
