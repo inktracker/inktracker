@@ -176,8 +176,11 @@ export default function BrokerPricePanel({
   // Rush rides on top of a flat override (overrideRushFee), like the shop editor.
   const shopTotal = hasOverride ? pppOverride * qty + overrideRushFee(pppOverride, qty, rushRate) : suggestedShopTotal;
 
-  const profitPerPiece = Math.max(0, shopAvgPpp - brokerAvgPpp);
-  const orderProfit = Math.max(0, shopTotal - brokerTotal);
+  // NOT clamped: a client price below the broker's wholesale cost is a real
+  // loss the broker must see (the panel styles negatives red below), not a
+  // false $0. Matches the quote-level readout in BrokerQuoteEditor.
+  const profitPerPiece = shopAvgPpp - brokerAvgPpp;
+  const orderProfit = shopTotal - brokerTotal;
 
   const headerLine = getHeaderLine(li);
   const metaLine = getMetaLine(li);
@@ -315,17 +318,17 @@ export default function BrokerPricePanel({
           </div>
         </div>
 
-        <div className="mt-3 rounded-lg bg-teal-950/70 p-3 border border-teal-900">
-          <div className="text-[11px] font-bold text-teal-300 uppercase tracking-widest mb-2">
-            Your Profit At Shop Rate
+        <div className={`mt-3 rounded-lg p-3 border ${orderProfit < 0 ? "bg-red-950/70 border-red-900" : "bg-teal-950/70 border-teal-900"}`}>
+          <div className={`text-[11px] font-bold uppercase tracking-widest mb-2 ${orderProfit < 0 ? "text-red-300" : "text-teal-300"}`}>
+            {orderProfit < 0 ? "Below Your Cost" : "Your Profit"}
           </div>
           <div className="flex justify-between items-center text-sm">
-            <span className="text-slate-300">Profit per piece</span>
-            <span className="text-white font-semibold">{fmtMoney(profitPerPiece)}</span>
+            <span className="text-slate-300">{orderProfit < 0 ? "Loss" : "Profit"} per piece</span>
+            <span className={`font-semibold ${profitPerPiece < 0 ? "text-red-300" : "text-white"}`}>{fmtMoney(profitPerPiece)}</span>
           </div>
           <div className="flex justify-between items-center text-sm mt-1">
-            <span className="text-slate-300">Profit on this order</span>
-            <span className="text-white font-semibold">{fmtMoney(orderProfit)}</span>
+            <span className="text-slate-300">{orderProfit < 0 ? "Loss" : "Profit"} on this line</span>
+            <span className={`font-semibold ${orderProfit < 0 ? "text-red-300" : "text-white"}`}>{fmtMoney(orderProfit)}</span>
           </div>
         </div>
       </div>

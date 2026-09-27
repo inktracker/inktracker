@@ -508,6 +508,25 @@ export default function PricingConfigEditor({ user }) {
         <p className="text-[10px] text-slate-500 mt-1">Default due-date offset on new quotes. Anything sooner than this triggers the rush rate below.</p>
       </div>
 
+      {/* Minimum order quantity — shop-wide, per garment group. 0 = off.
+          Was hardcoded at 25 pcs and warned on every shop; now opt-in. */}
+      <div>
+        <label className="text-[10px] text-slate-500 block mb-1">Minimum Order Quantity</label>
+        <div className="relative w-40">
+          <NumericInput
+            value={config.minOrderQty ?? 0}
+            onChange={(n) => setConfig(prev => ({ ...prev, minOrderQty: Math.max(0, Math.round(Number(n) || 0)) }))}
+            min={0}
+            max={10000}
+            integer
+            label="Minimum order quantity"
+            className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+          />
+          <span className="absolute right-2 top-1.5 text-[10px] text-slate-500">pcs</span>
+        </div>
+        <p className="text-[10px] text-slate-500 mt-1">Warns in the quote editor when a garment group falls below this. Set to 0 to turn the minimum off (no warning).</p>
+      </div>
+
       {/* Variable Rush Surcharge — shop-wide tier list. */}
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-1">Rush Surcharge Tiers</h4>

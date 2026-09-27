@@ -8,6 +8,7 @@ import {
   getQty,
   activeSizeNames,
   getShopPricingConfig,
+  getOrderMinimumWarnQty,
   getEnabledTechniques,
   getDefaultTechnique,
   uid,
@@ -1012,12 +1013,15 @@ export default function BrokerLineItemEditor({
                 </table>
               </div>
 
-              {qty > 0 && qty < 25 && (
-                <div className="mt-2 text-xs text-red-500 font-semibold bg-red-50 rounded-lg px-3 py-1.5 border border-red-100 flex items-center gap-1.5">
-                  <Icon name="warning" className="w-3.5 h-3.5" />
-                  Minimum order: 25 pcs (current: {qty})
-                </div>
-              )}
+              {(() => {
+                const minQty = getOrderMinimumWarnQty();
+                return minQty > 0 && qty > 0 && qty < minQty ? (
+                  <div className="mt-2 text-xs text-red-500 font-semibold bg-red-50 rounded-lg px-3 py-1.5 border border-red-100 flex items-center gap-1.5">
+                    <Icon name="warning" className="w-3.5 h-3.5" />
+                    Minimum order: {minQty} pcs (current: {qty})
+                  </div>
+                ) : null;
+              })()}
 
               {BIG_SIZES.reduce((s, sz) => s + (parseInt(li.sizes?.[sz], 10) || 0), 0) > 0 && (
                 <div className="mt-2 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-1.5 border border-amber-100">

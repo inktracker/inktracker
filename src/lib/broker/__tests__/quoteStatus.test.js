@@ -18,6 +18,13 @@ describe("normalizeQuoteStatus", () => {
     expect(normalizeQuoteStatus("Draft")).toBe("Draft");
   });
 
+  it("folds 'Client Rejected' into 'Declined'", () => {
+    // Broker portal: the end client turned the quote down. Must land in
+    // the Declined bucket so it shows in the count and filter chip
+    // instead of vanishing from every view.
+    expect(normalizeQuoteStatus("Client Rejected")).toBe("Declined");
+  });
+
   it("defaults to 'Draft' when status is missing or empty", () => {
     expect(normalizeQuoteStatus(undefined)).toBe("Draft");
     expect(normalizeQuoteStatus(null)).toBe("Draft");
@@ -51,6 +58,13 @@ describe("bucketQuotes", () => {
     expect(b.draft).toEqual([draft]);
     expect(b.declined).toEqual([declined]);
     expect(b.converted).toEqual([converted]);
+  });
+
+  it("groups Client Rejected into the declined bucket", () => {
+    const declined = { id: "1", status: "Declined" };
+    const rejected = { id: "2", status: "Client Rejected" };
+    const { declined: d } = bucketQuotes([declined, rejected]);
+    expect(d).toEqual([declined, rejected]);
   });
 
   it("treats missing/empty status as Draft (matches normalizeQuoteStatus default)", () => {
