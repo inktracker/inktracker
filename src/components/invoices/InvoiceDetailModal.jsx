@@ -17,6 +17,8 @@ import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { qbModifiedState, qbPushPending, buildAdoptPatches, stripSyncNotes } from "@/lib/invoices/qbModifiedSync";
+import { qbTaxHoldState } from "@/lib/quotes/qbTaxHold";
+import { TaxHoldBanner } from "../quotes/TaxHoldBanner";
 import ChangeHistory from "../shared/ChangeHistory";
 
 export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onAddToProduction, onInvoiceUpdated, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
@@ -177,7 +179,9 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
     return () => { cancelled = true; };
   }, [invoice?.order_id]);
 
-  async function handleCreateInQB(recreate = false) {
+  // acceptQbTax: the shop clicked "Use QuickBooks' tax" on a held invoice —
+  // qbSync adopts QB's tax/total onto the row, mints the link, clears the hold.
+  async function handleCreateInQB(recreate = false, { acceptQbTax = false } = {}) {
     // Ironclad no-duplicate guard: if this invoice already has a QB
     // record, refuse to create a second one. The footer renders the
     // "View in QB" link in that case, but this internal check is the
@@ -279,6 +283,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       const { data, error: invErr } = await base44.functions.invoke("qbSync", {
         action: "createInvoice",
         accessToken: session.access_token,
+        acceptQbTax,
         // Don't let QuickBooks email the customer — the shop sends via the
         // Send button. Suppresses qbSync's /send fallback.
         noEmail: true,
@@ -655,6 +660,19 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             </div>
           )}
 
+          {/* TAX HOLD (persisted on the row by qbSync): QuickBooks computed a
+              materially different tax; no payment link was minted. Blocking
+              banner with the accept action right here. Precedes the Match
+              banner — a hold always leaves total ≠ qb_total. */}
+          {qbTaxHoldState(activeInvoice) && (
+            <TaxHoldBanner
+              hold={qbTaxHoldState(activeInvoice)}
+              entity="invoice"
+              readOnly={readOnly}
+              accepting={qbCreating}
+              onAccept={() => handleCreateInQB(true, { acceptQbTax: true })}
+            />
+          )}
           {/* Local edits awaiting a QuickBooks push (Edit Order tier 3).
               Takes precedence over the Match banner — the divergence is
               OURS, and Match would revert the shop's own edit. */}
@@ -678,7 +696,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           {/* Modified in QuickBooks — offer a consented one-click adopt.
               Keyed off the fresh qb_* mirror (webhook keeps it current);
               clears itself once the totals agree. */}
-          {qbModified.modified && (
+          {qbModified.modified && !qbTaxHoldState(activeInvoice) && (
             <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-700 dark:text-slate-200">
                 <span className="font-semibold">Modified in QuickBooks.</span>{" "}

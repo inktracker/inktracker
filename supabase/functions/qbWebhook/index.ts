@@ -36,6 +36,9 @@ import {
   buildQbMirrorPatch,
   buildQbLineSnapshot,
   buildQbModifiedNotification,
+  decideQbEditAdoption,
+  buildQbAdoptPatch,
+  buildQbAutoSyncedNotification,
 } from "../_shared/qbInvoiceModified.js";
 import { recordShopNotification } from "../_shared/shopNotifications.js";
 import { recordChange, CHANGE_SOURCES } from "../_shared/changeLog.js";
@@ -140,10 +143,10 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
 
   const [{ data: quote }, { data: invoiceRow }] = await Promise.all([
     supabase.from("quotes")
-      .select("id, quote_id, total, qb_total, qb_line_snapshot, paid")
+      .select("id, quote_id, total, tax, qb_total, qb_subtotal, qb_line_snapshot, paid, converted_order_id")
       .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
     supabase.from("invoices")
-      .select("id, invoice_id, total, qb_total, qb_line_snapshot, paid")
+      .select("id, invoice_id, total, tax, notes, qb_total, qb_subtotal, qb_line_snapshot, paid, qb_push_pending, order_id")
       .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
   ]);
   if (!quote && !invoiceRow) return; // not an InkTracker-linked invoice
@@ -162,11 +165,40 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
       priorLines: (row as any).qb_line_snapshot ?? null,
       freshLines,
     });
+    // Auto-adopt (2026-09-28): when InkTracker's copy hasn't moved since
+    // the last mirror, the QB edit is the only change in play — adopt it
+    // onto the as-sold money fields (what the Match button would do) and
+    // tell the shop it happened. Consent stays for true conflicts (both
+    // sides moved) and for dollar-plus tax-only changes. Pure decision in
+    // qbInvoiceModified.js; unit-tested.
+    const adoption = decideQbEditAdoption({
+      localTotal: row.total,
+      priorQbTotal: row.qb_total,
+      priorQbSubtotal: (row as any).qb_subtotal,
+      freshQbTotal,
+      freshQbTax: freshInvoice?.TxnTaxDetail?.TotalTax,
+      pushPending: (row as any).qb_push_pending === true,
+    });
+    const adoptPatch = adoption.autoAdopt ? buildQbAdoptPatch(freshInvoice, row, { table }) : null;
     const patch = buildQbMirrorPatch(freshInvoice, row);
+    let adopted = false;
     if (patch) {
-      const { error: patchErr } = await supabase.from(table).update(patch)
+      const { error: patchErr } = await supabase.from(table).update({ ...patch, ...(adoptPatch ?? {}) })
         .eq("id", row.id).eq("shop_owner", shopOwner);
       if (patchErr) console.error(`[qbWebhook] qb mirror patch failed on ${table} for ${qbInvoiceId}:`, patchErr.message);
+      else adopted = Boolean(adoptPatch);
+    }
+    if (adopted) {
+      // The linked order carries the same money fields (the Match button
+      // patches all three rows) — keep it in step so the order modal and
+      // performance stats agree with the invoice the customer pays.
+      const orderRef = table === "invoices" ? (row as any).order_id : (row as any).converted_order_id;
+      if (orderRef) {
+        const { error: orderErr } = await supabase.from("orders")
+          .update({ total: adoptPatch!.total, tax: adoptPatch!.tax, tax_rate: adoptPatch!.tax_rate })
+          .eq("order_id", orderRef).eq("shop_owner", shopOwner);
+        if (orderErr) console.error(`[qbWebhook] order adopt patch failed for ${orderRef}:`, orderErr.message);
+      }
     }
     // Durable history. Logged per linked row and independently of the
     // notification, which is deduped to one per event and dismissable —
@@ -188,7 +220,9 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
         // QBO doesn't report the acting user on the Invoice entity, so
         // there is no name to record. The UI says "in QuickBooks".
         actor: null,
-        summary: detection.linesChanged
+        summary: adopted
+          ? `Updated from QuickBooks edit — total ${fmtUsd(row.total)} → ${fmtUsd(freshQbTotal)} (applied automatically)`
+          : detection.linesChanged
           ? `Edited in QuickBooks — ${detection.lineChanges.length} line change${detection.lineChanges.length === 1 ? "" : "s"}`
           : `Total changed in QuickBooks to ${fmtUsd(freshQbTotal)}`,
         changes: changeList,
@@ -197,11 +231,40 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
           qb_total: freshQbTotal,
           local_total: row.total,
           total_diverges: detection.diverges,
+          auto_adopted: adopted,
+          adoption_reason: adoption.reason,
         },
       });
     }
 
-    if (detection.shouldNotify && !notified) {
+    if (adopted && !notified) {
+      notified = true;
+      await recordShopNotification(supabase, buildQbAutoSyncedNotification({
+        shopOwner,
+        ref: qbRef,
+        rowId: row.id,
+        relatedEntity: table === "invoices" ? "invoice" : "quote",
+        qbInvoiceId,
+        priorTotal: row.total,
+        freshQbTotal,
+        lineChanges: detection.lineChanges,
+      }));
+      await logEvent(supabase, {
+        shop_owner: shopOwner,
+        action: "qb_invoice_auto_synced",
+        direction: "inbound",
+        status: "success",
+        qb_invoice_id: qbInvoiceId,
+        response_body: {
+          table,
+          ref: qbRef,
+          prior_total: row.total,
+          qb_total: freshQbTotal,
+          reason: adoption.reason,
+          line_changes: detection.lineChanges,
+        },
+      });
+    } else if (detection.shouldNotify && !notified && !adopted) {
       notified = true;
       await recordShopNotification(supabase, buildQbModifiedNotification({
         shopOwner,

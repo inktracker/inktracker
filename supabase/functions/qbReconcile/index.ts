@@ -91,6 +91,8 @@ import {
   selectUnalertedDrift,
   alertedSignatures,
 } from "../_shared/booksDriftAlert.js";
+import { pennyDriftAdoptPatch } from "../_shared/qbTaxAutoAdopt.js";
+import { buildQbAdoptPatch } from "../_shared/qbInvoiceModified.js";
 import {
   summarizeGrowth,
   buildGrowthReportText,
@@ -461,19 +463,24 @@ async function reconcileShop(adminClient: any, profile: any) {
     // below is still capped at DRIFT_LIVE_CHECK_CAP; this just makes the pool
     // it draws from complete.)
     const [qRows, iRows] = await Promise.all([
+      // Rows on a tax hold are excluded: the shop sees a blocking banner on
+      // the quote/invoice and resolves it there — a hold is the system
+      // working, not drift (it is counted as context in the operator email).
       fetchAllRows(() => adminClient
         .from("quotes")
-        .select("id, quote_id, shop_owner, qb_invoice_id, total, qb_total")
+        .select("id, quote_id, shop_owner, qb_invoice_id, total, tax, qb_total, converted_order_id")
         .eq("shop_owner", shopOwner)
         .not("qb_total", "is", null)
         .not("qb_invoice_id", "is", null)
+        .is("qb_tax_hold", null)
         .order("id", { ascending: true })),
       fetchAllRows(() => adminClient
         .from("invoices")
-        .select("id, invoice_id, shop_owner, qb_invoice_id, total, qb_total")
+        .select("id, invoice_id, shop_owner, qb_invoice_id, total, tax, notes, qb_total, qb_push_pending, order_id")
         .eq("shop_owner", shopOwner)
         .not("qb_total", "is", null)
         .not("qb_invoice_id", "is", null)
+        .is("qb_tax_hold", null)
         .order("id", { ascending: true })),
     ]);
     const candidatesToVerify: any[] = [
@@ -494,6 +501,38 @@ async function reconcileShop(adminClient: any, profile: any) {
             .eq("id", cand.id).eq("shop_owner", shopOwner);
         }
         if (verdict.status === "confirmed") {
+          // Sub-dollar drift is the penny-tax class (QB's AST rounding vs
+          // the flat-rate estimate) — adopt QB's number the way the Match
+          // button would, log it, and keep it out of the operator email.
+          // A dollar or more is a real conflict and is reported. Rows whose
+          // local edit is still waiting to be pushed to QB are skipped:
+          // local truth is newer there.
+          const confirmedRow: any = verdict.row;
+          const heal = cand.qb_push_pending === true ? null : pennyDriftAdoptPatch(confirmedRow, live);
+          if (heal) {
+            const adopt = cand.table === "invoices" ? { ...heal, ...buildQbAdoptPatch(live, cand, { table: "invoices" }) } : heal;
+            const { error: healErr } = await adminClient.from(cand.table)
+              .update({ ...verdict.mirrorPatch, ...adopt })
+              .eq("id", cand.id).eq("shop_owner", shopOwner);
+            if (healErr) throw new Error(`penny-drift heal failed: ${healErr.message}`);
+            const orderRef = cand.table === "invoices" ? cand.order_id : cand.converted_order_id;
+            if (orderRef) {
+              await adminClient.from("orders")
+                .update({ total: adopt.total, tax: adopt.tax, tax_rate: adopt.tax_rate })
+                .eq("order_id", orderRef).eq("shop_owner", shopOwner);
+            }
+            await logEvent(adminClient, {
+              shop_owner: shopOwner,
+              action: "penny_drift_auto_adopted",
+              direction: "inbound",
+              status: "success",
+              qb_invoice_id: cand.qb_invoice_id,
+              quote_id: cand.table === "quotes" ? cand.id : null,
+              response_body: { table: cand.table, ref: cand.ref, local_total: cand.total, qb_total: confirmedRow.qb_total, drift: confirmedRow.drift },
+            });
+            classifications.push({ kind: "penny-drift-healed", ref: cand.ref, drift: confirmedRow.drift });
+            continue;
+          }
           driftRows.push({ ...verdict.row, source: cand.table });
         }
       } catch (err) {
@@ -964,8 +1003,6 @@ async function scanAndAlertDataIntegrity(adminClient: any): Promise<{ violations
 async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): Promise<{ findings: number; alerted: boolean }> {
   if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) return { findings: 0, alerted: false };
   try {
-    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
     // Drift rows arrive PRE-VERIFIED against live QB by each shop's
     // reconcile pass (see the fourth pass in reconcileShop) — a stale
     // qb_total mirror alone can no longer reach this email. First prod
@@ -1005,12 +1042,13 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
       stuckOrdersAll = paidLinked.filter((r: any) => unpaidKey.has(`${r.shop_owner}|${r.order_id}`));
     }
 
-    const { count: taxHoldCount } = await adminClient
-      .from("qb_event_log")
-      .select("id", { count: "exact", head: true })
-      .eq("action", "create_invoice")
-      .eq("response_body->>taxBlocked", "true")
-      .gte("created_at", since24h);
+    // Context only: rows currently on a tax hold (the shop sees a blocking
+    // banner; never triggers this email on its own).
+    const [{ count: heldQuotes }, { count: heldInvoices }] = await Promise.all([
+      adminClient.from("quotes").select("id", { count: "exact", head: true }).not("qb_tax_hold", "is", null),
+      adminClient.from("invoices").select("id", { count: "exact", head: true }).not("qb_tax_hold", "is", null),
+    ]);
+    const taxHoldCount = (heldQuotes ?? 0) + (heldInvoices ?? 0);
 
     // Per-drift dedup (replaces the old once-per-day GLOBAL gate that
     // re-emailed nightly for as long as any drift existed). Only email
@@ -1026,11 +1064,13 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
     // keeps every event while preserving the oldest-first replay the map needs.
     const priorEvents = await fetchAllRows(() => adminClient
       .from("qb_event_log")
-      .select("response_body")
+      .select("response_body, created_at")
       .eq("action", "books_drift_alert")
       .gte("created_at", since90d)
       .order("created_at", { ascending: true }));
-    const priorAlerted = buildPriorAlertMap(priorEvents.map((e: any) => e.response_body));
+    // created_at rides along as body.at so an unchanged row re-alerts once a
+    // week (selectUnalertedDrift) instead of going silent forever.
+    const priorAlerted = buildPriorAlertMap(priorEvents.map((e: any) => ({ ...(e.response_body ?? {}), at: e.created_at })));
 
     const stuckTagged = stuckOrdersAll.map((r: any) => ({
       shop_owner: r.shop_owner, ref: r.order_id, source: "stuck_order", drift: 0,

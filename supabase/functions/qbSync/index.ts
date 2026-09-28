@@ -55,6 +55,7 @@ import {
   reconcileQbInvoice,
   RECONCILE_SEVERITY,
 } from "../_shared/qbWriteContracts.js";
+import { isPennyTaxMismatch, buildTaxHoldState } from "../_shared/qbTaxAutoAdopt.js";
 import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
 import { UserFacingError, USER_FACING_CODES, isUserFacingError } from "../_shared/userFacingError.ts";
 import { summarizeInvoicesForDashboard } from "../_shared/qbDashboardMetrics.js";
@@ -1616,8 +1617,26 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // acceptQbTax: the shop reviewed the hold and chose "use QuickBooks' tax"
   // (one-click on the held send). We then ADOPT QB's authoritative tax onto
   // the quote (below), mint the link, and proceed — no hold.
-  const acceptQbTax = params?.acceptQbTax === true;
+  //
+  // taxAutoAdopted (2026-09-28): a SUB-DOLLAR, tax-only disagreement — QB's
+  // Automated Sales Tax rounding a few cents away from the flat-rate
+  // estimate — is adopted automatically, exactly as if the shop had clicked
+  // "Use QuickBooks' tax". No hold, no bell, no nightly drift. Three weeks
+  // of prod holds were almost entirely this class (Q-2026-Y009 4¢,
+  // Q-2026-O185 6¢) and every one sat unresolved with an unread
+  // notification. A dollar or more is still a real billing decision and
+  // still holds — with the hold persisted on the row (qb_tax_hold) so the
+  // quote shows a blocking banner instead of a bell nobody reads.
+  const taxAutoAdopted = params?.acceptQbTax !== true && isPennyTaxMismatch(reconciliation);
+  const acceptQbTax = params?.acceptQbTax === true || taxAutoAdopted;
   const taxBlocked = reconciliation.taxMismatch === true && !acceptQbTax;
+  if (taxAutoAdopted) {
+    console.warn(
+      `[createInvoice] penny tax auto-adopted: quote=${quote.quote_id} qb_invoice=${qbInvoiceId} ` +
+      `quoted tax $${reconciliation.sentTax.toFixed(2)} → QB $${reconciliation.qbTax.toFixed(2)} ` +
+      `(drift $${reconciliation.taxDrift.toFixed(2)})`,
+    );
+  }
 
   if (reconciliation.severity !== RECONCILE_SEVERITY.OK) {
     console.error(
@@ -1633,16 +1652,15 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     );
 
     // Decide whether to NOTIFY (vs just log above). Integrity DRIFT (QB
-    // altered our line amounts) and FATAL always notify. As of the tax-sync
-    // hardening, ANY tax mismatch also notifies — because it now also BLOCKS
-    // the customer send (see taxBlocked), so the shop must be told to
-    // reconcile it rather than discovering a held invoice silently. The
-    // notification copy distinguishes the dangerous missingTax sub-case
-    // (QB recorded ~$0) from a plain rate divergence.
+    // altered our line amounts) and FATAL always notify. Tax mismatches no
+    // longer post a bell (2026-09-28): 21 qb_tax_mismatch notifications in
+    // 30 days, zero read. The hold is persisted on the row instead
+    // (qb_tax_hold, below) and the quote/invoice modal renders a blocking
+    // banner with the "Use QuickBooks' tax" action right where the send
+    // happens. Sub-dollar mismatches are auto-adopted and never held.
     const shouldNotify =
       reconciliation.severity === RECONCILE_SEVERITY.DRIFT ||
-      reconciliation.severity === RECONCILE_SEVERITY.FATAL ||
-      reconciliation.severity === RECONCILE_SEVERITY.TAX_MISMATCH;
+      reconciliation.severity === RECONCILE_SEVERITY.FATAL;
 
     // Best-effort in-app notification: a failure here must NOT cause the
     // user-facing invoice send to error out. Uses a service-role client
@@ -1948,6 +1966,11 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         tax_rate: qbSubtotal > 0 ? Number(((qbTaxAmount / qbSubtotal) * 100).toFixed(4)) : 0,
       }
     : {};
+  // Persisted hold state (quotes/invoices.qb_tax_hold): set while held, so
+  // the modal can render the blocking banner on every open (not just the
+  // session that hit the hold), and cleared by any sync that isn't held —
+  // a clean re-sync, an explicit accept, or the penny auto-adopt.
+  const taxHoldField = { qb_tax_hold: taxBlocked ? buildTaxHoldState(reconciliation) : null };
 
   // Clobber-guard: only write qb_payment_link when we actually minted one.
   // A re-sync whose link mint transiently fails (or a held invoice that skips
@@ -2037,6 +2060,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
       ...adoptQbTaxFields,
+      ...taxHoldField,
       // Status is NOT advanced here. Creating a QB invoice is not sending:
       // QB stopped auto-emailing on invoice create (2026-06-26), so the only
       // thing that reaches the customer is our own sendQuoteEmail. This line
@@ -2058,6 +2082,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
       ...adoptQbTaxFields,
+      ...taxHoldField,
       // Edit Order phase 2: a successful push/resync means QuickBooks now
       // reflects the local invoice — clear the pending-push flag set by a
       // tier-3 order edit (unblocks the Match banner's normal behavior).
@@ -2134,6 +2159,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     // no payment link was minted and the frontend must NOT send the customer
     // email. The shop reconciles (see docs/qb-tax-sync.md) and re-syncs.
     taxBlocked,
+    // True when a sub-dollar tax difference was adopted from QB automatically
+    // (the row's tax/total/tax_rate now carry QB's numbers). Surfaces can
+    // refresh the row so the email/PDF use the adopted total.
+    taxAutoAdopted,
     taxBlockReason: taxBlocked ? "tax_mismatch" : null,
     taxBlockDetail: taxBlocked
       ? {

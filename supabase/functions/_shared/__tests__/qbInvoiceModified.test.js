@@ -253,3 +253,65 @@ describe("mergeNotesPreservingSyncLines (pullInvoices notes overwrite)", () => {
     expect(mergeNotesPreservingSyncLines("", "")).toBeNull();
   });
 });
+
+// ── Auto-adoption of QB-side edits (2026-09-28 books-drift batch) ──────
+import { decideQbEditAdoption, buildQbAdoptPatch, buildQbAutoSyncedNotification } from "../qbInvoiceModified.js";
+
+describe("decideQbEditAdoption", () => {
+  it("Kato's invoice 1261: QB edited a line, InkTracker untouched since the last mirror → auto-adopt", () => {
+    const d = decideQbEditAdoption({ localTotal: 505.8, priorQbTotal: 505.8, priorQbSubtotal: 505.8, freshQbTotal: 424.8, freshQbTax: 0 });
+    expect(d).toEqual({ autoAdopt: true, reason: "qb_line_edit" });
+  });
+
+  it("true conflict: local moved away from the mirror too → consent", () => {
+    const d = decideQbEditAdoption({ localTotal: 520, priorQbTotal: 505.8, priorQbSubtotal: 505.8, freshQbTotal: 424.8, freshQbTax: 0 });
+    expect(d).toEqual({ autoAdopt: false, reason: "local_changed" });
+  });
+
+  it("tax-only change of a dollar or more (Kato Q-2026-6EPW: $41.90 of tax appeared) → consent", () => {
+    const d = decideQbEditAdoption({ localTotal: 507, priorQbTotal: 507, priorQbSubtotal: 507, freshQbTotal: 548.9, freshQbTax: 41.9 });
+    expect(d).toEqual({ autoAdopt: false, reason: "tax_only_change" });
+  });
+
+  it("tax-only penny move → auto-adopt", () => {
+    const d = decideQbEditAdoption({ localTotal: 261.97, priorQbTotal: 261.97, priorQbSubtotal: 242, freshQbTotal: 262, freshQbTax: 20 });
+    expect(d).toEqual({ autoAdopt: true, reason: "qb_penny_tax" });
+  });
+
+  it("stays quiet when QB agrees, has no prior mirror, is push-pending, or is junk", () => {
+    expect(decideQbEditAdoption({ localTotal: 100, priorQbTotal: 90, freshQbTotal: 100 }).reason).toBe("agrees");
+    expect(decideQbEditAdoption({ localTotal: 100, priorQbTotal: null, freshQbTotal: 90 }).reason).toBe("no_prior_mirror");
+    expect(decideQbEditAdoption({ localTotal: 100, priorQbTotal: 100, freshQbTotal: 90, pushPending: true }).reason).toBe("push_pending");
+    expect(decideQbEditAdoption({ localTotal: 100, priorQbTotal: 100, freshQbTotal: null }).reason).toBe("no_fresh_total");
+    expect(decideQbEditAdoption({ localTotal: "100.00", priorQbTotal: "100", freshQbTotal: "90.00" }).autoAdopt).toBe(true);
+  });
+});
+
+describe("buildQbAdoptPatch", () => {
+  const fresh = { TotalAmt: 424.8, TxnTaxDetail: { TotalTax: 0 } };
+  it("quotes: money fields only, hold cleared, no notes", () => {
+    expect(buildQbAdoptPatch(fresh, { total: 505.8 }, { table: "quotes" }))
+      .toEqual({ total: 424.8, tax: 0, tax_rate: 0, qb_tax_hold: null });
+  });
+  it("invoices: appends the same dated sync line the Match button writes", () => {
+    const p = buildQbAdoptPatch({ TotalAmt: 262, TxnTaxDetail: { TotalTax: 20 } }, { total: 261.97, tax: 19.96, notes: "Rush job" }, { table: "invoices", today: "2026-09-28" });
+    expect(p.total).toBe(262);
+    expect(p.tax_rate).toBe(8.2645);
+    expect(p.notes).toBe("Rush job\n[2026-09-28] Synced from QuickBooks: total $261.97 → $262.00, tax $19.96 → $20.00");
+    expect(mergeNotesPreservingSyncLines("Rush job", p.notes)).toBe(p.notes);
+  });
+  it("refuses a non-finite total", () => {
+    expect(buildQbAdoptPatch({ TotalAmt: "abc" }, {})).toBeNull();
+  });
+});
+
+describe("buildQbAutoSyncedNotification", () => {
+  it("is an info row that says nothing is waiting on the shop", () => {
+    const n = buildQbAutoSyncedNotification({ shopOwner: "k@x.com", ref: "1261", rowId: "r1", relatedEntity: "invoice", qbInvoiceId: "9", priorTotal: 505.8, freshQbTotal: 424.8, lineChanges: ["Line 1 amount: $505.80 → $424.80"] });
+    expect(n.event_type).toBe("qb_invoice_synced");
+    expect(n.severity).toBe("info");
+    expect(n.body).toContain("$424.80 (was $505.80)");
+    expect(n.body).toContain("nothing to do");
+    expect(n.metadata.auto_adopted).toBe(true);
+  });
+});
