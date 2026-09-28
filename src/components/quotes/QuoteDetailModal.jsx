@@ -22,6 +22,8 @@ import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
 import { qbModifiedState, buildQuoteAdoptPatch } from "@/lib/quotes/qbAdopt";
+import { qbTaxHoldState } from "@/lib/quotes/qbTaxHold";
+import { TaxHoldBanner } from "./TaxHoldBanner";
 import { savedAfterDiscount, savedRushTotal } from "@/lib/quotes/effectiveTotals";
 import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
@@ -1167,6 +1169,24 @@ export default function QuoteDetailModal({
                           </div>
                         )}
                         {!stale && (() => {
+                          // TAX HOLD (persisted on the row by qbSync): QuickBooks
+                          // computed a materially different tax, the invoice is
+                          // held and nothing was sent. Blocking banner here — the
+                          // decision happens in Send Quote, whose held-send button
+                          // adopts QB's tax. Takes precedence over the Match
+                          // banner (a hold always leaves total ≠ qb_total).
+                          const hold = qbTaxHoldState(quote);
+                          if (hold) {
+                            return (
+                              <TaxHoldBanner
+                                hold={hold}
+                                entity="quote"
+                                readOnly={readOnly}
+                                acceptLabel="Resolve in Send Quote"
+                                onAccept={() => setShowSendModal(true)}
+                              />
+                            );
+                          }
                           // QB was edited after this quote was sent (the quote
                           // itself is unchanged, so it's not the stale case).
                           // Offer the shop a one-click reconcile toward QB.

@@ -111,7 +111,7 @@ describe("buildBooksDriftAlertText", () => {
     expect(text).toContain("$758.46");
     expect(text).toContain("INV-1");
     expect(text).toContain("ORD-1");
-    expect(text).toContain("2 tax-mismatch hold(s)");
+    expect(text).toContain("2 invoice(s) currently on a tax hold");
     expect(text).toContain("QB is the authority");
   });
 });
@@ -130,7 +130,10 @@ describe("per-drift operator-alert dedup", () => {
       { alerted: [{ key: "a@x|Q1|quotes", cents: 100 }] },
       { alerted: [{ key: "a@x|Q1|quotes", cents: 250 }, { key: "b@x|I2|invoices", cents: -30 }] },
     ]);
-    expect(map).toEqual({ "a@x|Q1|quotes": 250, "b@x|I2|invoices": -30 });
+    expect(map).toEqual({ "a@x|Q1|quotes": { cents: 250, at: null }, "b@x|I2|invoices": { cents: -30, at: null } });
+    // The event's created_at rides in as body.at; a signature's own `at` wins.
+    expect(buildPriorAlertMap([{ at: "2026-09-01T00:00:00Z", alerted: [{ key: "k", cents: 1 }, { key: "j", cents: 2, at: "2026-09-02T00:00:00Z" }] }]))
+      .toEqual({ k: { cents: 1, at: "2026-09-01T00:00:00Z" }, j: { cents: 2, at: "2026-09-02T00:00:00Z" } });
   });
 
   it("selectUnalertedDrift emits a never-seen row, suppresses an unchanged one, re-emits a changed one", () => {
@@ -139,7 +142,7 @@ describe("per-drift operator-alert dedup", () => {
       { shop_owner: "b@x.com", ref: "I2", source: "invoices", drift: -3.00 }, // alerted, unchanged
       { shop_owner: "c@x.com", ref: "Q3", source: "quotes", drift: 9.99 },    // alerted, amount changed
     ];
-    const prior = { "b@x.com|I2|invoices": -300, "c@x.com|Q3|quotes": 100 };
+    const prior = { "b@x.com|I2|invoices": { cents: -300, at: null }, "c@x.com|Q3|quotes": { cents: 100, at: null } };
     const fresh = selectUnalertedDrift(rows, prior);
     expect(fresh.map((r) => r.ref)).toEqual(["Q1", "Q3"]);
   });
@@ -150,17 +153,22 @@ describe("per-drift operator-alert dedup", () => {
     let fresh = selectUnalertedDrift(rows, {});
     expect(fresh).toHaveLength(1);
     // Record what we alerted, replay into the map.
-    const map = buildPriorAlertMap([{ alerted: alertedSignatures(fresh) }]);
-    expect(map).toEqual({ "kato@thunder-house.com|Q-2026-9Q31|quotes": -8496 });
-    // Night 2+: same drift → silent.
-    expect(selectUnalertedDrift(rows, map)).toHaveLength(0);
-    // QB changes the amount → re-alert once.
-    expect(selectUnalertedDrift([{ ...kato, drift: -90.0 }], map)).toHaveLength(1);
+    const night1 = new Date("2026-09-01T09:00:00Z");
+    const map = buildPriorAlertMap([{ alerted: alertedSignatures(fresh, { now: night1 }) }]);
+    expect(map).toEqual({ "kato@thunder-house.com|Q-2026-9Q31|quotes": { cents: -8496, at: "2026-09-01T09:00:00.000Z" } });
+    // Night 2..7: same drift → silent.
+    expect(selectUnalertedDrift(rows, map, { now: night1.getTime() + 6 * 24 * 3600e3 })).toHaveLength(0);
+    // QB changes the amount → re-alert at once.
+    expect(selectUnalertedDrift([{ ...kato, drift: -90.0 }], map, { now: night1.getTime() + 1000 })).toHaveLength(1);
+    // Still wrong after a week → re-alert (weekly cadence, 2026-09-28).
+    expect(selectUnalertedDrift(rows, map, { now: night1.getTime() + 8 * 24 * 3600e3 })).toHaveLength(1);
+    // Legacy ledger entries with no timestamp never expire on time alone.
+    expect(selectUnalertedDrift(rows, { [driftAckKey(kato)]: { cents: -8496, at: null } }, { now: Date.now() })).toHaveLength(0);
   });
 
   it("alertedSignatures pairs each row's key with its cents", () => {
-    expect(alertedSignatures([kato])).toEqual([
-      { key: "kato@thunder-house.com|Q-2026-9Q31|quotes", cents: -8496 },
+    expect(alertedSignatures([kato], { now: new Date("2026-09-28T10:00:00Z") })).toEqual([
+      { key: "kato@thunder-house.com|Q-2026-9Q31|quotes", cents: -8496, at: "2026-09-28T10:00:00.000Z" },
     ]);
   });
 });

@@ -121,13 +121,14 @@ export function buildAdoptPatches(invoice, { today } = {}) {
     qbTax,
     today,
   });
+  // qb_tax_hold: adopting QB's numbers resolves any tax hold by definition.
   const invoicePatch = hasDiscount
-    ? { tax: qbTax, total: qbTotal, tax_rate: taxRate, notes }
-    : { subtotal: qbSubtotal, tax: qbTax, total: qbTotal, tax_rate: taxRate, notes };
+    ? { tax: qbTax, total: qbTotal, tax_rate: taxRate, notes, qb_tax_hold: null }
+    : { subtotal: qbSubtotal, tax: qbTax, total: qbTotal, tax_rate: taxRate, notes, qb_tax_hold: null };
 
   return {
     invoice: invoicePatch,
-    quote:   { tax: qbTax, total: qbTotal, tax_rate: taxRate },
+    quote:   { tax: qbTax, total: qbTotal, tax_rate: taxRate, qb_tax_hold: null },
     order:   { tax: qbTax, total: qbTotal, tax_rate: taxRate },
   };
 }

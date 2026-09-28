@@ -20,6 +20,7 @@ import { effectiveQuoteTotals } from "@/lib/quotes/effectiveTotals";
 import { toCustomerFacingQuote, isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { useBillingGate } from "@/lib/billing-gate";
 import { DEPOSITS_ENABLED, depositAmountFor } from "@/lib/deposits";
+import { qbTaxHoldState } from "@/lib/quotes/qbTaxHold";
 
 // Saved totals win over live recompute — keeps the email's number
 // pinned to what the editor stamped on the row, so the customer
@@ -66,7 +67,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   const totals = getQuoteTotalsForSend(q);
   // Tax-hold detail (set when QB computed a different tax) → drives the
   // "Use QuickBooks' tax" affordance instead of a dead-end error.
-  const [taxHold, setTaxHold] = useState(null); // { quotedTax, qbTax, qbTotal } | null
+  // Seeded from the PERSISTED hold (quotes.qb_tax_hold) so a quote held in an
+  // earlier session opens straight into the resolve state — the "Use
+  // QuickBooks' tax" button is visible and the send is blocked until the hold
+  // clears. Before 2026-09-28 the hold only lived in the session that hit it.
+  const [taxHold, setTaxHold] = useState(() => qbTaxHoldState(quote)); // { quotedTax, qbTax, qbTotal } | null
   const [qbNotice, setQbNotice] = useState(""); // positive confirmation (e.g. tax adopted)
   // Client-side totals — what the customer sees in the email body,
   // {{total}} interpolation, and on the /QuotePayment page. Equal to
@@ -491,6 +496,25 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         );
         return;
       }
+      // Sub-dollar tax rounding adopted automatically by qbSync (2026-09-28):
+      // the row now carries QB's tax/total. Same refresh as the explicit
+      // accept so the email body, PDF, and payment page all show QB's
+      // number — and the same review-then-Send stop, because the total the
+      // operator just looked at moved (by cents, but it moved).
+      if (data.taxAutoAdopted && data.qbInvoiceId && !data.taxBlocked) {
+        autoSendAfter = false;
+        setTaxHold(null);
+        setQbError("");
+        try {
+          const fresh = await base44.entities.Quote.get(quote.id);
+          if (fresh) setAdoptedQuote(fresh);
+        } catch { /* non-fatal — payment page still reads qb_total from the row */ }
+        setQbNotice(
+          `QuickBooks' sales tax was a few cents different from the estimate and was applied automatically — ` +
+          `total is ${fmtMoney(Number(data.qbTotal || 0))}. Review below, then Send.`,
+        );
+        return;
+      }
       // UPDATE-on-existing-invoice failed in QB. The edge function
       // refused to silently create a duplicate (-r2). Show the
       // structured guidance so the operator opens the QB panel and
@@ -643,6 +667,16 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
 
   async function handleSend() {
     setError("");
+    // HARD STOP while a tax hold is active: the customer would get a total
+    // QuickBooks disagrees with. The held-send button ("Use QuickBooks' tax")
+    // clears this; so does fixing the rate and retrying the QB invoice.
+    if (taxHold) {
+      setError(
+        `This quote is on hold — QuickBooks calculated ${fmtMoney(taxHold.qbTax)} sales tax, the quote estimated ` +
+        `${fmtMoney(taxHold.quotedTax)}. Click "Use QuickBooks' tax" below, or fix the tax rate and retry, before sending.`,
+      );
+      return;
+    }
     setSending(true);
 
     try {

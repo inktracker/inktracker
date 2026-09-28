@@ -17,6 +17,7 @@ import {
   BROKER_MARKUP,
 } from "../components/shared/pricing";
 import { StatusChip, MetaTag } from "../components/shared/chips";
+import { TaxHoldChip } from "../components/quotes/TaxHoldBanner";
 import QuoteEditorModal from "../components/quotes/QuoteEditorModal";
 import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
@@ -698,6 +699,7 @@ export default function Quotes() {
                           QB
                         </MetaTag>
                       )}
+                      <TaxHoldChip row={q} />
                     </div>
                   </td>
 
@@ -772,6 +774,7 @@ export default function Quotes() {
                       ) : null;
                     })()}
                     {q.qb_invoice_id && <MetaTag>QB</MetaTag>}
+                    <TaxHoldChip row={q} />
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500 gap-3">

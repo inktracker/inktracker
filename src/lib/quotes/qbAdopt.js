@@ -23,7 +23,7 @@ export { qbModifiedState };
  * nothing authoritative to adopt.
  *
  * @param {object} quote  a quote row with qb_total / qb_tax_amount / qb_subtotal
- * @returns {{ total: number, tax: number, tax_rate: number } | null}
+ * @returns {{ total: number, tax: number, tax_rate: number, qb_tax_hold: null } | null}
  */
 export function buildQuoteAdoptPatch(quote) {
   // Guard null BEFORE Number() — Number(null) is 0 (finite), which would
@@ -39,5 +39,6 @@ export function buildQuoteAdoptPatch(quote) {
   // Effective rate against QB's taxable base — matches how the invoice adopt
   // and the accept-QB-tax path (qbSync adoptQbTaxFields) derive it.
   const taxRate = qbSubtotal > 0 ? Number(((qbTax / qbSubtotal) * 100).toFixed(4)) : 0;
-  return { total: qbTotal, tax: qbTax, tax_rate: taxRate };
+  // Adopting QB's numbers resolves any tax hold by definition.
+  return { total: qbTotal, tax: qbTax, tax_rate: taxRate, qb_tax_hold: null };
 }

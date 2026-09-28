@@ -281,3 +281,126 @@ export function buildQbModifiedNotification({
     },
   });
 }
+
+// ── Automatic adoption of QB-side edits ────────────────────────────────
+//
+// The consent step above assumed every QB-side edit is a surprise the shop
+// must approve. In practice (Kato's invoice 1261, Q-2026-XFWN, Reagan's
+// volunteer tee, 2026-09) the shop made the edit in QBO ON PURPOSE, never
+// clicked Match, and the row then sat as "drift" for weeks. When
+// InkTracker's own copy has NOT moved since the last mirror (local total ==
+// prior qb_total — nothing was edited locally, so there is nothing to
+// conflict with), QB's edit is the only truth in play and adopting it is
+// the only thing the Match button would ever do. Auto-adopt in that case
+// and tell the shop it happened. Consent is still required when local and
+// QB have BOTH moved (a true conflict), and when the ONLY change is sales
+// tax of a dollar or more — that is a billing decision, not a line edit,
+// and it stays with the shop (qbTaxAutoAdopt.js owns the sub-dollar case).
+
+/** Tax-only movements at or above this stay consent-based. */
+export const AUTO_ADOPT_TAX_MAX = 1.0;
+
+/**
+ * @param {object} args
+ * @param {number|string|null} args.localTotal      as-sold total on the row
+ * @param {number|string|null} args.priorQbTotal    qb_total mirror BEFORE this event
+ * @param {number|string|null} args.priorQbSubtotal qb_subtotal mirror BEFORE this event
+ * @param {number|string|null} args.freshQbTotal    live TotalAmt
+ * @param {number|string|null} args.freshQbTax      live TxnTaxDetail.TotalTax
+ * @param {boolean} [args.pushPending]              qb_push_pending — local truth is newer
+ * @returns {{ autoAdopt: boolean, reason: string }}
+ */
+export function decideQbEditAdoption({
+  localTotal,
+  priorQbTotal,
+  priorQbSubtotal,
+  freshQbTotal,
+  freshQbTax,
+  pushPending = false,
+}) {
+  const centsDelta = (a, b) => Math.abs(Number((Number(a) - Number(b)).toFixed(2)));
+  if (pushPending) return { autoAdopt: false, reason: "push_pending" };
+  if (localTotal == null || priorQbTotal == null) return { autoAdopt: false, reason: "no_prior_mirror" };
+  const fresh = freshQbTotal == null ? NaN : Number(freshQbTotal);
+  if (!Number.isFinite(fresh)) return { autoAdopt: false, reason: "no_fresh_total" };
+  if (centsDelta(fresh, localTotal) <= QB_MODIFIED_TOLERANCE) return { autoAdopt: false, reason: "agrees" };
+  // Local moved away from the last mirror → both sides changed → conflict.
+  if (centsDelta(localTotal, priorQbTotal) > QB_MODIFIED_TOLERANCE) return { autoAdopt: false, reason: "local_changed" };
+  // Tax-only edit of a dollar or more: the customer's bill changed by tax
+  // the shop never quoted. That stays a consent decision.
+  const freshTax = Number(freshQbTax ?? 0) || 0;
+  const freshSubtotal = Number((fresh - freshTax).toFixed(2));
+  const priorSubtotal = priorQbSubtotal == null ? null : Number(priorQbSubtotal);
+  const subtotalMoved = priorSubtotal == null || centsDelta(freshSubtotal, priorSubtotal) > QB_MODIFIED_TOLERANCE;
+  if (!subtotalMoved && centsDelta(fresh, priorQbTotal) >= AUTO_ADOPT_TAX_MAX) {
+    return { autoAdopt: false, reason: "tax_only_change" };
+  }
+  return { autoAdopt: true, reason: subtotalMoved ? "qb_line_edit" : "qb_penny_tax" };
+}
+
+/**
+ * As-sold money patch that adopts QB's fresh numbers — the server-side
+ * twin of buildQuoteAdoptPatch / buildAdoptPatches (src/lib). total, tax,
+ * tax_rate only; subtotal is left alone (local subtotal is pre-discount,
+ * QB's is post-discount). Invoices get the same dated sync-note line the
+ * Match button appends (customer surfaces strip it via stripSyncNotes).
+ * Any tax hold is cleared: QB's number is now the row's number.
+ */
+export function buildQbAdoptPatch(freshInvoice, row, { table = "quotes", today } = {}) {
+  const qbTotal = Number(freshInvoice?.TotalAmt);
+  if (!Number.isFinite(qbTotal)) return null;
+  const qbTax = Number(freshInvoice?.TxnTaxDetail?.TotalTax ?? 0) || 0;
+  const qbSubtotal = Number((qbTotal - qbTax).toFixed(2));
+  const taxRate = qbSubtotal > 0 ? Number(((qbTax / qbSubtotal) * 100).toFixed(4)) : 0;
+  const patch = { total: qbTotal, tax: qbTax, tax_rate: taxRate, qb_tax_hold: null };
+  if (table === "invoices") {
+    const date = today || new Date().toISOString().split("T")[0];
+    const centsDelta = (a, b) => Math.abs(Number((Number(a) - Number(b)).toFixed(2)));
+    let line = `[${date}] Synced from QuickBooks: total ${fmt(row?.total ?? 0)} → ${fmt(qbTotal)}`;
+    if (centsDelta(row?.tax ?? 0, qbTax) > QB_MODIFIED_TOLERANCE) line += `, tax ${fmt(row?.tax ?? 0)} → ${fmt(qbTax)}`;
+    const prior = typeof row?.notes === "string" ? row.notes.trim() : "";
+    patch.notes = prior ? `${prior}\n${line}` : line;
+  }
+  return patch;
+}
+
+/**
+ * Info-level bell row for an auto-adopted QB edit: the shop is told what
+ * happened and that nothing is waiting on them.
+ */
+export function buildQbAutoSyncedNotification({
+  shopOwner,
+  ref,
+  rowId,
+  relatedEntity,
+  qbInvoiceId,
+  priorTotal,
+  freshQbTotal,
+  lineChanges = [],
+}) {
+  const changes = Array.isArray(lineChanges) ? lineChanges : [];
+  const shown = changes.slice(0, 3);
+  const detail = shown.length
+    ? `What changed: ${shown.join("; ")}` +
+      (changes.length > shown.length ? `; and ${changes.length - shown.length} more.` : ".") + " "
+    : "";
+  return buildNotificationRow({
+    shopOwner,
+    eventType: "qb_invoice_synced",
+    severity: "info",
+    title: `Invoice ${ref} updated from QuickBooks`,
+    body:
+      `QuickBooks changed this invoice to ${fmt(freshQbTotal)} (was ${fmt(priorTotal)}). ` +
+      `InkTracker's total now matches — nothing to do. ` + detail +
+      `Line edits made in QuickBooks are not applied to InkTracker's itemization.`,
+    relatedEntity,
+    relatedId: rowId,
+    metadata: {
+      qb_invoice_id: qbInvoiceId ?? null,
+      qb_total: Number(freshQbTotal),
+      prior_total: Number(priorTotal),
+      line_changes: changes,
+      auto_adopted: true,
+    },
+  });
+}

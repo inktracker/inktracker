@@ -141,7 +141,7 @@ export function buildBooksDriftAlertText(summary) {
     lines.push("");
   }
   if (s.taxHoldCount > 0) {
-    lines.push(`Context: ${s.taxHoldCount} tax-mismatch hold(s) fired in the last 24h (system working as designed).`);
+    lines.push(`Context: ${s.taxHoldCount} invoice(s) currently on a tax hold — the shop sees a blocking banner on the quote (system working as designed).`);
     lines.push("");
   }
   lines.push("QB is the authority on collected money — reconcile the listed rows toward the QB numbers.");
@@ -171,17 +171,25 @@ export function driftCents(row) {
   return Math.round(Number(row?.drift ?? 0) * 100);
 }
 
+/** Re-alert an unchanged, unresolved drift row this often. */
+export const DRIFT_REALERT_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * Fold prior books_drift_alert event bodies into a key → last-alerted-cents
- * map. Bodies MUST be applied oldest-first so the newest amount wins.
- * @param {Array<{ alerted?: Array<{ key: string, cents: number }> }>} eventBodies
+ * Fold prior books_drift_alert event bodies into a key → { cents, at } map
+ * (last-alerted amount + when). Bodies MUST be applied oldest-first so the
+ * newest entry wins. `at` comes from the event's created_at (the caller
+ * merges it in as body.at); signatures written since 2026-09-28 also carry
+ * their own `at`. Entries with no timestamp never expire on time alone.
+ * @param {Array<{ alerted?: Array<{ key: string, cents: number, at?: string }>, at?: string }>} eventBodies
  */
 export function buildPriorAlertMap(eventBodies) {
-  /** @type {Record<string, number>} */
+  /** @type {Record<string, { cents: number, at: string|null }>} */
   const map = {};
   for (const body of Array.isArray(eventBodies) ? eventBodies : []) {
     for (const s of body?.alerted ?? []) {
-      if (s && typeof s.key === "string") map[s.key] = Number(s.cents);
+      if (s && typeof s.key === "string") {
+        map[s.key] = { cents: Number(s.cents), at: s.at ?? body?.at ?? null };
+      }
     }
   }
   return map;
@@ -189,19 +197,28 @@ export function buildPriorAlertMap(eventBodies) {
 
 /**
  * Keep only the drift rows the operator should be emailed about now:
- * never alerted before, or the amount changed since the last alert.
+ * never alerted before, the amount changed since the last alert, or the
+ * last alert is older than a week and the row is STILL out of sync. The
+ * weekly re-alert replaced "once, then silence until the cents move"
+ * (2026-09-28): a row that has been wrong for a month is news again.
  * @param {Array<object>} rows
- * @param {Record<string, number>} priorCentsByKey  key → last-alerted cents
+ * @param {Record<string, { cents: number, at: string|null }>} priorByKey
+ * @param {{ now?: number, reAlertAfterMs?: number }} [opts]
  */
-export function selectUnalertedDrift(rows, priorCentsByKey = {}) {
-  const prior = priorCentsByKey || {};
+export function selectUnalertedDrift(rows, priorByKey = {}, { now = Date.now(), reAlertAfterMs = DRIFT_REALERT_MS } = {}) {
+  const prior = priorByKey || {};
   return (Array.isArray(rows) ? rows : []).filter((r) => {
     const key = driftAckKey(r);
-    return !(key in prior) || prior[key] !== driftCents(r);
+    const seen = prior[key];
+    if (!seen) return true;
+    if (seen.cents !== driftCents(r)) return true;
+    const at = seen.at ? Date.parse(seen.at) : NaN;
+    return Number.isFinite(at) && now - at > reAlertAfterMs;
   });
 }
 
 /** The signatures to record for a batch of just-alerted rows. */
-export function alertedSignatures(rows) {
-  return (Array.isArray(rows) ? rows : []).map((r) => ({ key: driftAckKey(r), cents: driftCents(r) }));
+export function alertedSignatures(rows, { now = new Date() } = {}) {
+  const at = (now instanceof Date ? now : new Date(now)).toISOString();
+  return (Array.isArray(rows) ? rows : []).map((r) => ({ key: driftAckKey(r), cents: driftCents(r), at }));
 }
