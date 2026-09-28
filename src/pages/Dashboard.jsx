@@ -9,6 +9,7 @@ const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import { createPageUrl } from "@/utils";
 import { fmtMoney, fmtDate, O_STATUSES, getShopPricingConfig, getDisplayName, getOrderDisplayClient } from "../components/shared/pricing";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
+import { isLowStock } from "@/lib/inventory/lowStock";
 import { bucketQuotes } from "@/lib/broker/quoteStatus";
 import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, BarChart2, Package, DollarSign, FileText, Bell, RefreshCw } from "lucide-react";
 import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
@@ -651,7 +652,7 @@ export default function Dashboard() {
   const openQuotesValue    = sumTotals(openQuotesList);
   const approvedQuotesValue = sumTotals(approvedQuotesList);
 
-  const lowStockItems = inventory.filter(i => (i.reorder || 0) > 0 && (i.qty || 0) <= (i.reorder || 0));
+  const lowStockItems = inventory.filter(isLowStock);
 
   return (
     <div className="space-y-6">
