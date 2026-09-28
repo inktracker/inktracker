@@ -128,6 +128,29 @@ export function decidePaidInvoiceAction(quote) {
  *   invoiceUpdated: boolean,
  * }}
  */
+// Flip one row's paid flag, tenant-scoped and idempotent (eq paid=false
+// makes a re-run against an already-paid row a no-op with no error). A REAL
+// write error (DB/RLS/network) THROWS — it used to be silently discarded
+// (`if (!qErr) updates.x = true`), so a failed "mark paid" on the live QB
+// payment path returned success: money collected, QB shows paid, InkTracker
+// stayed Unpaid with nothing logged. Throwing surfaces it — the webhook logs
+// a real error (not a false "success") and the nightly reconcile, which runs
+// the same cascade and logs status:"error" per candidate, recovers it.
+// Returns true when the write ran without error (same semantics the discarded
+// `updates.*` flags carried: "attempted, didn't error").
+async function flipPaidRow(supabase, table, id, shopOwner, today) {
+  const { error } = await supabase
+    .from(table)
+    .update({ paid: true, paid_date: today })
+    .eq("id", id)
+    .eq("shop_owner", shopOwner)
+    .eq("paid", false);
+  if (error) {
+    throw new Error(`markPaid: ${table} ${id} paid-write failed: ${error.message}`);
+  }
+  return true;
+}
+
 export async function cascadeMarkLinkedPaid(supabase, quote, today) {
   if (!supabase) throw new Error("cascadeMarkLinkedPaid: supabase required");
   if (!quote?.id || !quote?.shop_owner) {
@@ -140,13 +163,7 @@ export async function cascadeMarkLinkedPaid(supabase, quote, today) {
   // 1. Quote — only if not already paid. eq("paid", false) is an extra
   // guard against the race where two webhook deliveries land at once.
   if (!quote.paid) {
-    const { error: qErr } = await supabase
-      .from("quotes")
-      .update({ paid: true, paid_date: today })
-      .eq("id", quote.id)
-      .eq("shop_owner", quote.shop_owner)
-      .eq("paid", false);
-    if (!qErr) updates.quoteUpdated = true;
+    updates.quoteUpdated = await flipPaidRow(supabase, "quotes", quote.id, quote.shop_owner, today);
   }
 
   // 2. Linked order via converted_order_id (a human ORD-XXX string).
@@ -163,13 +180,7 @@ export async function cascadeMarkLinkedPaid(supabase, quote, today) {
   if (!order) return updates;
 
   if (!order.paid) {
-    const { error: oErr } = await supabase
-      .from("orders")
-      .update({ paid: true, paid_date: today })
-      .eq("id", order.id)
-      .eq("shop_owner", quote.shop_owner)
-      .eq("paid", false);
-    if (!oErr) updates.orderUpdated = true;
+    updates.orderUpdated = await flipPaidRow(supabase, "orders", order.id, quote.shop_owner, today);
   }
 
   // 3. Linked invoice via the order's order_id. Older orders may not
@@ -184,13 +195,7 @@ export async function cascadeMarkLinkedPaid(supabase, quote, today) {
   if (!invoice) return updates;
 
   if (!invoice.paid) {
-    const { error: iErr } = await supabase
-      .from("invoices")
-      .update({ paid: true, paid_date: today })
-      .eq("id", invoice.id)
-      .eq("shop_owner", quote.shop_owner)
-      .eq("paid", false);
-    if (!iErr) updates.invoiceUpdated = true;
+    updates.invoiceUpdated = await flipPaidRow(supabase, "invoices", invoice.id, quote.shop_owner, today);
   }
 
   return updates;
@@ -214,13 +219,7 @@ export async function cascadeMarkInvoicePaid(supabase, invoice, today) {
   const updates = { invoiceUpdated: false, orderUpdated: false };
 
   if (!invoice.paid) {
-    const { error: iErr } = await supabase
-      .from("invoices")
-      .update({ paid: true, paid_date: today })
-      .eq("id", invoice.id)
-      .eq("shop_owner", invoice.shop_owner)
-      .eq("paid", false);
-    if (!iErr) updates.invoiceUpdated = true;
+    updates.invoiceUpdated = await flipPaidRow(supabase, "invoices", invoice.id, invoice.shop_owner, today);
   }
 
   if (!invoice.order_id) return updates;
@@ -234,13 +233,7 @@ export async function cascadeMarkInvoicePaid(supabase, invoice, today) {
   if (!order) return updates;
 
   if (!order.paid) {
-    const { error: oErr } = await supabase
-      .from("orders")
-      .update({ paid: true, paid_date: today })
-      .eq("id", order.id)
-      .eq("shop_owner", invoice.shop_owner)
-      .eq("paid", false);
-    if (!oErr) updates.orderUpdated = true;
+    updates.orderUpdated = await flipPaidRow(supabase, "orders", order.id, invoice.shop_owner, today);
   }
 
   return updates;

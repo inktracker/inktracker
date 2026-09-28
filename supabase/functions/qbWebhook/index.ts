@@ -320,7 +320,29 @@ async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: 
   // Customer eventually paid; walk quote → order → invoice and mark
   // each paid. Same notification email as the CONVERT path.
   if (decision.action === PAID_INVOICE_ACTIONS.MARK_LINKED_PAID) {
-    const updates = await cascadeMarkLinkedPaid(supabase, quote, today);
+    let updates;
+    try {
+      updates = await cascadeMarkLinkedPaid(supabase, quote, today);
+    } catch (cascadeErr) {
+      // A paid-write failed. The cascade used to swallow this and we'd log
+      // status:"success" — money collected, QB shows paid, but InkTracker
+      // stayed Unpaid with nothing recorded. Log a real error so it's
+      // visible in the QB event log; the nightly qbReconcile runs the same
+      // cascade (and logs its own error per candidate) and recovers it, so
+      // don't rethrow — the event is claimed and QB won't redeliver.
+      const msg = cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr);
+      console.error(`[qbWebhook] Cascade mark-paid FAILED for quote ${quote.quote_id}: ${msg}`);
+      await logEvent(supabase, {
+        shop_owner: shopOwner,
+        action: "webhook_paid_invoice",
+        status: "error",
+        qb_invoice_id: qbInvoiceId,
+        quote_id: quote.id,
+        error_message: msg,
+        response_body: { cascade: true, failed: true },
+      });
+      return;
+    }
     console.error(
       `[qbWebhook] Cascade-marked paid: quote ${quote.quote_id} ${JSON.stringify(updates)}`,
     );
