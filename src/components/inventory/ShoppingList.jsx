@@ -1,10 +1,11 @@
-// Restock shopping list — auto-populated from inventory items where
-// qty <= reorder. Filterable by supplier; bulk "Mark as Ordered" on
-// checked items; per-item "Receive" bumps qty and clears the order.
+// Restock shopping list — auto-populated from inventory items that are low
+// on stock (see isLowStock: a POSITIVE reorder threshold and qty at or below
+// it). Filterable by supplier; bulk "Mark as Ordered" on checked items;
+// per-item "Receive" bumps qty and clears the order.
 //
 // State machine per item:
-//   1. qty > reorder              → not on the list
-//   2. qty <= reorder, no order   → "Needs ordering" (checkbox shown)
+//   1. not low (untracked, or qty > reorder) → not on the list
+//   2. low, no order                          → "Needs ordering" (checkbox)
 //   3. ordered_at set, qty <=     → "Pending delivery" (Receive button)
 //   4. user clicks Receive        → qty += ordered_qty, ordered_at cleared
 //                                   → if new qty > reorder, drops off list
@@ -17,6 +18,7 @@ import { CheckCircle2, Truck, Package, ChevronDown, ChevronRight, PackageX } fro
 import { base44 } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 import ReactivateLink from "@/components/shared/ReactivateLink";
+import { isLowStock } from "@/lib/inventory/lowStock";
 
 const ALL = "All";
 const UNSPECIFIED = "Unspecified";
@@ -26,11 +28,11 @@ function supplierLabel(s) {
 }
 
 export default function ShoppingList({ items, onItemUpdated, onRefresh, readOnly = false, reason = "", reactivateHref = "" }) {
-  // Auto-derived: anything below reorder threshold is on the list.
-  const lowItems = useMemo(
-    () => items.filter((i) => Number(i.qty) <= Number(i.reorder)),
-    [items],
-  );
+  // Auto-derived: tracked items at or below their reorder threshold. The
+  // reorder>0 guard (in isLowStock) keeps untracked items (reorder null/0)
+  // off the list even at qty 0 — otherwise every zeroed item the shop never
+  // opted into tracking would falsely appear here.
+  const lowItems = useMemo(() => items.filter(isLowStock), [items]);
 
   const pending = lowItems.filter((i) => !i.ordered_at);
   const ordered = lowItems.filter((i) => i.ordered_at);

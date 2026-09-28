@@ -24,6 +24,7 @@ function supplierOfItem(item) {
 }
 import { notify } from "@/lib/notify";
 import { matchLinesToItems, buildStockUpdates } from "@/lib/inventory/stockAdditions";
+import { isLowStock } from "@/lib/inventory/lowStock";
 import { shopScope } from "@/lib/shopScope";
 import { useReadOnly } from "@/lib/billing-gate";
 import ReactivateLink from "@/components/shared/ReactivateLink";
@@ -338,7 +339,7 @@ export default function Inventory() {
       groups[baseName].items.push({ ...item, variantName: variant || null });
       groups[baseName].totalQty += item.qty || 0;
       groups[baseName].totalValue += (item.qty || 0) * (item.cost || 0);
-      if (item.qty <= item.reorder) groups[baseName].hasLowStock = true;
+      if (isLowStock(item)) groups[baseName].hasLowStock = true;
     }
     return Object.values(groups).sort((a, b) => a.baseName.localeCompare(b.baseName));
   }, [filtered]);
@@ -354,7 +355,7 @@ export default function Inventory() {
   // Low = at/below a real reorder point. A reorder threshold of 0 means "not
   // tracked" (freshly-stocked catalog items start at qty 0 / reorder 0), so it
   // must NOT count as low — otherwise every new item floods this list.
-  const low = items.filter(i => Number(i.reorder) > 0 && Number(i.qty) <= Number(i.reorder));
+  const low = items.filter(isLowStock);
   const totalItems = items.length;
   const totalValue = items.reduce((s, i) => s + (i.qty || 0) * (i.cost || 0), 0);
 
@@ -362,7 +363,7 @@ export default function Inventory() {
   // checkout (NOT auto-added to the order). Each carries its own vendor so the
   // reminder's "Add" queues it to the right store.
   const norcalLowReminders = items
-    .filter(i => i.supplier_variant_id && Number(i.reorder) > 0 && Number(i.qty) <= Number(i.reorder))
+    .filter(i => i.supplier_variant_id && isLowStock(i))
     .map(i => {
       const s = supplierOfItem(i) || {};
       return {
@@ -677,7 +678,7 @@ export default function Inventory() {
                   </div>
                   {group.items.map(item => (
                     <div key={item.id}
-                      className={`grid grid-cols-12 gap-2 items-center px-5 py-3 border-b border-slate-50 last:border-b-0 transition ${item.qty <= item.reorder ? "bg-orange-50/50" : "hover:bg-white"}`}>
+                      className={`grid grid-cols-12 gap-2 items-center px-5 py-3 border-b border-slate-50 last:border-b-0 transition ${isLowStock(item) ? "bg-orange-50/50" : "hover:bg-white"}`}>
                       <div className="col-span-4 text-sm font-medium text-slate-700 truncate">
                         {item.variantName || item.item}
                       </div>
@@ -691,7 +692,7 @@ export default function Inventory() {
                       <div className="col-span-1 text-center text-xs text-slate-500">{item.reorder}</div>
                       <div className="col-span-1 text-right text-sm text-slate-600">{fmtMoney(item.cost)}</div>
                       <div className="col-span-1 text-center">
-                        {item.qty <= item.reorder
+                        {isLowStock(item)
                           ? <span className="inline-block w-2 h-2 rounded-full bg-orange-400" title="Low stock" />
                           : <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" title="In stock" />
                         }
