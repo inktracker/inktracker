@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   countGoodsProgress,
-  autoCheckOrderGoodsTask,
+  autoCheckGoodsTask,
   nextGoodsStatusOnTap,
   unreceivedCount,
   bulkSetOrderGoodsStep,
+  GOODS_ORDER_STAGE,
+  GOODS_RECEIVE_STAGE,
 } from "../orderGoodsProgress.js";
 
 describe("countGoodsProgress", () => {
@@ -74,72 +76,58 @@ describe("countGoodsProgress", () => {
   });
 });
 
-describe("autoCheckOrderGoodsTask", () => {
-  it("returns null for steps other than Order Goods (manual task always)", () => {
-    expect(autoCheckOrderGoodsTask("Pre-Press", "Place blank order", { total: 5, marked: 5 }))
-      .toBe(null);
-    expect(autoCheckOrderGoodsTask("Printing", "Receive goods", { total: 5, received: 5 }))
-      .toBe(null);
+describe("autoCheckGoodsTask (stage-scoped: ordering=Order Goods, receiving=Pre-Press)", () => {
+  it("'Place blank order' ONLY auto-derives on Order Goods", () => {
+    expect(autoCheckGoodsTask(GOODS_ORDER_STAGE, "Place blank order", { total: 5, marked: 5 })).toBe(true);
+    // Not its stage → manual.
+    expect(autoCheckGoodsTask(GOODS_RECEIVE_STAGE, "Place blank order", { total: 5, marked: 5 })).toBe(null);
+    expect(autoCheckGoodsTask("Printing", "Place blank order", { total: 5, marked: 5 })).toBe(null);
+  });
+
+  it("'Receive goods' ONLY auto-derives on Pre-Press (moved off Order Goods)", () => {
+    expect(autoCheckGoodsTask(GOODS_RECEIVE_STAGE, "Receive goods", { total: 5, received: 5 })).toBe(true);
+    expect(autoCheckGoodsTask(GOODS_RECEIVE_STAGE, "Receive goods", { total: 5, received: 4 })).toBe(false);
+    // On Order Goods it's now a plain manual checkbox.
+    expect(autoCheckGoodsTask(GOODS_ORDER_STAGE, "Receive goods", { total: 5, received: 5 })).toBe(null);
   });
 
   it("returns null for tasks that aren't auto-derived (e.g. Check inventory)", () => {
-    expect(autoCheckOrderGoodsTask("Order Goods", "Check inventory", { total: 5, marked: 5 }))
-      .toBe(null);
+    expect(autoCheckGoodsTask(GOODS_ORDER_STAGE, "Check inventory", { total: 5, marked: 5 })).toBe(null);
   });
 
-  it("'Place blank order' returns true once every size is at-least-ordered", () => {
-    expect(autoCheckOrderGoodsTask("Order Goods", "Place blank order", { total: 5, marked: 5 }))
-      .toBe(true);
+  it("'Place blank order' is false when partial or when total=0", () => {
+    expect(autoCheckGoodsTask(GOODS_ORDER_STAGE, "Place blank order", { total: 5, marked: 3 })).toBe(false);
+    expect(autoCheckGoodsTask(GOODS_ORDER_STAGE, "Place blank order", { total: 0, marked: 0 })).toBe(false);
   });
 
-  it("'Place blank order' returns false when partially marked", () => {
-    expect(autoCheckOrderGoodsTask("Order Goods", "Place blank order", { total: 5, marked: 3 }))
-      .toBe(false);
-  });
-
-  it("'Place blank order' returns false when no sizes at all (total=0)", () => {
-    // Zero-size edge case: nothing to order means nothing to auto-check.
-    expect(autoCheckOrderGoodsTask("Order Goods", "Place blank order", { total: 0, marked: 0 }))
-      .toBe(false);
-  });
-
-  it("'Receive goods' returns true only when every size is received (ordered doesn't count)", () => {
-    expect(autoCheckOrderGoodsTask("Order Goods", "Receive goods", { total: 5, received: 5 }))
-      .toBe(true);
-    expect(autoCheckOrderGoodsTask("Order Goods", "Receive goods", { total: 5, received: 4 }))
-      .toBe(false);
-    // All ordered but none received → still false (matches Joe's
-    // "amber checks blank order, but receive goods stays manual" intent).
-    expect(autoCheckOrderGoodsTask("Order Goods", "Receive goods", { total: 5, marked: 5, received: 0 }))
-      .toBe(false);
+  it("'Receive goods' is false when all ordered but none received", () => {
+    expect(autoCheckGoodsTask(GOODS_RECEIVE_STAGE, "Receive goods", { total: 5, marked: 5, received: 0 })).toBe(false);
   });
 
   it("handles null/missing counts defensively", () => {
-    expect(autoCheckOrderGoodsTask("Order Goods", "Place blank order", null))
-      .toBe(false);
-    expect(autoCheckOrderGoodsTask("Order Goods", "Receive goods", {}))
-      .toBe(false);
+    expect(autoCheckGoodsTask(GOODS_ORDER_STAGE, "Place blank order", null)).toBe(false);
+    expect(autoCheckGoodsTask(GOODS_RECEIVE_STAGE, "Receive goods", {})).toBe(false);
   });
 });
 
-describe("nextGoodsStatusOnTap (cycles blank → ordered → received → blank)", () => {
-  it("blank → ordered (undefined/null/'' all start the cycle)", () => {
+describe("nextGoodsStatusOnTap — stage-scoped cycle", () => {
+  it("Order Goods: blank ⇄ ordered (received never reached here)", () => {
+    expect(nextGoodsStatusOnTap(undefined, GOODS_ORDER_STAGE)).toBe("ordered");
+    expect(nextGoodsStatusOnTap("", GOODS_ORDER_STAGE)).toBe("ordered");
+    expect(nextGoodsStatusOnTap("ordered", GOODS_ORDER_STAGE)).toBe(null); // → blank
+    expect(nextGoodsStatusOnTap("received", GOODS_ORDER_STAGE)).toBe(null); // stray → clear
+  });
+
+  it("Pre-Press: ordered → received, received → ordered (undo), blank → received", () => {
+    expect(nextGoodsStatusOnTap("ordered", GOODS_RECEIVE_STAGE)).toBe("received");
+    expect(nextGoodsStatusOnTap("received", GOODS_RECEIVE_STAGE)).toBe("ordered");
+    expect(nextGoodsStatusOnTap(undefined, GOODS_RECEIVE_STAGE)).toBe("received");
+  });
+
+  it("legacy full cycle when no stage is supplied (back-compat)", () => {
     expect(nextGoodsStatusOnTap(undefined)).toBe("ordered");
-    expect(nextGoodsStatusOnTap(null)).toBe("ordered");
-    expect(nextGoodsStatusOnTap("")).toBe("ordered");
-  });
-
-  it("ordered → received", () => {
     expect(nextGoodsStatusOnTap("ordered")).toBe("received");
-  });
-
-  it("received → null (caller deletes the entry; cycles back to blank)", () => {
     expect(nextGoodsStatusOnTap("received")).toBe(null);
-  });
-
-  it("treats unknown status values as blank (defensive — restart the cycle)", () => {
-    expect(nextGoodsStatusOnTap("pending")).toBe("ordered");
-    expect(nextGoodsStatusOnTap("delivered")).toBe("ordered");
   });
 });
 

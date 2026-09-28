@@ -283,15 +283,15 @@ export default function OrderDetailModal({
     maybeAutoAdvance(updated);
   }
 
-  // Per-size goods tap — cycles blank → ordered → received → blank
-  // (decision in lib/orderGoodsProgress). A `null` return from
-  // nextGoodsStatusOnTap means "clear" — delete the entry so the
-  // size goes back to blank.
+  // Per-size goods tap — stage-scoped: Order Goods cycles blank ⇄ ordered,
+  // Pre-Press cycles ordered ⇄ received (decision in lib/orderGoodsProgress).
+  // A `null` return from nextGoodsStatusOnTap means "clear" — delete the
+  // entry so the size goes back to blank.
   async function floorToggleGoods(liIdx, size) {
     const checklist = { ...(liveOrder.checklist || {}) };
     const gp = { ...(checklist.goods_progress || {}) };
     const key = `${liIdx}-${size}`;
-    const next = nextGoodsStatusOnTap(gp[key]?.status);
+    const next = nextGoodsStatusOnTap(gp[key]?.status, liveOrder.status);
     if (next === null) {
       delete gp[key];
     } else {
@@ -387,14 +387,16 @@ export default function OrderDetailModal({
   }
 
   // Soft-warn version of onAdvance. Override allowed for partial-ship.
+  // Goods are received on Pre-Press now, so the "not all received" warning
+  // fires when leaving Pre-Press for Printing (was Order Goods → Pre-Press).
   function advanceWithGoodsGuard() {
     if (!onAdvance) return;
-    if (liveOrder.status === "Order Goods") {
+    if (liveOrder.status === "Pre-Press") {
       const missing = unreceivedCount(liveOrder);
       const total = countGoodsProgress(liveOrder).total;
       if (missing > 0) {
         const ok = window.confirm(
-          `${missing} of ${total} sizes haven't been marked received.\n\nMove to Pre-Press anyway?`
+          `${missing} of ${total} sizes haven't been marked received.\n\nMove to Printing anyway?`
         );
         if (!ok) return;
       }

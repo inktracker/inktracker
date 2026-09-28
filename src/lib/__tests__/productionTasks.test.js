@@ -90,46 +90,45 @@ describe("getAllStageTasks", () => {
   });
 });
 
+describe("DEFAULT_TASKS goods split", () => {
+  it("Order Goods is ordering-only; Receive goods leads Pre-Press", () => {
+    // The 2026-09-28 move: receiving happens on Pre-Press so Order Goods
+    // clearly means 'still needs ordering'.
+    expect(DEFAULT_TASKS["Order Goods"]).toEqual(["Place blank order"]);
+    expect(DEFAULT_TASKS["Pre-Press"][0]).toBe("Receive goods");
+    expect(DEFAULT_TASKS["Pre-Press"]).toContain("Burn screens");
+  });
+});
+
 describe("getMissingAutoDerivedTasks", () => {
-  it("returns [] for stages other than Order Goods (no auto-derive anywhere else)", () => {
+  it("returns [] for stages with no auto-derived tasks", () => {
     expect(getMissingAutoDerivedTasks("Art Approval", [])).toEqual([]);
-    expect(getMissingAutoDerivedTasks("Pre-Press", [])).toEqual([]);
     expect(getMissingAutoDerivedTasks("Printing", [])).toEqual([]);
   });
 
-  it("returns both canonical names when the list is empty", () => {
-    expect(getMissingAutoDerivedTasks("Order Goods", [])).toEqual([
-      "Place blank order",
-      "Receive goods",
-    ]);
+  it("Order Goods expects only 'Place blank order'", () => {
+    expect(getMissingAutoDerivedTasks("Order Goods", [])).toEqual(["Place blank order"]);
+    expect(getMissingAutoDerivedTasks("Order Goods", ["Place blank order"])).toEqual([]);
+    // Receive goods is NOT an Order Goods auto-task anymore.
+    expect(getMissingAutoDerivedTasks("Order Goods", ["Inspect goods"])).toEqual(["Place blank order"]);
   });
 
-  it("returns both when the input is null/undefined/not an array", () => {
-    expect(getMissingAutoDerivedTasks("Order Goods", null)).toEqual(ORDER_GOODS_AUTO_DERIVED_TASKS);
-    expect(getMissingAutoDerivedTasks("Order Goods", undefined)).toEqual(ORDER_GOODS_AUTO_DERIVED_TASKS);
-    expect(getMissingAutoDerivedTasks("Order Goods", "not an array")).toEqual(ORDER_GOODS_AUTO_DERIVED_TASKS);
+  it("Pre-Press expects only 'Receive goods'", () => {
+    expect(getMissingAutoDerivedTasks("Pre-Press", [])).toEqual(["Receive goods"]);
+    expect(getMissingAutoDerivedTasks("Pre-Press", ["Receive goods", "Burn screens"])).toEqual([]);
+    expect(getMissingAutoDerivedTasks("Pre-Press", ["Burn screens"])).toEqual(["Receive goods"]);
   });
 
-  it("returns just one when only one canonical name is renamed/removed", () => {
-    expect(getMissingAutoDerivedTasks("Order Goods", ["Place blank order", "Inspect goods"]))
-      .toEqual(["Receive goods"]);
-    expect(getMissingAutoDerivedTasks("Order Goods", ["Order screens", "Receive goods"]))
-      .toEqual(["Place blank order"]);
-  });
-
-  it("returns [] when both canonical names are present (even with other tasks alongside)", () => {
-    expect(getMissingAutoDerivedTasks("Order Goods", [
-      "Place blank order",
-      "Email vendor",
-      "Receive goods",
-      "Count units",
-    ])).toEqual([]);
+  it("returns the stage's expected task when input is null/undefined/not an array", () => {
+    expect(getMissingAutoDerivedTasks("Order Goods", null)).toEqual(["Place blank order"]);
+    expect(getMissingAutoDerivedTasks("Pre-Press", undefined)).toEqual(["Receive goods"]);
+    expect(getMissingAutoDerivedTasks("Order Goods", "not an array")).toEqual(["Place blank order"]);
   });
 
   it("is whitespace/case-sensitive — 'place blank order' counts as missing", () => {
-    expect(getMissingAutoDerivedTasks("Order Goods", ["place blank order", "Receive goods"]))
+    expect(getMissingAutoDerivedTasks("Order Goods", ["place blank order"]))
       .toEqual(["Place blank order"]);
-    expect(getMissingAutoDerivedTasks("Order Goods", [" Place blank order ", "Receive goods"]))
+    expect(getMissingAutoDerivedTasks("Order Goods", [" Place blank order "]))
       .toEqual(["Place blank order"]);
   });
 });
