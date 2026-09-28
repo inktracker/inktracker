@@ -533,8 +533,12 @@ describe("buildPaidInvoiceQueryFromInvoices — tenant-scoped invoice lookup", (
 // pin cross-tenant safety on EVERY write.
 // ════════════════════════════════════════════════════════════════════════════
 
-function mockDb(initial = {}) {
+function mockDb(initial = {}, opts = {}) {
   // initial: { quotes: [...], orders: [...], invoices: [...] }
+  // opts.errorTable: name of a table whose UPDATE resolves { error } — used
+  // to simulate a real DB/RLS/network write failure so we can assert the
+  // cascade surfaces it (throws) instead of silently discarding it.
+  const errorTable = opts.errorTable || null;
   const tables = {
     quotes:   [...(initial.quotes   || [])],
     orders:   [...(initial.orders   || [])],
@@ -559,6 +563,10 @@ function mockDb(initial = {}) {
       then(resolve) {
         if (op !== "update") {
           resolve({ error: null });
+          return;
+        }
+        if (errorTable && tableName === errorTable) {
+          resolve({ error: { message: `simulated ${tableName} write failure` } });
           return;
         }
         // Apply patch to all matching rows
@@ -604,6 +612,29 @@ describe("cascadeMarkLinkedPaid — quote → order → invoice walk", () => {
     expect(db._tables.quotes[0].paid_date).toBe("2026-06-01");
     expect(db._tables.orders[0].paid_date).toBe("2026-06-01");
     expect(db._tables.invoices[0].paid_date).toBe("2026-06-01");
+  });
+
+  it("THROWS on a real quote write error instead of silently reporting success", async () => {
+    // Regression: the failure used to be discarded (`if (!qErr) ...`), so a
+    // collected-but-unmarked payment logged status:"success". It must throw
+    // so the webhook logs a real error and reconcile recovers it.
+    const db = mockDb({
+      quotes: [{ id: "q1", shop_owner: "shopA@example.com", paid: false, converted_order_id: "ORD-001", quote_id: "Q-001" }],
+    }, { errorTable: "quotes" });
+    await expect(cascadeMarkLinkedPaid(db, db._tables.quotes[0], "2026-06-01"))
+      .rejects.toThrow(/quotes q1 paid-write failed/);
+  });
+
+  it("THROWS on a downstream order write error (quote already flipped)", async () => {
+    const db = mockDb({
+      quotes:   [{ id: "q1", shop_owner: "shopA@example.com", paid: false, converted_order_id: "ORD-001", quote_id: "Q-001" }],
+      orders:   [{ id: "o1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+    }, { errorTable: "orders" });
+    await expect(cascadeMarkLinkedPaid(db, db._tables.quotes[0], "2026-06-01"))
+      .rejects.toThrow(/orders o1 paid-write failed/);
+    // quote flipped before the order write blew up — re-run (reconcile) is
+    // idempotent via the eq(paid,false) guard, so this partial state is safe.
+    expect(db._tables.quotes[0].paid).toBe(true);
   });
 
   it("is idempotent — already-paid rows are not re-touched (eq paid:false guard)", async () => {
@@ -687,6 +718,14 @@ describe("cascadeMarkInvoicePaid — invoice → order walk (no quote)", () => {
     });
     const updates = await cascadeMarkInvoicePaid(db, db._tables.invoices[0], "2026-06-01");
     expect(updates).toEqual({ invoiceUpdated: true, orderUpdated: false });
+  });
+
+  it("THROWS on a real invoice write error instead of reporting success", async () => {
+    const db = mockDb({
+      invoices: [{ id: "inv1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+    }, { errorTable: "invoices" });
+    await expect(cascadeMarkInvoicePaid(db, db._tables.invoices[0], "2026-06-01"))
+      .rejects.toThrow(/invoices inv1 paid-write failed/);
   });
 
   it("CROSS-TENANT: every update carries shop_owner filter", async () => {
