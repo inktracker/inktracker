@@ -8,23 +8,31 @@
 
 export const PRODUCTION_STAGES = ["Art Approval", "Order Goods", "Pre-Press", "Printing"];
 
-// Canonical task names on the Order Goods stage that auto-check from
-// per-size goods_progress. If a shop renames or removes either, the
-// auto-derive in autoCheckOrderGoodsTask stops firing — these are the
-// names we check against, and Account UI warns when they're missing.
-export const ORDER_GOODS_AUTO_DERIVED_TASKS = [
-  "Place blank order",
-  "Receive goods",
-];
+// Canonical task names that auto-check from per-size goods_progress,
+// keyed by the stage they now live on. Ordering ("Place blank order")
+// stays on Order Goods; receiving ("Receive goods") moved to Pre-Press
+// (2026-09-28) so Order Goods purely means "still needs ordering" and
+// it's obvious at a glance what's outstanding. If a shop renames or
+// removes either, the auto-derive in autoCheckGoodsTask stops firing for
+// it — these are the names we check against, and the Account UI warns.
+export const AUTO_DERIVED_TASKS_BY_STAGE = {
+  "Order Goods": ["Place blank order"],
+  "Pre-Press":   ["Receive goods"],
+};
+
+// Flattened list of every auto-derived task name across stages (used by
+// callers that only care whether a name is auto-derived at all).
+export const ORDER_GOODS_AUTO_DERIVED_TASKS = Object.values(AUTO_DERIVED_TASKS_BY_STAGE).flat();
 
 // Return the auto-derived task names that are MISSING from the shop's
 // current list for a given stage. Empty array means everything that
-// should auto-check is still in place. Only Order Goods has auto-derived
-// tasks today; other stages always return [].
+// should auto-check on this stage is still in place. Stages with no
+// auto-derived tasks always return [].
 export function getMissingAutoDerivedTasks(stage, taskList) {
-  if (stage !== "Order Goods") return [];
+  const expected = AUTO_DERIVED_TASKS_BY_STAGE[stage] || [];
+  if (expected.length === 0) return [];
   const set = new Set(Array.isArray(taskList) ? taskList : []);
-  return ORDER_GOODS_AUTO_DERIVED_TASKS.filter((name) => !set.has(name));
+  return expected.filter((name) => !set.has(name));
 }
 
 // Default task list per production stage. Refreshed 2026-05-31 to
@@ -40,13 +48,16 @@ export function getMissingAutoDerivedTasks(stage, taskList) {
 // the unchanged customer-facing approval loop.
 export const DEFAULT_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
-  // "Place blank order" + "Receive goods" auto-derive from per-size
-  // goods_progress (every size at-least-ordered → blank order done;
-  // every size received → receive goods done). If a shop renames or
-  // removes these, the auto-derive won't fire — operators just check
-  // them manually. Keep the canonical names to keep auto-derive working.
-  "Order Goods":  ["Place blank order", "Receive goods"],
-  "Pre-Press":    ["Output/Pull Film", "Burn screens", "Mix ink colors"],
+  // "Place blank order" auto-derives from per-size goods_progress (every
+  // size at-least-ordered → done). "Receive goods" moved to Pre-Press
+  // (below) so Order Goods is purely "order the blanks" — an order still
+  // in this stage clearly needs ordering. Keep the canonical names so
+  // auto-derive keeps working; a shop that renames them just ticks
+  // manually.
+  "Order Goods":  ["Place blank order"],
+  // "Receive goods" leads Pre-Press: goods are received here (every size
+  // received → done) before film/screens/ink prep.
+  "Pre-Press":    ["Receive goods", "Output/Pull Film", "Burn screens", "Mix ink colors"],
   "Printing": [
     "Run test prints",
     "Get test approval",

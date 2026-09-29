@@ -11,6 +11,8 @@ import {
   bulkSetOrderGoodsStep,
   nextGoodsStatusOnTap,
   unreceivedCount,
+  GOODS_ORDER_STAGE,
+  GOODS_RECEIVE_STAGE,
 } from "@/lib/orderGoodsProgress";
 import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Clock, CheckCircle2, AlertTriangle, Loader2, Printer, FileImage } from "lucide-react";
 import { notify } from "@/lib/notify";
@@ -463,7 +465,7 @@ export default function ShopFloor() {
       const checklist = { ...(order.checklist || {}) };
       const goodsProgress = { ...(checklist.goods_progress || {}) };
       const key = `${liIdx}-${size}`;
-      const next = nextGoodsStatusOnTap(goodsProgress[key]?.status);
+      const next = nextGoodsStatusOnTap(goodsProgress[key]?.status, order.status);
       if (next === null) {
         delete goodsProgress[key];
       } else {
@@ -514,12 +516,12 @@ export default function ShopFloor() {
     if (nextStatus === "Completed") {
       return handleComplete(order);
     }
-    if (order.status === "Order Goods" && nextStatus === "Pre-Press") {
+    if (order.status === "Pre-Press" && nextStatus === "Printing") {
       const missing = unreceivedCount(order);
       const total = countGoodsProgress(order).total;
       if (missing > 0) {
         const ok = window.confirm(
-          `${missing} of ${total} sizes haven't been marked received.\n\nMove to Pre-Press anyway?`
+          `${missing} of ${total} sizes haven't been marked received.\n\nMove to Printing anyway?`
         );
         if (!ok) return;
       }
@@ -890,8 +892,9 @@ export default function ShopFloor() {
                 const checklist = selected.checklist || {};
                 const stepChecks = checklist[step] || {};
 
-                // Order Goods auto-derives Place blank order + Receive
-                // goods from the per-size counts (pure logic in lib).
+                // "Place blank order" (Order Goods) + "Receive goods"
+                // (Pre-Press) auto-derive from the per-size counts, each on
+                // its own stage (pure logic in lib/orderGoodsProgress).
                 const counts = countGoodsProgress(selected);
                 const autoDone = (task) => autoCheckTask(step, task, selected, counts);
                 const isDone = (task) => {
@@ -1000,7 +1003,8 @@ export default function ShopFloor() {
               })()}
 
               {/* Job ticket — stage-aware per-size tracking.
-                  Order Goods: ordered/received cycle (goods_progress).
+                  Order Goods: blank ⇄ ordered (goods_progress) — ordering.
+                  Pre-Press:   ordered ⇄ received (goods_progress) — receiving.
                   Printing:    per-imprint print tracking (print_progress).
                   Other stages: read-only quantity. */}
               {(() => {
@@ -1014,7 +1018,15 @@ export default function ShopFloor() {
                   <div className="bg-white rounded-2xl border border-slate-200 p-5">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Job Ticket</h3>
-                      {stage === "Order Goods" && goodsTotal > 0 && (
+                      {stage === GOODS_ORDER_STAGE && goodsTotal > 0 && (
+                        <span className="text-xs font-bold text-slate-500">
+                          <span className="text-amber-600">{goodsOrdered + goodsReceived}</span>
+                          <span className="text-slate-500"> ordered</span>
+                          <span className="text-slate-300 mx-1.5">·</span>
+                          <span className="text-slate-500">{goodsTotal} total</span>
+                        </span>
+                      )}
+                      {stage === GOODS_RECEIVE_STAGE && goodsTotal > 0 && (
                         <span className="text-xs font-bold text-slate-500">
                           <span className="text-emerald-600">{goodsReceived}</span>
                           <span className="text-slate-500"> received</span>
@@ -1121,18 +1133,18 @@ export default function ShopFloor() {
                             {/* Sizes — interaction depends on stage */}
                             <div className="flex flex-wrap gap-2">
                               {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
-                                // ── Order Goods: blank → ordered → received → blank ──
-                                // All three states tap-able (cycle).
-                                if (stage === "Order Goods") {
+                                // ── Order Goods: blank ⇄ ordered · Pre-Press: ordered ⇄ received ──
+                                // Ordering and receiving are on different stages;
+                                // the tap target is stage-scoped (nextGoodsStatusOnTap).
+                                if (stage === GOODS_ORDER_STAGE || stage === GOODS_RECEIVE_STAGE) {
                                   const status = goodsProgress[`${idx}-${size}`]?.status;
                                   const label =
                                     status === "received" ? "Received"
                                     : status === "ordered" ? "Ordered"
                                     : null;
-                                  const tooltip =
-                                    status === "received" ? "Tap to clear back to blank"
-                                    : status === "ordered" ? "Tap to mark received"
-                                    : "Tap to mark ordered";
+                                  const tooltip = stage === GOODS_ORDER_STAGE
+                                    ? (status ? "Tap to clear back to blank" : "Tap to mark ordered")
+                                    : (status === "received" ? "Tap to undo — back to ordered" : "Tap to mark received");
                                   return (
                                     <button key={size}
                                       onClick={() => toggleGoods(selected, idx, size)}

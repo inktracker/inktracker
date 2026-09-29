@@ -1,7 +1,9 @@
 import { Hammer, CheckCircle2, ChevronDown } from "lucide-react";
 import {
   countGoodsProgress,
-  autoCheckOrderGoodsTask,
+  autoCheckGoodsTask,
+  GOODS_ORDER_STAGE,
+  GOODS_RECEIVE_STAGE,
 } from "@/lib/orderGoodsProgress";
 import { sortSizeEntries } from "../../shared/pricing";
 import { getStageTasks } from "@/lib/productionTasks";
@@ -9,7 +11,8 @@ import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import ReactivateLink from "../../shared/ReactivateLink";
 
 // Floor Mode Panel — stage-aware per-size tracking.
-//   Order Goods: ordered/received cycle (goods_progress).
+//   Order Goods: blank ⇄ ordered (goods_progress) — ordering only.
+//   Pre-Press:   ordered ⇄ received (goods_progress) — receiving.
 //   Printing:    per-imprint print tracking (print_progress).
 //   Other stages: read-only quantity (no leaked dots).
 // The teal bar IS the collapsible header (clickable); panel body only
@@ -41,6 +44,8 @@ export default function FloorModePanel({
   const goodsProgress = checklist.goods_progress || {};
 
   const { total: goodsTotal, ordered: goodsOrdered, received: goodsReceived } = countGoodsProgress(liveOrder);
+  const isOrderStage = step === GOODS_ORDER_STAGE;
+  const isReceiveStage = step === GOODS_RECEIVE_STAGE;
 
   return (
     <div className="border-2 border-teal-400 rounded-xl overflow-hidden">
@@ -55,7 +60,13 @@ export default function FloorModePanel({
           <span className="text-sm font-bold">Floor Mode — {step}</span>
         </div>
         <div className="flex items-center gap-3">
-          {step === "Order Goods" && goodsTotal > 0 && (
+          {isOrderStage && goodsTotal > 0 && (
+            <span className="text-xs font-semibold text-teal-100">
+              <span className="text-white">{goodsOrdered + goodsReceived}</span> ordered
+              {" · "}{goodsTotal} total
+            </span>
+          )}
+          {isReceiveStage && goodsTotal > 0 && (
             <span className="text-xs font-semibold text-teal-100">
               <span className="text-white">{goodsReceived}</span> received
               {goodsOrdered > 0 && <> · <span className="text-white">{goodsOrdered}</span> ordered</>}
@@ -76,13 +87,13 @@ export default function FloorModePanel({
             <ReactivateLink show={readOnly} href={reactivateHref} />
           </div>
         )}
-        {/* Checklist — Order Goods has two auto-derived
-            tasks (Place blank order / Receive goods) so
-            operators don't double-confirm what the
-            per-size buttons already capture. */}
+        {/* Checklist — "Place blank order" (Order Goods) and
+            "Receive goods" (Pre-Press) auto-derive from the
+            per-size buttons so operators don't double-confirm
+            what those already capture. */}
         {tasks.length > 0 && (() => {
           const counts = { total: goodsTotal, ordered: goodsOrdered, received: goodsReceived, marked: goodsOrdered + goodsReceived };
-          const autoDone = (task) => autoCheckOrderGoodsTask(step, task, counts);
+          const autoDone = (task) => autoCheckGoodsTask(step, task, counts);
           const isDone = (task) => {
             const a = autoDone(task);
             return a === null ? !!stepChecks[task] : a;
@@ -176,19 +187,19 @@ export default function FloorModePanel({
               )}
               <div className="flex flex-wrap gap-2">
                 {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
-                  // ── Order Goods: blank → ordered → received → blank ──
-                  // All three states are tap-able now (cycle), so
-                  // an accidental tap is always recoverable.
-                  if (step === "Order Goods") {
+                  // ── Order Goods: blank ⇄ ordered · Pre-Press: ordered ⇄ received ──
+                  // Ordering and receiving now live on different stages;
+                  // the tap target is stage-scoped (nextGoodsStatusOnTap in
+                  // the parent handler) and every tap is recoverable.
+                  if (isOrderStage || isReceiveStage) {
                     const status = goodsProgress[`${liIdx}-${size}`]?.status;
                     const label =
                       status === "received" ? "Received"
                       : status === "ordered" ? "Ordered"
                       : null;
-                    const tooltip =
-                      status === "received" ? "Tap to clear back to blank"
-                      : status === "ordered" ? "Tap to mark received"
-                      : "Tap to mark ordered";
+                    const tooltip = isOrderStage
+                      ? (status ? "Tap to clear back to blank" : "Tap to mark ordered")
+                      : (status === "received" ? "Tap to undo — back to ordered" : "Tap to mark received");
                     return (
                       <button key={size}
                         onClick={() => floorToggleGoods(liIdx, size)}
