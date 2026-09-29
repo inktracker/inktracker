@@ -19,8 +19,13 @@
 // What InkTracker owes the customer is DISCLOSURE. Without it they read a
 // total here, click through, and meet a bigger number at QuickBooks — a
 // surprise the shop then has to field, and the point-of-sale disclosure the
-// card rules require. These helpers render that line on the payment page,
-// the quote PDF and the quote email footer.
+// card rules require. These helpers render that line on the PAYMENT PAGE
+// only. The quote PDF and the email footer were considered and deliberately
+// left out: both would need the shop's pricing config on paths with a known
+// _pc bleed risk (CACHE-01) and broker-leak surface, for marginal gain over
+// disclosing at the actual point of sale with the real charge amount. If
+// that changes, update the Account copy in QuickBooksSection.jsx too — it
+// once promised three surfaces while one existed.
 //
 // Storage: shops.pricing_config.cardSurcharge = { enabled: bool, ratePct: number }
 
