@@ -3,7 +3,6 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { CheckCircle2, AlertCircle, Link2, RefreshCw, DownloadCloud } from "lucide-react";
 import { loadShopPricingConfig, GARMENT_CATEGORIES, getEnabledTechniques } from "@/components/shared/pricing";
 import { shopScope } from "@/lib/shopScope";
-import { getCardSurcharge, formatRate, DEFAULT_CARD_SURCHARGE_PCT, MAX_CARD_SURCHARGE_PCT } from "@/lib/payment/cardSurcharge";
 
 // Account → QuickBooks Integration section (presentational). Extracted
 // verbatim from Account.jsx as a pure decomposition — no behavior change.
@@ -263,7 +262,17 @@ export default function QuickBooksSection({
           </div>
           <QbTaxModeEditor user={user} />
           <QbEditsAuthoritativeEditor user={user} />
-          <CardSurchargeEditor user={user} />
+          {/* Card-fee disclosure control REMOVED 2026-09-29 (Joe: "remove that
+              toggle option for now"). QuickBooks Payments has no
+              percentage-based surcharging on this account — Intuit hasn't
+              rolled it out — so there is no fee to disclose and the switch
+              could only ever state something untrue. The plumbing behind it
+              is intentionally kept and dormant: src/lib/payment/cardSurcharge.js,
+              the card_surcharge flag in _shared/publicSafe.js, the notice in
+              QuotePayment, and isPaymentSurcharge in _shared/qbInvoiceModified.js
+              (which stops Intuit's own payment-time fee being absorbed into a
+              shop's as-sold price, and matters whether or not this UI exists).
+              To restore: re-add CardSurchargeEditor and this mount. */}
           <QbItemMapEditor user={user} />
           <button
             onClick={handleDisconnectQB}
@@ -476,122 +485,6 @@ function QbEditsAuthoritativeEditor({ user }) {
               When you change a line price or add a discount in QuickBooks, InkTracker adopts the new total automatically and it never shows up as &ldquo;books drift.&rdquo; Best if you regularly adjust invoices in QuickBooks. Leave this off and each QuickBooks edit is flagged for you to review instead — so an unexpected change gets caught. Sales-tax rounding differences resolve automatically either way.
             </span>
           </label>
-          {saved && <div className="text-xs text-emerald-700 font-semibold">Saved ✓</div>}
-          {error && <div className="text-xs text-red-600">{error}</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Card-surcharge DISCLOSURE. InkTracker never charges the fee — QuickBooks
-// Payments does, once the shop turns surcharging on inside QBO (Settings →
-// Account and Settings → Sales → Invoice payments). Intuit owns it because
-// the compliance is theirs: enabling it blocks debit, prepaid, Apple Pay,
-// Amex and Discover (card-network rules forbid surcharging debit outright),
-// Intuit fixes the rate, and CT/ME/MA/PR ban surcharging entirely.
-//
-// This switch only tells InkTracker to SAY SO on the quote, the PDF and the
-// payment page. Without it the customer reads a total here and meets a bigger
-// one at QuickBooks — the surprise the shop then has to field, and the
-// point-of-sale disclosure the card rules require.
-// Stored at pricing_config.cardSurcharge = { enabled, ratePct }.
-function CardSurchargeEditor({ user }) {
-  const [cfg, setCfg] = useState(null); // null = not loaded
-  const [rate, setRate] = useState(String(DEFAULT_CARD_SURCHARGE_PCT));
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState(null);
-
-  async function ensureLoaded() {
-    if (cfg) return;
-    try {
-      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
-      const current = getCardSurcharge(shops?.[0]?.pricing_config);
-      setCfg(current);
-      if (current.enabled) setRate(String(current.ratePct));
-    } catch {
-      setCfg({ enabled: false, ratePct: 0 });
-    }
-  }
-
-  async function save(next) {
-    setSaving(true);
-    setSaved(false);
-    setError(null);
-    try {
-      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
-      const pc = { ...(shops?.[0]?.pricing_config || {}), cardSurcharge: next };
-      if (shops?.[0]) await base44.entities.Shop.update(shops[0].id, { pricing_config: pc });
-      loadShopPricingConfig(pc);
-      setCfg(getCardSurcharge(pc));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const parsedRate = Number(rate);
-  const rateValid = Number.isFinite(parsedRate) && parsedRate > 0 && parsedRate <= MAX_CARD_SURCHARGE_PCT;
-
-  return (
-    <div className="border-t border-emerald-200 pt-3 mt-3">
-      <div className="text-sm font-semibold text-slate-700 mb-1">Credit-card processing fee</div>
-      <p className="text-xs text-slate-500 mb-2">
-        Turn surcharging on in QuickBooks first (Settings → Account and Settings → Sales → Invoice payments) —
-        QuickBooks charges the fee, this only tells your customers about it. Leave this off until
-        QuickBooks is actually surcharging, or you&apos;ll promise a fee nobody collects.
-      </p>
-      {!cfg ? (
-        <button onClick={ensureLoaded} className="text-sm font-semibold text-emerald-700 hover:text-emerald-900 transition">
-          Set up fee disclosure…
-        </button>
-      ) : (
-        <div className="space-y-2">
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={cfg.enabled}
-              disabled={saving}
-              onChange={(e) => save(e.target.checked ? { enabled: true, ratePct: rateValid ? parsedRate : DEFAULT_CARD_SURCHARGE_PCT } : { enabled: false, ratePct: 0 })}
-              className="mt-0.5"
-            />
-            <span className="text-xs text-slate-600">
-              <span className="font-semibold text-slate-700">Tell customers a card fee applies</span><br />
-              Shows &ldquo;paying by credit card adds a {rateValid ? formatRate(parsedRate) : formatRate(DEFAULT_CARD_SURCHARGE_PCT)}% processing fee&rdquo; with the dollar amount on the payment page, above the pay button.
-            </span>
-          </label>
-          {cfg.enabled && (
-            <div className="flex items-center gap-2 pl-6">
-              <label className="text-xs text-slate-600" htmlFor="card-surcharge-rate">Rate</label>
-              <input
-                id="card-surcharge-rate"
-                type="number"
-                step="0.1"
-                min="0.1"
-                max={MAX_CARD_SURCHARGE_PCT}
-                value={rate}
-                disabled={saving}
-                onChange={(e) => setRate(e.target.value)}
-                onBlur={() => { if (rateValid && parsedRate !== cfg.ratePct) save({ enabled: true, ratePct: parsedRate }); }}
-                className="w-20 text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-              />
-              <span className="text-xs text-slate-500">%</span>
-              {!rateValid && (
-                <span className="text-xs text-red-600">
-                  Enter a rate between 0.1 and {MAX_CARD_SURCHARGE_PCT} — card networks cap it at the cost of acceptance.
-                </span>
-              )}
-            </div>
-          )}
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            Match the rate QuickBooks actually charges. Surcharging is banned in Connecticut, Maine,
-            Massachusetts and Puerto Rico, and QuickBooks blocks debit, prepaid, Apple Pay, Amex and
-            Discover while it&apos;s on.
-          </p>
           {saved && <div className="text-xs text-emerald-700 font-semibold">Saved ✓</div>}
           {error && <div className="text-xs text-red-600">{error}</div>}
         </div>
