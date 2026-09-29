@@ -14,7 +14,17 @@
 //
 //   1. When set, customTitle WINS over every resolved/supplier field.
 //   2. Supplier lookups (applySelectedMatch, both editors) never write it.
-//   3. Clearing the style number never clears it — it's the shop's text.
+//   3. BLANKING the style number never clears it — it's the shop's text,
+//      and blanking is how you re-search the same garment.
+//   4. Retyping the style number to a DIFFERENT one DOES clear it
+//      (customTitleAfterStyleChange, below). Joe, 2026-09-28: duplicated a
+//      garment line, pointed the copy at AS Colour 5030, and the header
+//      still read "5030 - HEAVY FADED MINUS TEE" — the title he'd typed for
+//      the ORIGINAL garment. Duplicate copies the whole line, customTitle
+//      included, and rule 1 then makes that stale text beat the correct
+//      supplier name on the quote, the PDF, the customer page and the QB
+//      line description. A title names one garment; a new style number is a
+//      new garment.
 //
 // Keep this the single source of that precedence — five header builders
 // already forked before this existed; don't add a sixth reading
@@ -33,6 +43,24 @@ export function getCustomGarmentTitle(li) {
  * `styleNumber` comes from the caller (each surface already has its own
  * preferred-number logic; don't fork that too).
  */
+/**
+ * The customTitle a line should keep when its style number changes to
+ * `nextStyle` — "" when the title described a DIFFERENT garment (rule 4).
+ *
+ * Compares against the line's CURRENT style, so it is safe to call from a
+ * per-keystroke onChange: the first edited character already makes the
+ * number a different one. Blanking the field keeps the title (rule 3).
+ */
+export function customTitleAfterStyleChange(li, nextStyle) {
+  const title = getCustomGarmentTitle(li);
+  if (!title) return "";
+  const next = clean(nextStyle);
+  if (!next) return title;                    // blanked → keep (rule 3)
+  const prev = clean(li?.style);
+  // Same number modulo case/whitespace → same garment → keep.
+  return next.toLowerCase() === prev.toLowerCase() ? title : "";
+}
+
 export function customGarmentHeader(li, styleNumber) {
   const title = getCustomGarmentTitle(li);
   if (!title) return null;

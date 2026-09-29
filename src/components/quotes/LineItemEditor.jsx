@@ -25,7 +25,7 @@ import { supabase } from "@/api/supabaseClient";
 import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from "@/lib/suppliers/preference";
 import { buildSaleSizePrices } from "@/lib/suppliers/salePricing";
 import { notify } from "@/lib/notify";
-import { customGarmentHeader, getCustomGarmentTitle } from "@/lib/quotes/garmentTitle";
+import { customGarmentHeader, getCustomGarmentTitle, customTitleAfterStyleChange } from "@/lib/quotes/garmentTitle";
 import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 import { getUpchargedSizes } from "@/lib/quotes/sizeUpcharge";
 
@@ -1016,6 +1016,10 @@ export default function LineItemEditor({
                 onChange({
                   ...li,
                   style: e.target.value,
+                  // The shop's own title names ONE garment: a different style
+                  // number means it no longer describes this line (rule 4 in
+                  // garmentTitle.js). Blanking the field keeps it.
+                  customTitle: customTitleAfterStyleChange(li, e.target.value),
                   productName: "", styleName: "", garmentNumber: "", resolvedTitle: "",
                   resolvedDescription: "", productDescription: "", description: "",
                   garmentName: "", productTitle: "", brand: "", garmentColor: "",
