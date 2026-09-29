@@ -24,6 +24,7 @@ import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from 
 import { buildSaleSizePrices } from "@/lib/suppliers/salePricing";
 import { notify } from "@/lib/notify";
 import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
+import { customTitleAfterStyleChange } from "@/lib/quotes/garmentTitle";
 
 // Query both S&S Activewear and AS Colour in parallel and merge results,
 // matching the shop-side LineItemEditor. Either supplier failing/returning
@@ -706,7 +707,9 @@ export default function BrokerLineItemEditor({
               onChange={(e) => {
                 setCustomBrand(false);
                 setCustomColor(false);
-                onChange({ ...li, style: e.target.value });
+                // Same custom-title rule as the shop editor — BrokerPricePanel
+                // renders customTitle too (see lib/quotes/garmentTitle.js).
+                onChange({ ...li, style: e.target.value, customTitle: customTitleAfterStyleChange(li, e.target.value) });
               }}
               onBlur={handleStyleBlur}
               onKeyDown={(e) => e.key === "Enter" && handleStyleBlur()}

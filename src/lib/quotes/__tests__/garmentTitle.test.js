@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getCustomGarmentTitle, customGarmentHeader } from "../garmentTitle";
+import { getCustomGarmentTitle, customGarmentHeader, customTitleAfterStyleChange } from "../garmentTitle";
 import {
   applySelectedMatch as applyShop,
 } from "../../../components/quotes/LineItemEditor";
@@ -66,5 +66,42 @@ describe("supplier lookups never clobber customTitle", () => {
   it("broker editor applySelectedMatch preserves it", () => {
     const out = applyBroker(li, CROSS_SUPPLIER_MATCH);
     expect(out.customTitle).toBe("Otto Cap 5 Panel Mid Profile");
+  });
+});
+
+// Joe, 2026-09-28: duplicated a garment line, switched the copy to AS Colour
+// 5030, and the header still read "5030 - HEAVY FADED MINUS TEE" — the title
+// typed for the ORIGINAL garment. Duplicate copies customTitle, and rule 1
+// then lets that stale text beat the correct supplier name everywhere it
+// matters: quote, PDF, customer page, QuickBooks line description.
+describe("customTitleAfterStyleChange (rule 4 — a title names ONE garment)", () => {
+  const dup = { style: "5082", customTitle: "HEAVY FADED MINUS TEE" };
+
+  it("drops the inherited title when the copy is pointed at a different style", () => {
+    expect(customTitleAfterStyleChange(dup, "5030")).toBe("");
+    // …so the header falls back to the resolved supplier name.
+    const relabelled = { ...dup, style: "5030", customTitle: customTitleAfterStyleChange(dup, "5030") };
+    expect(customGarmentHeader(relabelled, "5030")).toBeNull();
+  });
+
+  it("keeps the title while the style is unchanged (case/whitespace only)", () => {
+    expect(customTitleAfterStyleChange(dup, "5082")).toBe("HEAVY FADED MINUS TEE");
+    expect(customTitleAfterStyleChange({ style: "pc61", customTitle: "My Tee" }, "PC61 ")).toBe("My Tee");
+  });
+
+  it("keeps the title when the field is BLANKED to re-search — rule 3 stands", () => {
+    expect(customTitleAfterStyleChange(dup, "")).toBe("HEAVY FADED MINUS TEE");
+    expect(customTitleAfterStyleChange(dup, "   ")).toBe("HEAVY FADED MINUS TEE");
+  });
+
+  it("Truman's 31-069 keeps its title — he never retypes the number", () => {
+    const otto = { style: "31-069", customTitle: "Otto Cap 5 Panel Mid Profile" };
+    expect(customTitleAfterStyleChange(otto, "31-069")).toBe("Otto Cap 5 Panel Mid Profile");
+  });
+
+  it("no title set → stays empty; junk input never throws", () => {
+    expect(customTitleAfterStyleChange({ style: "5082" }, "5030")).toBe("");
+    expect(customTitleAfterStyleChange(null, "5030")).toBe("");
+    expect(customTitleAfterStyleChange({ customTitle: "X" }, "5030")).toBe("");
   });
 });
