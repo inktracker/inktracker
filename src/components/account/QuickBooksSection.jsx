@@ -261,6 +261,7 @@ export default function QuickBooksSection({
             )}
           </div>
           <QbTaxModeEditor user={user} />
+          <QbEditsAuthoritativeEditor user={user} />
           <QbItemMapEditor user={user} />
           <button
             onClick={handleDisconnectQB}
@@ -397,6 +398,80 @@ function QbTaxModeEditor({ user }) {
             <span className="text-xs text-slate-600">
               <span className="font-semibold text-slate-700">Let QuickBooks calculate it</span><br />
               QuickBooks&apos; Automated Sales Tax computes the tax from the customer&apos;s address. Requires a QuickBooks set up for automatic sales tax — if it returns $0, switch to the option above.
+            </span>
+          </label>
+          {saved && <div className="text-xs text-emerald-700 font-semibold">Saved ✓</div>}
+          {error && <div className="text-xs text-red-600">{error}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// "Let QuickBooks invoice edits win automatically" — pricing_config.qbEditsAuthoritative.
+// OFF (default): a real line/discount edit made in QuickBooks is flagged as a
+// decision (you're told and can Match), so an unexpected QB change never
+// silently rewrites your numbers. ON: for shops that run pricing through
+// QuickBooks (discount/adjust invoices there), those edits are adopted into
+// InkTracker automatically and never show up as books drift. Penny/tax-rounding
+// differences auto-resolve either way. Applies on the next QB edit or nightly
+// reconcile; existing drift on this shop clears on the next nightly run.
+function QbEditsAuthoritativeEditor({ user }) {
+  const [on, setOn] = useState(null); // null = not loaded
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  async function ensureLoaded() {
+    if (loaded) return;
+    try {
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+      setOn(shops?.[0]?.pricing_config?.qbEditsAuthoritative === true);
+    } catch {
+      setOn(false);
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  async function toggle(next) {
+    setOn(next);
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+      const pc = { ...(shops?.[0]?.pricing_config || {}), qbEditsAuthoritative: next };
+      if (shops?.[0]) await base44.entities.Shop.update(shops[0].id, { pricing_config: pc });
+      loadShopPricingConfig(pc);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setOn(!next);
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-emerald-200 pt-3 mt-3">
+      <div className="text-sm font-semibold text-slate-700 mb-1">QuickBooks invoice edits</div>
+      <p className="text-xs text-slate-500 mb-2">
+        Do you discount or adjust invoices directly in QuickBooks? Choose whether those edits flow back into InkTracker automatically.
+      </p>
+      {!loaded ? (
+        <button onClick={ensureLoaded} className="text-sm font-semibold text-emerald-700 hover:text-emerald-900 transition">
+          Set how QuickBooks edits are handled…
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked={on === true} onChange={(e) => toggle(e.target.checked)} disabled={saving} className="mt-0.5" />
+            <span className="text-xs text-slate-600">
+              <span className="font-semibold text-slate-700">Let QuickBooks invoice edits win automatically</span><br />
+              When you change a line price or add a discount in QuickBooks, InkTracker adopts the new total automatically and it never shows up as &ldquo;books drift.&rdquo; Best if you regularly adjust invoices in QuickBooks. Leave this off and each QuickBooks edit is flagged for you to review instead — so an unexpected change gets caught. Sales-tax rounding differences resolve automatically either way.
             </span>
           </label>
           {saved && <div className="text-xs text-emerald-700 font-semibold">Saved ✓</div>}
