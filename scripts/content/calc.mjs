@@ -111,6 +111,31 @@ export function stalePriceModel(S) {
   return { chartCost, gap, underquote, orderLoss, yearLoss };
 }
 
+// ── Job margin model (the /tools/job-margin-calculator) ─────────────────────
+// Checks a job you've ALREADY priced, instead of building a price up front —
+// the reverse direction from chartModel/stitchModel. Pure and self-contained
+// so the browser script can inject it verbatim (marginModel.toString()) and
+// static render === live render.
+//   S = { price, qty, costPerPiece, oneTime, targetMargin }
+// revenue/totalCost/profit are job totals. marginPct is profit ÷ revenue
+// (what you keep of what the customer pays); markupPct is profit ÷ cost
+// (what you added on top of cost) — the same margin-vs-markup distinction
+// used throughout the site. targetPrice is the per-piece price that would
+// hit targetMargin at the entered cost, using the same "divide by
+// (1 − margin), don't multiply" math as chartModel/stitchModel.
+export function marginModel(S) {
+  const revenue = S.price * S.qty;
+  const totalCost = S.costPerPiece * S.qty + S.oneTime;
+  const profit = revenue - totalCost;
+  const marginPct = revenue > 0 ? (profit / revenue) * 100 : 0;
+  const markupPct = totalCost > 0 ? (profit / totalCost) * 100 : 0;
+  const perPieceCost = S.qty > 0 ? totalCost / S.qty : 0;
+  const perPieceProfit = S.qty > 0 ? profit / S.qty : 0;
+  const targetDenom = Math.max(0.01, 1 - S.targetMargin / 100);
+  const targetPrice = perPieceCost / targetDenom;
+  return { revenue, totalCost, profit, marginPct, markupPct, perPieceCost, perPieceProfit, targetPrice };
+}
+
 export function sliderRow(key, label, hint, attrs, initial = "–") {
   return `<div class="calc-row">
     <div class="calc-label"><b>${esc(label)}</b><span>${esc(hint)}</span></div>

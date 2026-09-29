@@ -4,12 +4,13 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { chartModel, chartCell, QTY_TIERS } from "../content/calc.mjs";
+import { chartModel, chartCell, QTY_TIERS, marginModel } from "../content/calc.mjs";
 
 const ROOT = join(process.cwd());
 const read = (...p) => readFileSync(join(ROOT, ...p), "utf8");
 const HUB = read("public", "tools", "index.html");
 const CALC = read("public", "tools", "screen-printing-price-calculator", "index.html");
+const MARGIN = read("public", "tools", "job-margin-calculator", "index.html");
 const BASE = "https://www.inktracker.app";
 
 describe("shared chart math (calc.mjs) — the one source", () => {
@@ -121,6 +122,84 @@ describe("calculator page (/tools/screen-printing-price-calculator)", () => {
   it("makes no false 'no card' trial claim (trial requires a card)", () => {
     expect(CALC).not.toMatch(/no (?:credit )?card/i);
     expect(HUB).not.toMatch(/no (?:credit )?card/i);
+  });
+});
+
+describe("job margin model (calc.mjs) — the one source", () => {
+  it("computes margin, markup, and per-piece numbers from price/cost inputs", () => {
+    const S = { price: 14, qty: 72, costPerPiece: 7.5, oneTime: 75, targetMargin: 40 };
+    const M = marginModel(S);
+    expect(M.revenue).toBeCloseTo(1008, 6);
+    expect(M.totalCost).toBeCloseTo(615, 6);
+    expect(M.profit).toBeCloseTo(393, 6);
+    expect(M.marginPct).toBeCloseTo(38.988, 2); // profit / revenue
+    expect(M.markupPct).toBeCloseTo(63.902, 2); // profit / cost — different from margin
+    expect(M.perPieceCost).toBeCloseTo(8.5417, 3);
+    expect(M.perPieceProfit).toBeCloseTo(5.4583, 3);
+    expect(M.targetPrice).toBeCloseTo(14.2361, 3); // perPieceCost / (1 - 0.40)
+  });
+
+  it("floors the target-margin divisor at 100% (no Infinity/NaN)", () => {
+    const M = marginModel({ price: 14, qty: 72, costPerPiece: 7.5, oneTime: 75, targetMargin: 100 });
+    expect(Number.isFinite(M.targetPrice)).toBe(true);
+  });
+
+  it("generator imports the SHARED calc module (no forked math)", () => {
+    const toolsSrc = read("scripts", "generate-tools.mjs");
+    expect(toolsSrc).toMatch(/marginModel[,\s]/);
+    expect(toolsSrc).toMatch(/from "\.\/content\/calc\.mjs"/);
+  });
+});
+
+describe("job margin calculator page (/tools/job-margin-calculator)", () => {
+  it("is listed on the tools hub with a link", () => {
+    expect(HUB).toContain(`${BASE}/tools/job-margin-calculator`);
+    expect(HUB).toContain("Job Margin Calculator");
+  });
+
+  it("static-first: real content renders without JS", () => {
+    expect(MARGIN).toContain('id="calc-margin"');
+    expect(MARGIN).toMatch(/data-out="marginPct">[\d.]+%/);
+    expect(MARGIN).toMatch(/data-out="markupPct">[\d.]+%/);
+    expect(MARGIN).toMatch(/data-out="profit">\$[0-9,]+\.\d\d/);
+  });
+
+  it("static numbers equal a fresh recomputation (no drift)", () => {
+    const M = marginModel({ price: 14, qty: 72, costPerPiece: 7.5, oneTime: 75, targetMargin: 40 });
+    const m2 = (n) => "$" + (Math.round(n * 100) / 100).toFixed(2);
+    const p1 = (n) => (Math.round(n * 10) / 10).toFixed(1) + "%";
+    expect(MARGIN).toContain(`data-out="marginPct">${p1(M.marginPct)}`);
+    expect(MARGIN).toContain(`data-out="markupPct">${p1(M.markupPct)}`);
+    expect(MARGIN).toContain(`data-out="profit">${m2(M.profit)}`);
+    expect(MARGIN).toContain(`data-out="perProfit">${m2(M.perPieceProfit)}`);
+    expect(MARGIN).toContain(`data-out="perCost">${m2(M.perPieceCost)}`);
+    expect(MARGIN).toContain(`data-out="targetPrice">${m2(M.targetPrice)}`);
+  });
+
+  it("has all five sliders", () => {
+    for (const k of ["price", "qty", "costPerPiece", "oneTime", "targetMargin"]) {
+      expect(MARGIN).toContain(`data-in="${k}"`);
+    }
+  });
+
+  it("SEO: title, non-www canonical, WebApplication+Offer(0)+BreadcrumbList", () => {
+    expect(MARGIN).toMatch(/<title>Free Job Margin Calculator[^<]*<\/title>/);
+    expect(MARGIN).toContain(`<link rel="canonical" href="${BASE}/tools/job-margin-calculator" />`);
+    expect(MARGIN).toContain('"@type": "WebApplication"');
+    expect(MARGIN).toContain('"applicationCategory": "BusinessApplication"');
+    expect(MARGIN).toContain('"price": "0"');
+    expect(MARGIN).toContain('"@type": "BreadcrumbList"');
+  });
+
+  it("soft CTA carries ?ref=margin-calc and links to a verifiable product feature + pricing posts", () => {
+    expect(MARGIN).toContain(`${BASE}/?ref=margin-calc`);
+    expect(MARGIN).toContain(`${BASE}/features/know-your-margin`);
+    expect(MARGIN).toContain(`${BASE}/blog/how-to-price-a-screen-printing-job`);
+    expect(MARGIN).toContain(`${BASE}/tools`);
+  });
+
+  it("makes no false 'no card' trial claim", () => {
+    expect(MARGIN).not.toMatch(/no (?:credit )?card/i);
   });
 });
 

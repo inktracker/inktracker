@@ -135,31 +135,37 @@
   <!-- tools-pages:start -->
   <url>
     <loc>https://www.inktracker.app/resources</loc>
-    <lastmod>2026-09-11</lastmod>
+    <lastmod>2026-09-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://www.inktracker.app/tools</loc>
-    <lastmod>2026-09-11</lastmod>
+    <lastmod>2026-09-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://www.inktracker.app/tools/screen-printing-price-calculator</loc>
-    <lastmod>2026-09-11</lastmod>
+    <lastmod>2026-09-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://www.inktracker.app/tools/embroidery-pricing-calculator</loc>
-    <lastmod>2026-09-11</lastmod>
+    <lastmod>2026-09-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://www.inktracker.app/tools/stale-blank-price-calculator</loc>
-    <lastmod>2026-09-11</lastmod>
+    <lastmod>2026-09-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.inktracker.app/tools/job-margin-calculator</loc>
+    <lastmod>2026-09-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
