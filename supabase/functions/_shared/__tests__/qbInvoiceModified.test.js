@@ -255,27 +255,36 @@ describe("mergeNotesPreservingSyncLines (pullInvoices notes overwrite)", () => {
 });
 
 // ── Auto-adoption of QB-side edits (2026-09-28 books-drift batch) ──────
-import { decideQbEditAdoption, buildQbAdoptPatch, buildQbAutoSyncedNotification } from "../qbInvoiceModified.js";
+import { decideQbEditAdoption, decideReconcileAdopt, buildQbAdoptPatch, buildQbAutoSyncedNotification } from "../qbInvoiceModified.js";
 
 describe("decideQbEditAdoption", () => {
-  it("Kato's invoice 1261: QB edited a line, InkTracker untouched since the last mirror → auto-adopt", () => {
+  it("QB line edit, shop NOT authoritative (default) → stays a decision", () => {
+    // Kato's invoice: QB edited a line, InkTracker untouched. With the toggle
+    // off (default) this is flagged for review, not silently adopted.
     const d = decideQbEditAdoption({ localTotal: 505.8, priorQbTotal: 505.8, priorQbSubtotal: 505.8, freshQbTotal: 424.8, freshQbTax: 0 });
+    expect(d).toEqual({ autoAdopt: false, reason: "line_edit_needs_review" });
+  });
+
+  it("QB line edit, shop IS authoritative → auto-adopt", () => {
+    const d = decideQbEditAdoption({ localTotal: 505.8, priorQbTotal: 505.8, priorQbSubtotal: 505.8, freshQbTotal: 424.8, freshQbTax: 0, qbEditsAuthoritative: true });
     expect(d).toEqual({ autoAdopt: true, reason: "qb_line_edit" });
   });
 
-  it("true conflict: local moved away from the mirror too → consent", () => {
-    const d = decideQbEditAdoption({ localTotal: 520, priorQbTotal: 505.8, priorQbSubtotal: 505.8, freshQbTotal: 424.8, freshQbTax: 0 });
+  it("true conflict: local moved away from the mirror too → consent (even when authoritative)", () => {
+    const d = decideQbEditAdoption({ localTotal: 520, priorQbTotal: 505.8, priorQbSubtotal: 505.8, freshQbTotal: 424.8, freshQbTax: 0, qbEditsAuthoritative: true });
     expect(d).toEqual({ autoAdopt: false, reason: "local_changed" });
   });
 
-  it("tax-only change of a dollar or more (Kato Q-2026-6EPW: $41.90 of tax appeared) → consent", () => {
-    const d = decideQbEditAdoption({ localTotal: 507, priorQbTotal: 507, priorQbSubtotal: 507, freshQbTotal: 548.9, freshQbTax: 41.9 });
+  it("tax-only change of a dollar or more (Kato Q-2026-6EPW: $41.90 of tax appeared) → consent even when authoritative", () => {
+    const d = decideQbEditAdoption({ localTotal: 507, priorQbTotal: 507, priorQbSubtotal: 507, freshQbTotal: 548.9, freshQbTax: 41.9, qbEditsAuthoritative: true });
     expect(d).toEqual({ autoAdopt: false, reason: "tax_only_change" });
   });
 
-  it("tax-only penny move → auto-adopt", () => {
-    const d = decideQbEditAdoption({ localTotal: 261.97, priorQbTotal: 261.97, priorQbSubtotal: 242, freshQbTotal: 262, freshQbTax: 20 });
-    expect(d).toEqual({ autoAdopt: true, reason: "qb_penny_tax" });
+  it("tax-only penny move → auto-adopt regardless of the toggle (never a decision)", () => {
+    expect(decideQbEditAdoption({ localTotal: 261.97, priorQbTotal: 261.97, priorQbSubtotal: 242, freshQbTotal: 262, freshQbTax: 20 }))
+      .toEqual({ autoAdopt: true, reason: "qb_penny_tax" });
+    expect(decideQbEditAdoption({ localTotal: 261.97, priorQbTotal: 261.97, priorQbSubtotal: 242, freshQbTotal: 262, freshQbTax: 20, qbEditsAuthoritative: true }))
+      .toEqual({ autoAdopt: true, reason: "qb_penny_tax" });
   });
 
   it("stays quiet when QB agrees, has no prior mirror, is push-pending, or is junk", () => {
@@ -283,7 +292,36 @@ describe("decideQbEditAdoption", () => {
     expect(decideQbEditAdoption({ localTotal: 100, priorQbTotal: null, freshQbTotal: 90 }).reason).toBe("no_prior_mirror");
     expect(decideQbEditAdoption({ localTotal: 100, priorQbTotal: 100, freshQbTotal: 90, pushPending: true }).reason).toBe("push_pending");
     expect(decideQbEditAdoption({ localTotal: 100, priorQbTotal: 100, freshQbTotal: null }).reason).toBe("no_fresh_total");
-    expect(decideQbEditAdoption({ localTotal: "100.00", priorQbTotal: "100", freshQbTotal: "90.00" }).autoAdopt).toBe(true);
+    // A subtotal line edit only adopts for authoritative shops.
+    expect(decideQbEditAdoption({ localTotal: "100.00", priorQbTotal: "100", freshQbTotal: "90.00" }).autoAdopt).toBe(false);
+    expect(decideQbEditAdoption({ localTotal: "100.00", priorQbTotal: "100", freshQbTotal: "90.00", qbEditsAuthoritative: true }).autoAdopt).toBe(true);
+  });
+});
+
+describe("decideReconcileAdopt (nightly backstop, works off live QB + row)", () => {
+  it("Kato Q-2026-9Q31: 50%-off in QB, shop authoritative → adopt (clears the stuck backlog)", () => {
+    // Local 3491.14, QB now 1745.57 (a discount line). The stored qb_total is
+    // stale so decideQbEditAdoption would read 'local_changed' forever; this
+    // works off the live QB total instead.
+    const d = decideReconcileAdopt({ rowTotal: 3491.14, rowTax: 0, freshQbTotal: 1745.57, freshQbTax: 0, qbEditsAuthoritative: true });
+    expect(d).toEqual({ adopt: true, reason: "qb_line_edit" });
+  });
+
+  it("same drift but shop NOT authoritative → alert (stays a decision)", () => {
+    const d = decideReconcileAdopt({ rowTotal: 3491.14, rowTax: 0, freshQbTotal: 1745.57, freshQbTax: 0, qbEditsAuthoritative: false });
+    expect(d).toEqual({ adopt: false, reason: "not_authoritative" });
+  });
+
+  it("tax-only dollar-plus change stays a decision even when authoritative", () => {
+    // subtotal unchanged (500), tax jumped 0 → 41.90.
+    const d = decideReconcileAdopt({ rowTotal: 500, rowTax: 0, freshQbTotal: 541.9, freshQbTax: 41.9, qbEditsAuthoritative: true });
+    expect(d).toEqual({ adopt: false, reason: "tax_only_change" });
+  });
+
+  it("agreeing / missing totals never adopt", () => {
+    expect(decideReconcileAdopt({ rowTotal: 100, freshQbTotal: 100, qbEditsAuthoritative: true }).reason).toBe("agrees");
+    expect(decideReconcileAdopt({ rowTotal: 100, freshQbTotal: null, qbEditsAuthoritative: true }).reason).toBe("no_fresh_total");
+    expect(decideReconcileAdopt({ rowTotal: null, freshQbTotal: 100, qbEditsAuthoritative: true }).reason).toBe("no_local_total");
   });
 });
 

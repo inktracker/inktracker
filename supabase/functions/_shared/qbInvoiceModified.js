@@ -308,6 +308,7 @@ export const AUTO_ADOPT_TAX_MAX = 1.0;
  * @param {number|string|null} args.freshQbTotal    live TotalAmt
  * @param {number|string|null} args.freshQbTax      live TxnTaxDetail.TotalTax
  * @param {boolean} [args.pushPending]              qb_push_pending — local truth is newer
+ * @param {boolean} [args.qbEditsAuthoritative]     shop opted into "QB edits win"
  * @returns {{ autoAdopt: boolean, reason: string }}
  */
 export function decideQbEditAdoption({
@@ -317,6 +318,13 @@ export function decideQbEditAdoption({
   freshQbTotal,
   freshQbTax,
   pushPending = false,
+  // Per-shop "Let QuickBooks invoice edits win automatically" (Account →
+  // QuickBooks). OFF (default) → a real line/discount edit made in QB stays a
+  // DECISION (the shop is told and can Match), so an unexpected QB change is
+  // flagged. ON → the shop runs pricing through QB, so those edits adopt
+  // silently. Penny/tax-rounding noise auto-adopts either way — it's never a
+  // decision. Tax-only dollar-plus changes stay a decision regardless.
+  qbEditsAuthoritative = false,
 }) {
   const centsDelta = (a, b) => Math.abs(Number((Number(a) - Number(b)).toFixed(2)));
   if (pushPending) return { autoAdopt: false, reason: "push_pending" };
@@ -335,7 +343,40 @@ export function decideQbEditAdoption({
   if (!subtotalMoved && centsDelta(fresh, priorQbTotal) >= AUTO_ADOPT_TAX_MAX) {
     return { autoAdopt: false, reason: "tax_only_change" };
   }
+  // A real line/discount edit (subtotal moved by a dollar-plus) only adopts
+  // silently for QB-authoritative shops; everyone else gets a decision.
+  if (subtotalMoved && !qbEditsAuthoritative) {
+    return { autoAdopt: false, reason: "line_edit_needs_review" };
+  }
   return { autoAdopt: true, reason: subtotalMoved ? "qb_line_edit" : "qb_penny_tax" };
+}
+
+/**
+ * Reconcile-time adopt decision. Unlike decideQbEditAdoption, this works off
+ * the LIVE QB invoice + the current row, independent of the (possibly stale)
+ * stored qb_total — the nightly backstop can't trust the mirror, and a
+ * mirror-without-adopt leaves local != qb_total which the "local_changed"
+ * guard would forever read as a conflict. Sub-dollar drift is handled
+ * upstream (pennyDriftAdoptPatch); this decides the dollar-plus case:
+ *   - shop not QB-authoritative        → don't adopt (alert; stays a decision)
+ *   - tax-only dollar-plus change       → don't adopt (stays a decision)
+ *   - subtotal/discount edit, shop ON   → adopt QB's total (QB wins)
+ */
+export function decideReconcileAdopt({ rowTotal, rowTax, freshQbTotal, freshQbTax, qbEditsAuthoritative = false }) {
+  const centsDelta = (a, b) => Math.abs(Number((Number(a) - Number(b)).toFixed(2)));
+  const fresh = freshQbTotal == null ? NaN : Number(freshQbTotal);
+  if (!Number.isFinite(fresh)) return { adopt: false, reason: "no_fresh_total" };
+  if (rowTotal == null) return { adopt: false, reason: "no_local_total" };
+  if (centsDelta(fresh, rowTotal) <= QB_MODIFIED_TOLERANCE) return { adopt: false, reason: "agrees" };
+  if (!qbEditsAuthoritative) return { adopt: false, reason: "not_authoritative" };
+  const freshTax = Number(freshQbTax ?? 0) || 0;
+  const freshSubtotal = Number((fresh - freshTax).toFixed(2));
+  const rowSubtotal = Number((Number(rowTotal) - Number(rowTax ?? 0)).toFixed(2));
+  const subtotalMoved = centsDelta(freshSubtotal, rowSubtotal) > QB_MODIFIED_TOLERANCE;
+  if (!subtotalMoved && centsDelta(fresh, rowTotal) >= AUTO_ADOPT_TAX_MAX) {
+    return { adopt: false, reason: "tax_only_change" };
+  }
+  return { adopt: true, reason: subtotalMoved ? "qb_line_edit" : "qb_penny_tax" };
 }
 
 /**

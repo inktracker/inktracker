@@ -151,6 +151,14 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
   ]);
   if (!quote && !invoiceRow) return; // not an InkTracker-linked invoice
 
+  // Per-shop "Let QuickBooks invoice edits win automatically". OFF (default) →
+  // a real QB line/discount edit stays a decision (the shop is told, can
+  // Match). ON → it adopts silently. Penny/tax-rounding auto-adopts either way.
+  const { data: shopRow } = await supabase.from("shops")
+    .select("pricing_config")
+    .eq("owner_email", shopOwner).maybeSingle();
+  const qbEditsAuthoritative = shopRow?.pricing_config?.qbEditsAuthoritative === true;
+
   // Built once per event — the same QB line state is compared against
   // each linked row's own prior snapshot.
   const freshLines = buildQbLineSnapshot(freshInvoice);
@@ -178,6 +186,7 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
       freshQbTotal,
       freshQbTax: freshInvoice?.TxnTaxDetail?.TotalTax,
       pushPending: (row as any).qb_push_pending === true,
+      qbEditsAuthoritative,
     });
     const adoptPatch = adoption.autoAdopt ? buildQbAdoptPatch(freshInvoice, row, { table }) : null;
     const patch = buildQbMirrorPatch(freshInvoice, row);

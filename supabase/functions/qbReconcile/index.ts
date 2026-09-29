@@ -92,7 +92,7 @@ import {
   alertedSignatures,
 } from "../_shared/booksDriftAlert.js";
 import { pennyDriftAdoptPatch } from "../_shared/qbTaxAutoAdopt.js";
-import { buildQbAdoptPatch } from "../_shared/qbInvoiceModified.js";
+import { buildQbAdoptPatch, decideReconcileAdopt, buildQbAutoSyncedNotification } from "../_shared/qbInvoiceModified.js";
 import {
   summarizeGrowth,
   buildGrowthReportText,
@@ -210,6 +210,15 @@ async function reconcileShop(adminClient: any, profile: any) {
     return { shopOwner, classifications: [{ error: (err as Error)?.message }] };
   }
   const realmId: string = profile.qb_realm_id;
+
+  // Per-shop "Let QuickBooks invoice edits win automatically" (Account →
+  // QuickBooks). ON → the drift pass below ADOPTS QB-side line/discount edits
+  // (QB wins) instead of alerting, which clears the backlog of shops that run
+  // pricing through QB and stops the weekly re-nag. OFF (default) → unchanged:
+  // dollar-plus drift is a decision the operator is alerted about.
+  const { data: shopCfgRow } = await adminClient.from("shops")
+    .select("pricing_config").eq("owner_email", shopOwner).maybeSingle();
+  const qbEditsAuthoritative = shopCfgRow?.pricing_config?.qbEditsAuthoritative === true;
 
   // Candidate window: linked quotes that haven't yet converted.
   // Limit to the last 60 days so a shop with thousands of old quotes
@@ -531,6 +540,53 @@ async function reconcileShop(adminClient: any, profile: any) {
               response_body: { table: cand.table, ref: cand.ref, local_total: cand.total, qb_total: confirmedRow.qb_total, drift: confirmedRow.drift },
             });
             classifications.push({ kind: "penny-drift-healed", ref: cand.ref, drift: confirmedRow.drift });
+            continue;
+          }
+          // Dollar-plus drift. A QB-authoritative shop adopts QB's edit (QB
+          // wins) — clears the backlog and stops the weekly re-nag — while
+          // every other shop gets the operator alert (a decision). Tax-only
+          // dollar-plus changes stay a decision even when authoritative.
+          const adoptDecision = cand.qb_push_pending === true
+            ? { adopt: false, reason: "push_pending" }
+            : decideReconcileAdopt({
+                rowTotal: cand.total,
+                rowTax: cand.tax,
+                freshQbTotal: Number(live?.TotalAmt),
+                freshQbTax: live?.TxnTaxDetail?.TotalTax,
+                qbEditsAuthoritative,
+              });
+          const adoptPatch = adoptDecision.adopt ? buildQbAdoptPatch(live, cand, { table: cand.table }) : null;
+          if (adoptPatch) {
+            const { error: adoptErr } = await adminClient.from(cand.table)
+              .update({ ...verdict.mirrorPatch, ...adoptPatch })
+              .eq("id", cand.id).eq("shop_owner", shopOwner);
+            if (adoptErr) throw new Error(`qb-edit adopt failed: ${adoptErr.message}`);
+            const adoptOrderRef = cand.table === "invoices" ? cand.order_id : cand.converted_order_id;
+            if (adoptOrderRef) {
+              await adminClient.from("orders")
+                .update({ total: adoptPatch.total, tax: adoptPatch.tax, tax_rate: adoptPatch.tax_rate })
+                .eq("order_id", adoptOrderRef).eq("shop_owner", shopOwner);
+            }
+            await recordShopNotification(adminClient, buildQbAutoSyncedNotification({
+              shopOwner,
+              ref: cand.ref,
+              rowId: cand.id,
+              relatedEntity: cand.table === "invoices" ? "invoice" : "quote",
+              qbInvoiceId: cand.qb_invoice_id,
+              priorTotal: cand.total,
+              freshQbTotal: Number(live.TotalAmt),
+              lineChanges: [],
+            }));
+            await logEvent(adminClient, {
+              shop_owner: shopOwner,
+              action: "qb_edit_auto_adopted",
+              direction: "inbound",
+              status: "success",
+              qb_invoice_id: cand.qb_invoice_id,
+              quote_id: cand.table === "quotes" ? cand.id : null,
+              response_body: { table: cand.table, ref: cand.ref, prior_total: cand.total, qb_total: Number(live.TotalAmt), reason: adoptDecision.reason },
+            });
+            classifications.push({ kind: "qb-edit-adopted", ref: cand.ref, qb_total: Number(live.TotalAmt) });
             continue;
           }
           driftRows.push({ ...verdict.row, source: cand.table });
