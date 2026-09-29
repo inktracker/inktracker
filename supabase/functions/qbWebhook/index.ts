@@ -151,13 +151,21 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
   ]);
   if (!quote && !invoiceRow) return; // not an InkTracker-linked invoice
 
-  // Per-shop "Let QuickBooks invoice edits win automatically". OFF (default) →
-  // a real QB line/discount edit stays a decision (the shop is told, can
-  // Match). ON → it adopts silently. Penny/tax-rounding auto-adopts either way.
+  // One read of the shop's config serves both adoption inputs.
+  //  - qbEditsAuthoritative: "Let QuickBooks invoice edits win automatically".
+  //    OFF (default) → a real QB line/discount edit stays a decision (the shop
+  //    is told, can Match). ON → it adopts silently. Penny/tax-rounding
+  //    auto-adopts either way.
+  //  - surchargeRatePct: the card-surcharge rate, so a payment-time surcharge
+  //    is recognised for what it is instead of being adopted as a price
+  //    change. See decideQbEditAdoption / isPaymentSurcharge.
   const { data: shopRow } = await supabase.from("shops")
     .select("pricing_config")
     .eq("owner_email", shopOwner).maybeSingle();
   const qbEditsAuthoritative = shopRow?.pricing_config?.qbEditsAuthoritative === true;
+  const surchargeRatePct = shopRow?.pricing_config?.cardSurcharge?.enabled === true
+    ? Number(shopRow.pricing_config.cardSurcharge.ratePct) || 0
+    : 0;
 
   // Built once per event — the same QB line state is compared against
   // each linked row's own prior snapshot.
@@ -187,7 +195,12 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
       freshQbTax: freshInvoice?.TxnTaxDetail?.TotalTax,
       pushPending: (row as any).qb_push_pending === true,
       qbEditsAuthoritative,
+      surchargeRatePct,
     });
+    // A payment-time card surcharge is mirrored and logged, never adopted and
+    // never surfaced as "modified in QuickBooks" — it is the customer's fee
+    // for paying by card, not a change to what the shop sold.
+    const isSurcharge = adoption.reason === "payment_surcharge";
     const adoptPatch = adoption.autoAdopt ? buildQbAdoptPatch(freshInvoice, row, { table }) : null;
     const patch = buildQbMirrorPatch(freshInvoice, row);
     let adopted = false;
@@ -242,6 +255,7 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
           total_diverges: detection.diverges,
           auto_adopted: adopted,
           adoption_reason: adoption.reason,
+          payment_surcharge: isSurcharge,
         },
       });
     }
@@ -273,7 +287,7 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
           line_changes: detection.lineChanges,
         },
       });
-    } else if (detection.shouldNotify && !notified && !adopted) {
+    } else if (detection.shouldNotify && !notified && !adopted && !isSurcharge) {
       notified = true;
       await recordShopNotification(supabase, buildQbModifiedNotification({
         shopOwner,

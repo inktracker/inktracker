@@ -353,3 +353,92 @@ describe("buildQbAutoSyncedNotification", () => {
     expect(n.metadata.auto_adopted).toBe(true);
   });
 });
+
+// Card surcharge (2026-09-29). With QuickBooks surcharging on, Intuit adds its
+// fee to the full invoice amount at payment time. That arrives as exactly the
+// auto-adopt shape — local still equals the prior mirror, QB jumps — so
+// without a guard every card payment would quietly raise the shop's as-sold
+// price by the customer's card fee.
+import { isPaymentSurcharge } from "../qbInvoiceModified.js";
+
+describe("payment surcharge is never adopted as a price change", () => {
+  const paid = { localTotal: 2392.75, priorQbTotal: 2392.75, priorQbSubtotal: 2392.75, freshQbTax: 0 };
+
+  it("recognises Intuit's 2.9% on the full invoice and stays silent", () => {
+    const d = decideQbEditAdoption({ ...paid, freshQbTotal: 2462.14, surchargeRatePct: 2.9 });
+    expect(d).toEqual({ autoAdopt: false, reason: "payment_surcharge" });
+  });
+
+  it("tolerates a cent of rounding either way", () => {
+    for (const total of [2462.13, 2462.14, 2462.15]) {
+      expect(decideQbEditAdoption({ ...paid, freshQbTotal: total, surchargeRatePct: 2.9 }).reason)
+        .toBe("payment_surcharge");
+    }
+  });
+
+  it("the guard beats 'QB edits win' — a surcharge is never a repricing", () => {
+    // The dangerous case: an authoritative shop would otherwise adopt the
+    // customer's card fee into its own as-sold price on every card payment.
+    const d = decideQbEditAdoption({ ...paid, freshQbTotal: 2462.14, surchargeRatePct: 2.9, qbEditsAuthoritative: true });
+    expect(d).toEqual({ autoAdopt: false, reason: "payment_surcharge" });
+  });
+
+  it("a real QB edit of a DIFFERENT size keeps its normal handling", () => {
+    // Shop discounted the invoice in QBO — nothing like a 2.9% uplift.
+    expect(decideQbEditAdoption({ ...paid, freshQbTotal: 2100, surchargeRatePct: 2.9, qbEditsAuthoritative: true }))
+      .toEqual({ autoAdopt: true, reason: "qb_line_edit" });
+    // Same edit at a non-authoritative shop stays a decision, as #958 intends.
+    expect(decideQbEditAdoption({ ...paid, freshQbTotal: 2100, surchargeRatePct: 2.9 }).reason)
+      .toBe("line_edit_needs_review");
+  });
+
+  it("does nothing when the shop has surcharging OFF (rate 0 / absent)", () => {
+    // Without a rate the same uplift is just an unexplained edit again.
+    expect(decideQbEditAdoption({ ...paid, freshQbTotal: 2462.14, surchargeRatePct: 0 }).reason).toBe("line_edit_needs_review");
+    expect(decideQbEditAdoption({ ...paid, freshQbTotal: 2462.14 }).reason).toBe("line_edit_needs_review");
+    expect(decideQbEditAdoption({ ...paid, freshQbTotal: 2462.14, qbEditsAuthoritative: true }).reason).toBe("qb_line_edit");
+  });
+
+  it("a true conflict still wins — local moved too", () => {
+    const d = decideQbEditAdoption({ localTotal: 2500, priorQbTotal: 2392.75, priorQbSubtotal: 2392.75, freshQbTotal: 2462.14, surchargeRatePct: 2.9 });
+    expect(d.reason).toBe("local_changed");
+  });
+});
+
+describe("isPaymentSurcharge", () => {
+  it("only ever matches an INCREASE of the configured percentage", () => {
+    expect(isPaymentSurcharge(100, 102.9, 2.9)).toBe(true);
+    expect(isPaymentSurcharge(100, 97.1, 2.9)).toBe(false);   // a decrease
+    expect(isPaymentSurcharge(100, 100, 2.9)).toBe(false);    // no change
+    expect(isPaymentSurcharge(100, 103.5, 2.9)).toBe(false);  // wrong size
+  });
+
+  it("refuses junk rather than guessing", () => {
+    expect(isPaymentSurcharge(100, 102.9, 0)).toBe(false);
+    expect(isPaymentSurcharge(100, 102.9, null)).toBe(false);
+    expect(isPaymentSurcharge(0, 2.9, 2.9)).toBe(false);
+    expect(isPaymentSurcharge("abc", 102.9, 2.9)).toBe(false);
+    expect(isPaymentSurcharge(100, "abc", 2.9)).toBe(false);
+  });
+});
+
+// The nightly backstop has the same exposure one night later: a surcharge
+// leaves the row permanently below QB's total.
+describe("decideReconcileAdopt ignores a payment surcharge", () => {
+  const row = { rowTotal: 2392.75, rowTax: 0, freshQbTax: 0 };
+
+  it("does not adopt the surcharge even for a QB-authoritative shop", () => {
+    const d = decideReconcileAdopt({ ...row, freshQbTotal: 2462.14, qbEditsAuthoritative: true, surchargeRatePct: 2.9 });
+    expect(d).toEqual({ adopt: false, reason: "payment_surcharge" });
+  });
+
+  it("still adopts a genuine QB edit for an authoritative shop", () => {
+    const d = decideReconcileAdopt({ ...row, freshQbTotal: 2100, qbEditsAuthoritative: true, surchargeRatePct: 2.9 });
+    expect(d).toEqual({ adopt: true, reason: "qb_line_edit" });
+  });
+
+  it("with surcharging off, the same uplift falls through to the old rules", () => {
+    expect(decideReconcileAdopt({ ...row, freshQbTotal: 2462.14, qbEditsAuthoritative: true }).adopt).toBe(true);
+    expect(decideReconcileAdopt({ ...row, freshQbTotal: 2462.14 }).reason).toBe("not_authoritative");
+  });
+});
