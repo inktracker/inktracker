@@ -541,9 +541,9 @@ function CardSurchargeEditor({ user }) {
     <div className="border-t border-emerald-200 pt-3 mt-3">
       <div className="text-sm font-semibold text-slate-700 mb-1">Credit-card processing fee</div>
       <p className="text-xs text-slate-500 mb-2">
-        Turn surcharging on in QuickBooks first (Settings → Account and Settings → Sales → Invoice payments).
-        This tells your customers about it on the quote, the PDF and the payment page, so the amount at
-        checkout isn&apos;t a surprise.
+        Turn surcharging on in QuickBooks first (Settings → Account and Settings → Sales → Invoice payments) —
+        QuickBooks charges the fee, this only tells your customers about it. Leave this off until
+        QuickBooks is actually surcharging, or you&apos;ll promise a fee nobody collects.
       </p>
       {!cfg ? (
         <button onClick={ensureLoaded} className="text-sm font-semibold text-emerald-700 hover:text-emerald-900 transition">
@@ -561,7 +561,7 @@ function CardSurchargeEditor({ user }) {
             />
             <span className="text-xs text-slate-600">
               <span className="font-semibold text-slate-700">Tell customers a card fee applies</span><br />
-              Shows &ldquo;paying by credit card adds a {rateValid ? formatRate(parsedRate) : formatRate(DEFAULT_CARD_SURCHARGE_PCT)}% processing fee&rdquo; with the dollar amount, wherever they see the total.
+              Shows &ldquo;paying by credit card adds a {rateValid ? formatRate(parsedRate) : formatRate(DEFAULT_CARD_SURCHARGE_PCT)}% processing fee&rdquo; with the dollar amount on the payment page, above the pay button.
             </span>
           </label>
           {cfg.enabled && (
