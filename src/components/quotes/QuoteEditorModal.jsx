@@ -386,9 +386,10 @@ export default function QuoteEditorModal({
   // Autoscroll to a just-added / just-duplicated garment. Add appends to the
   // bottom and Duplicate inserts below the source — both land off-screen, so
   // people re-clicked thinking nothing happened and racked up stray garments.
-  // handlers stamp the new line's id here; the effect below scrolls to it once
-  // it's rendered, then clears the stamp. A DOM-node map keyed by line id
-  // survives reorders/removals (index would go stale).
+  // handlers stamp the new line's id here; the effect below scrolls the START
+  // of the new group to the top of the viewport once it's rendered, then
+  // clears the stamp. A DOM-node map keyed by line id survives
+  // reorders/removals (index would go stale).
   const lineItemNodes = useRef(new Map());
   const pendingScrollId = useRef(null);
 
@@ -399,8 +400,12 @@ export default function QuoteEditorModal({
     const node = lineItemNodes.current.get(id);
     if (!node) return;
     // rAF so the scroll runs after layout of the newly-committed node.
+    // block:"start" lands on the TOP of the new group (its header row),
+    // not the middle — a tall group centered would leave you scrolled into
+    // its print-locations section. scrollMarginTop on the node clears the
+    // sticky modal header.
     requestAnimationFrame(() => {
-      node.scrollIntoView({ behavior: "smooth", block: "center" });
+      node.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }, [q.line_items]);
 
