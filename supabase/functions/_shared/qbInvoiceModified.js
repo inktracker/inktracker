@@ -300,6 +300,30 @@ export function buildQbModifiedNotification({
 /** Tax-only movements at or above this stay consent-based. */
 export const AUTO_ADOPT_TAX_MAX = 1.0;
 
+
+/**
+ * Is this QB-side increase the card surcharge Intuit adds at payment time?
+ *
+ * True when the shop has surcharging on and QB is higher than local by within
+ * a cent of that exact percentage. Deliberately narrow: an increase of any
+ * other size is a real edit and keeps its normal handling.
+ */
+export function isPaymentSurcharge(localTotal, freshQbTotal, ratePct) {
+  const rate = Number(ratePct);
+  if (!Number.isFinite(rate) || rate <= 0) return false;
+  const local = Number(localTotal);
+  const fresh = Number(freshQbTotal);
+  if (!Number.isFinite(local) || !Number.isFinite(fresh) || local <= 0) return false;
+  // Integer cents. Comparing the floats directly fails on the arithmetic
+  // itself: 2462.15 - 2392.75 is 69.40000000000009, and |69.40 - 69.39| then
+  // reads as 0.010000000000005 — just over a one-cent tolerance, so a real
+  // surcharge would slip through and be adopted as a price rise.
+  const deltaCents = Math.round((fresh - local) * 100);
+  if (deltaCents <= 0) return false; // a surcharge only ever ADDS
+  const expectedCents = Math.round(local * rate); // local * (rate/100) * 100
+  return Math.abs(deltaCents - expectedCents) <= 1;
+}
+
 /**
  * @param {object} args
  * @param {number|string|null} args.localTotal      as-sold total on the row
@@ -309,6 +333,7 @@ export const AUTO_ADOPT_TAX_MAX = 1.0;
  * @param {number|string|null} args.freshQbTax      live TxnTaxDetail.TotalTax
  * @param {boolean} [args.pushPending]              qb_push_pending — local truth is newer
  * @param {boolean} [args.qbEditsAuthoritative]     shop opted into "QB edits win"
+ * @param {number}  [args.surchargeRatePct]        shop's card-surcharge rate, 0 = off
  * @returns {{ autoAdopt: boolean, reason: string }}
  */
 export function decideQbEditAdoption({
@@ -325,6 +350,10 @@ export function decideQbEditAdoption({
   // silently. Penny/tax-rounding noise auto-adopts either way — it's never a
   // decision. Tax-only dollar-plus changes stay a decision regardless.
   qbEditsAuthoritative = false,
+  // The shop's QuickBooks card-surcharge rate (0 = off). Checked BEFORE the
+  // two rules above: a payment-time surcharge is neither a repricing nor a
+  // decision, and must not reach either branch.
+  surchargeRatePct = 0,
 }) {
   const centsDelta = (a, b) => Math.abs(Number((Number(a) - Number(b)).toFixed(2)));
   if (pushPending) return { autoAdopt: false, reason: "push_pending" };
@@ -334,6 +363,18 @@ export function decideQbEditAdoption({
   if (centsDelta(fresh, localTotal) <= QB_MODIFIED_TOLERANCE) return { autoAdopt: false, reason: "agrees" };
   // Local moved away from the last mirror → both sides changed → conflict.
   if (centsDelta(localTotal, priorQbTotal) > QB_MODIFIED_TOLERANCE) return { autoAdopt: false, reason: "local_changed" };
+  // PAYMENT SURCHARGE (2026-09-29). When the shop has QuickBooks card
+  // surcharging on, Intuit adds its fee to the full invoice amount at payment
+  // time, which arrives here as exactly the shape auto-adopt was built for:
+  // local total still equals the prior mirror, QB is suddenly higher. Adopting
+  // it would fold the CUSTOMER'S cost of paying by card into the shop's
+  // as-sold price — inflating revenue and margin on every card sale, silently.
+  // It is not a repricing and not a conflict either, so it must not raise the
+  // consent banner and re-create the notification noise the drift work just
+  // removed: mirror it, leave as-sold alone, stay quiet.
+  if (isPaymentSurcharge(localTotal, fresh, surchargeRatePct)) {
+    return { autoAdopt: false, reason: "payment_surcharge" };
+  }
   // Tax-only edit of a dollar or more: the customer's bill changed by tax
   // the shop never quoted. That stays a consent decision.
   const freshTax = Number(freshQbTax ?? 0) || 0;
@@ -362,12 +403,19 @@ export function decideQbEditAdoption({
  *   - tax-only dollar-plus change       → don't adopt (stays a decision)
  *   - subtotal/discount edit, shop ON   → adopt QB's total (QB wins)
  */
-export function decideReconcileAdopt({ rowTotal, rowTax, freshQbTotal, freshQbTax, qbEditsAuthoritative = false }) {
+export function decideReconcileAdopt({ rowTotal, rowTax, freshQbTotal, freshQbTax, qbEditsAuthoritative = false, surchargeRatePct = 0 }) {
   const centsDelta = (a, b) => Math.abs(Number((Number(a) - Number(b)).toFixed(2)));
   const fresh = freshQbTotal == null ? NaN : Number(freshQbTotal);
   if (!Number.isFinite(fresh)) return { adopt: false, reason: "no_fresh_total" };
   if (rowTotal == null) return { adopt: false, reason: "no_local_total" };
   if (centsDelta(fresh, rowTotal) <= QB_MODIFIED_TOLERANCE) return { adopt: false, reason: "agrees" };
+  // Same trap as the webhook path, one night later: a card surcharge leaves
+  // the row permanently below QB's total, so the nightly backstop would adopt
+  // the customer's card fee into the as-sold price for a QB-authoritative
+  // shop, and re-alert about it forever for everyone else. It is neither.
+  if (isPaymentSurcharge(rowTotal, fresh, surchargeRatePct)) {
+    return { adopt: false, reason: "payment_surcharge" };
+  }
   if (!qbEditsAuthoritative) return { adopt: false, reason: "not_authoritative" };
   const freshTax = Number(freshQbTax ?? 0) || 0;
   const freshSubtotal = Number((fresh - freshTax).toFixed(2));

@@ -219,6 +219,11 @@ async function reconcileShop(adminClient: any, profile: any) {
   const { data: shopCfgRow } = await adminClient.from("shops")
     .select("pricing_config").eq("owner_email", shopOwner).maybeSingle();
   const qbEditsAuthoritative = shopCfgRow?.pricing_config?.qbEditsAuthoritative === true;
+  // Card-surcharge rate off the same config read — a payment-time surcharge
+  // must not be adopted as a price change, nor re-alerted about forever.
+  const surchargeRatePct = shopCfgRow?.pricing_config?.cardSurcharge?.enabled === true
+    ? Number(shopCfgRow.pricing_config.cardSurcharge.ratePct) || 0
+    : 0;
 
   // Candidate window: linked quotes that haven't yet converted.
   // Limit to the last 60 days so a shop with thousands of old quotes
@@ -554,6 +559,7 @@ async function reconcileShop(adminClient: any, profile: any) {
                 freshQbTotal: Number(live?.TotalAmt),
                 freshQbTax: live?.TxnTaxDetail?.TotalTax,
                 qbEditsAuthoritative,
+                surchargeRatePct,
               });
           const adoptPatch = adoptDecision.adopt ? buildQbAdoptPatch(live, cand, { table: cand.table }) : null;
           if (adoptPatch) {

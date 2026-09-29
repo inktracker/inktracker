@@ -33,6 +33,7 @@ import { localDateStr } from "@/lib/dateRangeUtils";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
+import { cardSurchargeNote } from "@/lib/payment/cardSurcharge";
 import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 
 // Proof-grid tile. PDFs get a static tile instead of a live <object> embed —
@@ -965,17 +966,24 @@ export default function QuotePayment() {
 
             let buttonLabel = `Approve & Pay ${fmtMoney(effectiveTotal)}`;
             let subLabel = null;
+            // The dollars QuickBooks will actually charge on this click —
+            // the card surcharge is a percentage OF THAT, not of the quote
+            // total, so a deposit or a remaining balance must disclose its
+            // own fee. Follows the same routing the label does.
+            let chargeAmount = effectiveTotal;
             // Label follows ROUTING (depositAvailable), never just the pct:
             // a quote with a stray pct but no live deposit vehicle routes to
             // the full-pay link, so the button must say the full amount.
             if (depositAvailable && !depositPaid) {
               buttonLabel = `Approve & Pay Deposit ${fmtMoney(depositAmount)}`;
+              chargeAmount = depositAmount;
               subLabel = depositPct > 0
                 ? `${depositPct}% deposit · full total ${fmtMoney(effectiveTotal)}`
                 : `Deposit · full total ${fmtMoney(effectiveTotal)}`;
             } else if (hasDeposit && depositPaid) {
               const balance = Math.max(0, Math.round((effectiveTotal - depositAmount) * 100) / 100);
               buttonLabel = `Pay Remaining Balance ${fmtMoney(balance)}`;
+              chargeAmount = balance;
               subLabel = `Deposit of ${fmtMoney(depositAmount)} already paid`;
             }
 
@@ -998,6 +1006,25 @@ export default function QuotePayment() {
                     <span className="text-sm text-red-700">{checkoutError}</span>
                   </div>
                 )}
+
+                {/* Card-surcharge disclosure. The shop turns surcharging on
+                    in QuickBooks; Intuit adds the fee and enforces the rules
+                    (debit/prepaid/Amex/Discover are blocked, never surcharged).
+                    Our job is to say so BEFORE the click — otherwise the
+                    customer reads a total here and meets a bigger one at
+                    QuickBooks. See src/lib/payment/cardSurcharge.js. */}
+                {(() => {
+                  const sc = shop?.card_surcharge;
+                  if (!sc?.enabled) return null;
+                  const note = cardSurchargeNote({ total: chargeAmount, ratePct: sc.rate_pct });
+                  if (!note) return null;
+                  return (
+                    <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex gap-2">
+                      <CreditCard className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <span className="text-xs text-amber-900 leading-relaxed">{note}</span>
+                    </div>
+                  );
+                })()}
 
                 <p className="mb-3 text-center text-[11px] text-slate-500 leading-relaxed">
                   By submitting payment, you approve the items, sizes, and decoration details on this quote and authorize production to begin.

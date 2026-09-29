@@ -131,7 +131,10 @@ export async function handleGetQuote(quoteId: string, token?: string, supabase: 
   // won't leak unless they're added here intentionally.
   const { data: shops } = await supabase
     .from("shops")
-    .select("owner_email, shop_name, stripe_account_id, stripe_account_status")
+    // pricing_config rides along ONLY so customerFacingShopPayload can derive
+    // the card-surcharge disclosure flag; that function destructures it out,
+    // so the config itself never reaches the anonymous caller.
+    .select("owner_email, shop_name, stripe_account_id, stripe_account_status, pricing_config")
     .eq("owner_email", quote.shop_owner)
     .limit(1);
 
@@ -237,7 +240,10 @@ async function handleApproveQuote(quoteId: string, token?: string) {
   // won't leak unless they're added here intentionally.
   const { data: shops } = await supabase
     .from("shops")
-    .select("owner_email, shop_name, stripe_account_id, stripe_account_status")
+    // pricing_config rides along ONLY so customerFacingShopPayload can derive
+    // the card-surcharge disclosure flag; that function destructures it out,
+    // so the config itself never reaches the anonymous caller.
+    .select("owner_email, shop_name, stripe_account_id, stripe_account_status, pricing_config")
     .eq("owner_email", quote.shop_owner)
     .limit(1);
 

@@ -116,8 +116,31 @@ export function sanitizeOrderForCustomer(order) {
  * @param {object} args.doc quote or order row
  * @param {object|null} args.brokerProfile broker's profiles row (logo_url)
  */
+// Card-surcharge read — DELIBERATE MIRROR of getCardSurcharge() in
+// src/lib/payment/cardSurcharge.js (the canonical helper + its docs on why
+// Intuit owns the surcharge and we only disclose it). Deno can't import from
+// src/, so the repo's mirror idiom applies (see src/lib/purchaseOrders.js,
+// src/lib/email.js). Kept in lockstep by
+// _shared/__tests__/cardSurchargeMirror.test.js, which runs BOTH over the
+// same input matrix and fails if they ever disagree.
+const MAX_CARD_SURCHARGE_PCT = 4;
+const DEFAULT_CARD_SURCHARGE_PCT = 2.9;
+
+function getCardSurcharge(pricingConfig) {
+  const raw = pricingConfig?.cardSurcharge;
+  if (!raw || raw.enabled !== true) return { enabled: false, ratePct: 0 };
+  const n = Number(raw.ratePct);
+  const ratePct = Number.isFinite(n) && n > 0
+    ? Math.min(n, MAX_CARD_SURCHARGE_PCT)
+    : DEFAULT_CARD_SURCHARGE_PCT;
+  return { enabled: true, ratePct };
+}
+
 export function customerFacingShopPayload({ shop, doc, brokerProfile }) {
   if (isBrokerDoc(doc)) {
+    // A broker quote never routes the end client to the SHOP's QuickBooks
+    // link (resolveCheckoutTarget blocks it), so the shop's card surcharge
+    // is not the client's cost and must not be advertised to them.
     return {
       shop_name: (doc.broker_company || doc.broker_name || "").trim() || "Your vendor",
       logo_url: brokerProfile?.logo_url ?? null,
@@ -127,6 +150,19 @@ export function customerFacingShopPayload({ shop, doc, brokerProfile }) {
     };
   }
   if (!shop) return shop;
-  const { stripe_account_id: _a, stripe_account_status: _b, owner_email: _c, ...rest } = shop;
-  return rest;
+  // pricing_config is the shop's ENTIRE cost/markup/margin configuration. It
+  // is selected only so the card-surcharge flag can be derived here; it is
+  // destructured OUT so it can never ride the spread to an anonymous caller.
+  const {
+    stripe_account_id: _a,
+    stripe_account_status: _b,
+    owner_email: _c,
+    pricing_config: pricingConfig,
+    ...rest
+  } = shop;
+  const surcharge = getCardSurcharge(pricingConfig);
+  // Only the two scalars the disclosure needs, and only when it's on.
+  return surcharge.enabled
+    ? { ...rest, card_surcharge: { enabled: true, rate_pct: surcharge.ratePct } }
+    : rest;
 }
