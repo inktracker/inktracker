@@ -16,8 +16,16 @@
 // Runs even with RAINFOREST_ENABLED off: that switch stops NEW payments;
 // money already taken must still be recorded and booked.
 //
+// Payouts: deposit.succeeded → one QuickBooks Deposit (clean payouts only;
+// anything with refunds/returns/chargebacks → the shop records it, told once).
+//
+// Nightly sweep (POST with `Authorization: Bearer CRON_SECRET`, from the
+// qb-reconcile GitHub workflow): retries payments and payouts that couldn't
+// be booked at the time (QuickBooks disconnected/down past Rainforest's ≈28h
+// of retries, or a payout that arrived before its payments were booked).
+//
 // Secrets: RAINFOREST_WEBHOOK_SECRET (whsec_… from the Portal endpoint),
-// RAINFOREST_API_KEY, RAINFOREST_API_BASE (sandbox/prod).
+// RAINFOREST_API_KEY, RAINFOREST_API_BASE (sandbox/prod), CRON_SECRET.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import {
@@ -37,6 +45,7 @@ import {
 } from "../_shared/webhookIdempotency.js";
 import { insertShopNotification } from "../_shared/notifications.js";
 import { captureError } from "../_shared/observability.ts";
+import { planPayoutDeposit, PAYOUT_PLAN } from "../_shared/rainforestPayout.js";
 import {
   getShopQb,
   qbGetInvoice,
@@ -63,6 +72,7 @@ export type Deps = {
     paymentMethods: (c: QbConn) => Promise<Any[]>;
     findPaymentByRef: (c: QbConn, ref: string) => Promise<Any | null>;
     postPayment: (c: QbConn, body: unknown) => Promise<Any>;
+    postDeposit: (c: QbConn, body: unknown) => Promise<Any>;
   };
   now?: () => Date;
 };
@@ -128,7 +138,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
         eventType: "payment_not_booked",
         severity: "alert",
         title: `Payment received but not recorded in QuickBooks: $${(row.amount_cents / 100).toFixed(2)}`,
-        body: `QuickBooks isn't connected, so this online payment couldn't be recorded on invoice #${row.qb_invoice_id}. Reconnect QuickBooks in Account settings, then record the payment on that invoice in QuickBooks.`,
+        body: `QuickBooks isn't connected, so this online payment couldn't be recorded on invoice #${row.qb_invoice_id} yet. Reconnect QuickBooks in Account settings and InkTracker will record it overnight.`,
         metadata: { processor: SOURCE, payin_id: payinId },
       });
       return "no_qb_connection";
@@ -203,9 +213,180 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
   }
 }
 
+/** Book one Rainforest payout into QuickBooks, exactly once. */
+export async function processPayout(deps: Deps, depositId: string): Promise<string> {
+  const { admin } = deps;
+  const now = (deps.now ?? (() => new Date()))();
+  const deposit = await deps.rainforestGet(`/v1/deposits/${encodeURIComponent(depositId)}`);
+  if (!deposit?.merchant_id) return "no_deposit";
+  const { data: account } = await admin.from("processor_accounts")
+    .select("shop_owner, merchant_id, qb_bank_account_id, qb_fee_account_id")
+    .eq("merchant_id", deposit.merchant_id).maybeSingle();
+  if (!account) { opsAlert(`payout ${depositId} for merchant ${deposit.merchant_id} that no shop owns`); return "unknown_merchant"; }
+
+  const { data: existing } = await admin.from("processor_payouts")
+    .select("qb_deposit_id, review_notified_at").eq("processor_payout_id", depositId).maybeSingle();
+  if (existing?.qb_deposit_id) return "already_booked";
+  if (!existing) {
+    const { error } = await admin.from("processor_payouts").upsert({
+      processor_payout_id: depositId,
+      shop_owner: account.shop_owner,
+      merchant_id: deposit.merchant_id,
+      net_cents: Number(deposit.amount) || 0,
+      payout_date: String(deposit.created_at ?? now.toISOString()).slice(0, 10),
+      status: String(deposit.status ?? "").toLowerCase(),
+    }, { onConflict: "processor_payout_id" });
+    if (error) throw new Error(`payout row write failed: ${error.message}`);
+  }
+
+  // All activity, paged.
+  const activities: Any[] = [];
+  for (let offset = 0; offset < 5000; offset += 100) {
+    const page = await deps.rainforestGet(`/v1/deposits/${encodeURIComponent(depositId)}/activity?limit=100&offset=${offset}`);
+    const rows = page?.activities ?? [];
+    activities.push(...rows);
+    if (rows.length < 100) break;
+  }
+  const payinIds = activities.filter((a) => String(a?.type).toUpperCase() === "PAYIN").map((a) => String(a.id ?? a.payin_id));
+  const ledgerByPayin = new Map<string, Any>();
+  if (payinIds.length) {
+    const { data: rows } = await admin.from("processor_payments")
+      .select("processor_payin_id, qb_payment_id, amount_cents")
+      .eq("shop_owner", account.shop_owner)
+      .in("processor_payin_id", payinIds);
+    for (const r of rows ?? []) ledgerByPayin.set(String(r.processor_payin_id), r);
+  }
+
+  const plan: Any = planPayoutDeposit({ deposit, activities, ledgerByPayin, account });
+  if (plan.plan === PAYOUT_PLAN.SKIP) return `skip:${plan.reason}`;
+  if (plan.plan === PAYOUT_PLAN.WAIT) {
+    await admin.from("processor_payouts").update({ qb_post_error: "waiting: payments not yet in QuickBooks", updated_at: now.toISOString() }).eq("processor_payout_id", depositId);
+    return "wait";
+  }
+  if (plan.plan === PAYOUT_PLAN.MANUAL) {
+    await admin.from("processor_payouts").update({
+      qb_post_error: `needs_review: ${plan.problems.join(" ")}`.slice(0, 1000),
+      review_notified_at: existing?.review_notified_at ?? now.toISOString(),
+      updated_at: now.toISOString(),
+    }).eq("processor_payout_id", depositId);
+    if (!existing?.review_notified_at) {
+      await insertShopNotification(admin, <Any>{
+        shopOwner: account.shop_owner,
+        eventType: "payout_needs_review",
+        severity: plan.notify.severity,
+        title: plan.notify.title,
+        body: plan.notify.body,
+        metadata: plan.notify.metadata,
+      });
+    }
+    return "manual";
+  }
+
+  // POST — claim first so two workers can't both create the Deposit.
+  const staleBefore = new Date(now.getTime() - STALE_POST_CLAIM_MS).toISOString();
+  const { data: claimed, error: claimErr } = await admin.from("processor_payouts")
+    .update({ qb_posting_at: now.toISOString() })
+    .eq("processor_payout_id", depositId)
+    .is("qb_deposit_id", null)
+    .or(`qb_posting_at.is.null,qb_posting_at.lt."${staleBefore}"`)
+    .select("processor_payout_id");
+  if (claimErr) throw new Error(`payout claim failed: ${claimErr.message}`);
+  if (!claimed?.length) return "not_claimed";
+  try {
+    const conn = await deps.qb.connect(account.shop_owner);
+    if (!conn) {
+      await admin.from("processor_payouts").update({ qb_posting_at: null, qb_post_error: "QuickBooks not connected" }).eq("processor_payout_id", depositId);
+      return "no_qb_connection";
+    }
+    const res = await deps.qb.postDeposit(conn, plan.body);
+    const qbDepositId = String(res?.Deposit?.Id ?? res?.Id ?? "");
+    if (!qbDepositId) throw new Error("QuickBooks returned no Deposit id");
+    await admin.from("processor_payouts").update({
+      qb_deposit_id: qbDepositId,
+      qb_deposit_posted_at: now.toISOString(),
+      qb_posting_at: null,
+      qb_post_error: null,
+      fee_cents: plan.feeCents,
+      net_cents: plan.netCents,
+      status: "succeeded",
+      updated_at: now.toISOString(),
+    }).eq("processor_payout_id", depositId);
+    await admin.from("processor_payments").update({ processor_payout_id: depositId })
+      .eq("shop_owner", account.shop_owner).in("processor_payin_id", plan.payinIds);
+    return "booked";
+  } catch (err) {
+    try {
+      await admin.from("processor_payouts").update({ qb_posting_at: null, qb_post_error: String((err as Error)?.message ?? err).slice(0, 500) }).eq("processor_payout_id", depositId);
+    } catch { /* surfaced below */ }
+    throw err;
+  }
+}
+
+/** Nightly: retry what couldn't be booked at the time. */
+export async function sweep(deps: Deps): Promise<Record<string, number>> {
+  const { admin } = deps;
+  const now = (deps.now ?? (() => new Date()))();
+  const olderThan = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
+  const out = { payments: 0, paymentsBooked: 0, payouts: 0, payoutsBooked: 0, errors: 0 };
+
+  const { data: pending } = await admin.from("processor_payments")
+    .select("processor_payin_id, status, method")
+    .is("qb_payment_id", null)
+    .not("qb_invoice_id", "is", null)
+    .in("status", ["succeeded", "processing"])
+    .lt("updated_at", olderThan)
+    .limit(100);
+  for (const r of pending ?? []) {
+    if (r.status === "processing" && r.method !== "card") continue; // bank not cleared yet
+    out.payments++;
+    try {
+      if ((await postQbPaymentOnce(deps, String(r.processor_payin_id))).startsWith("posted")) out.paymentsBooked++;
+    } catch (err) {
+      out.errors++;
+      opsAlert(`sweep: payment ${r.processor_payin_id} still not booked: ${(err as Error)?.message ?? err}`);
+    }
+  }
+
+  const { data: payouts } = await admin.from("processor_payouts")
+    .select("processor_payout_id, qb_post_error")
+    .is("qb_deposit_id", null)
+    .limit(100);
+  for (const p of payouts ?? []) {
+    if (String(p.qb_post_error ?? "").startsWith("needs_review")) continue; // the shop handles those
+    out.payouts++;
+    try {
+      if ((await processPayout(deps, String(p.processor_payout_id))) === "booked") out.payoutsBooked++;
+    } catch (err) {
+      out.errors++;
+      opsAlert(`sweep: payout ${p.processor_payout_id} still not booked: ${(err as Error)?.message ?? err}`);
+    }
+  }
+  return out;
+}
+
+function sameSecret(a: string, b: string) {
+  if (!a || !b || a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
 export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (req.method !== "POST") return ok({ error: "method not allowed" }, 405);
   const { admin } = deps;
+
+  // Nightly sweep — authenticated by CRON_SECRET, not a webhook signature.
+  const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  if (bearer && !req.headers.get("svix-signature") && !req.headers.get("webhook-signature")) {
+    if (!sameSecret(bearer, deps.env("CRON_SECRET") ?? "")) return ok({ error: "unauthorized" }, 401);
+    try {
+      return ok({ ok: true, sweep: await sweep(deps) });
+    } catch (err) {
+      opsAlert(`sweep failed: ${(err as Error)?.message ?? err}`);
+      return ok({ error: "sweep failed" }, 500);
+    }
+  }
+
   const rawBody = await req.text();
 
   const sig = await verifyWebhookSignature({
@@ -225,9 +406,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   try { body = JSON.parse(rawBody); } catch { return ok({ error: "bad json" }, 400); }
 
   const route = routeWebhook(body);
-  if (route.route === "ignore" || route.route === "deposit") {
-    // Payouts are booked by the payout reconciler, not per event.
-    return ok({ ok: true, ignored: route.route === "ignore" ? route.reason : "deposit" });
+  if (route.route === "ignore") return ok({ ok: true, ignored: route.reason });
+  if (route.route === "deposit" && (route.status !== "succeeded" || !route.depositId)) {
+    return ok({ ok: true, ignored: `deposit.${route.status}` });
   }
 
   const key = webhookDedupeKey(body) ?? "";
@@ -236,6 +417,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (claim.status === CLAIM_OUTCOMES.ERROR) return ok({ error: "try again" }, 503);
 
   try {
+    if (route.route === "deposit") {
+      return ok({ ok: true, payout: await processPayout(deps, String(route.depositId)) });
+    }
+
     if (route.route === "merchant") {
       if (!route.merchantId) return ok({ ok: true, ignored: "no merchant id" });
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -320,6 +505,7 @@ if (import.meta.main) {
       paymentMethods: qbListPaymentMethods,
       findPaymentByRef: qbFindPaymentByRef,
       postPayment: (c, b) => qbPost(c, "payment", b),
+      postDeposit: (c, b) => qbPost(c, "deposit", b),
     },
   }));
 }

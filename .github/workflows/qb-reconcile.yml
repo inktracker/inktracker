@@ -57,6 +57,26 @@ jobs:
             echo "::error::qbReconcile returned $code (401 = CRON_SECRET mismatch with Supabase)."
             exit 1
           fi
+      - name: Rainforest payments sweep
+        # Retries online payments/payouts that couldn't be recorded in
+        # QuickBooks at the time (docs/rainforest-payments.md). Off until the
+        # rainforestWebhook function is deployed: set the repo VARIABLE
+        #   gh variable set RAINFOREST_SWEEP --body true
+        if: ${{ vars.RAINFOREST_SWEEP == 'true' }}
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          code=$(curl -sS -o /tmp/rf-sweep.json -w "%{http_code}" -X POST \
+            "https://skmltfbibaqcjddmeqvi.supabase.co/functions/v1/rainforestWebhook" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --data "{}")
+          echo "HTTP $code"
+          cat /tmp/rf-sweep.json | head -c 2000; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::rainforestWebhook sweep returned $code."
+            exit 1
+          fi
       - name: Heartbeat (dead-man's-switch)
         # Only reached on a SUCCESSFUL reconcile (prior step exits 1 on failure).
         # Pings the external monitor so it pages if the cron ever stops pinging.

@@ -6,7 +6,7 @@
 
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { fakeSupabase } from "../../_shared/testing/fakeSupabase.ts";
-import { handle, postQbPaymentOnce, type Deps } from "../index.ts";
+import { handle, postQbPaymentOnce, sweep, type Deps } from "../index.ts";
 
 const SECRET = "whsec_" + btoa("0123456789abcdef0123456789abcdef");
 const NOW = new Date("2026-10-02T17:00:00Z");
@@ -48,21 +48,28 @@ const payin = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-function setup({ qbConnected = true, qbPostFails = false, balance = 1643 } = {}) {
+function setup({ qbConnected = true, qbPostFails = false, balance = 1643, deposit = null as Record<string, unknown> | null, activities = [] as unknown[] } = {}) {
   const db = fakeSupabase({
-    processor_accounts: [{ shop_owner: OWNER, merchant_id: "mid_1", merchant_status: "active", enabled: true }],
+    processor_accounts: [{ shop_owner: OWNER, merchant_id: "mid_1", merchant_status: "active", enabled: true, qb_bank_account_id: "35", qb_fee_account_id: "88" }],
+    processor_payouts: [],
     quotes: [{ id: QUOTE_ID, quote_id: "Q-2026-HKSO", shop_owner: OWNER, qb_invoice_id: "3815", qb_deposit_invoice_id: null }],
     processor_payments: [],
     processed_webhook_events: [],
     notifications: [],
   }, { unique: { processed_webhook_events: ["source", "event_id"] } });
   const posted: unknown[] = [];
+  const deposits: unknown[] = [];
   let failNext = qbPostFails;
   const deps: Deps = {
     admin: db,
-    env: (k) => (k === "RAINFOREST_WEBHOOK_SECRET" ? SECRET : undefined),
+    env: (k) => (k === "RAINFOREST_WEBHOOK_SECRET" ? SECRET : k === "CRON_SECRET" ? "cron-secret-value" : undefined),
     now: () => NOW,
-    rainforestGet: (path) => Promise.resolve(path.endsWith("/pyi_1") ? payin({ refundable_amount: 0 }) : null),
+    rainforestGet: (path) => {
+      if (path.endsWith("/pyi_1")) return Promise.resolve(payin({ refundable_amount: 0 }));
+      if (path.includes("/activity")) return Promise.resolve({ activities: path.includes("offset=0") ? activities : [] });
+      if (path.startsWith("/v1/deposits/")) return Promise.resolve(deposit);
+      return Promise.resolve(null);
+    },
     qb: {
       connect: () => Promise.resolve(qbConnected ? { token: "t", realmId: "r" } : null),
       getInvoice: () => Promise.resolve({ Id: "3815", Balance: balance, TotalAmt: 1643, CustomerRef: { value: "61" } }),
@@ -73,9 +80,10 @@ function setup({ qbConnected = true, qbPostFails = false, balance = 1643 } = {})
         posted.push(body);
         return Promise.resolve({ Payment: { Id: "501" } });
       },
+      postDeposit: (_c, body) => { deposits.push(body); return Promise.resolve({ Deposit: { Id: "901" } }); },
     },
   };
-  return { db, deps, posted };
+  return { db, deps, posted, deposits };
 }
 
 Deno.test("forged signature → 401, nothing written", async () => {
@@ -191,4 +199,67 @@ Deno.test("a stale posting claim (worker died mid-post) is retaken; a fresh one 
   db.tables.processor_payments[0].qb_posting_at = new Date(NOW.getTime() - 11 * 60_000).toISOString();
   assertEquals(await postQbPaymentOnce(deps, "pyi_1"), "posted");
   assertEquals(posted.length, 1);
+});
+
+// ── Payouts ─────────────────────────────────────────────────────────────
+const cleanDeposit = { deposit_id: "dep_1", merchant_id: "mid_1", status: "SUCCEEDED", deposit_type: "FUNDING", amount: 164300 - 4913, created_at: "2026-10-03T12:00:00Z", deposit_fee_amount: { amount: 0 } };
+const payinActivity = { id: "pyi_1", type: "PAYIN", gross_amount: { amount: 164300 }, billing_fees_amount: { amount: -4913 } };
+
+Deno.test("payout: booked as ONE QuickBooks deposit that matches the bank; replays don't re-book", async () => {
+  const { db, deps, deposits } = setup({ deposit: cleanDeposit, activities: [payinActivity] });
+  await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  const r = await handle(await request({ event_type: "deposit.succeeded", data: { deposit_id: "dep_1" } }, { msgId: "d1" }), deps);
+  assertEquals((await r.json()).payout, "booked");
+  assertEquals(deposits.length, 1);
+  const body = deposits[0] as Record<string, any>;
+  assertEquals(body.DepositToAccountRef, { value: "35" });
+  assertEquals(body.Line.reduce((a: number, l: any) => a + Math.round(l.Amount * 100), 0), 164300 - 4913);
+  assertEquals(db.tables.processor_payouts[0].qb_deposit_id, "901");
+  assertEquals(db.tables.processor_payments[0].processor_payout_id, "dep_1");
+  // A later retry of the same payout (e.g. the sweep) books nothing new.
+  assertEquals(await sweep(deps), { payments: 0, paymentsBooked: 0, payouts: 0, payoutsBooked: 0, errors: 0 });
+  assertEquals(deposits.length, 1);
+});
+
+Deno.test("payout arriving before its payment is booked → waits, then the sweep books both", async () => {
+  const { db, deps, posted, deposits } = setup({ qbPostFails: true, deposit: cleanDeposit, activities: [payinActivity] });
+  await handle(await request({ event_type: "payin.processing", data: payin() }), deps); // QB down → 500
+  const r = await handle(await request({ event_type: "deposit.succeeded", data: { deposit_id: "dep_1" } }, { msgId: "d1" }), deps);
+  assertEquals((await r.json()).payout, "wait");
+  assertEquals(deposits.length, 0);
+  db.tables.processor_payments[0].updated_at = "2026-10-02T10:00:00Z"; // older than 30 min
+  const out = await sweep(deps);
+  assertEquals(out.paymentsBooked, 1);
+  assertEquals(out.payoutsBooked, 1);
+  assertEquals(posted.length, 1);
+  assertEquals(deposits.length, 1);
+});
+
+Deno.test("payout with a refund → not booked; shop told once", async () => {
+  const withRefund = { ...cleanDeposit, amount: 164300 - 4913 - 5000 };
+  const { db, deps, deposits } = setup({ deposit: withRefund, activities: [payinActivity, { id: "rfd_1", type: "REFUND", gross_amount: { amount: -5000 } }] });
+  await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  await handle(await request({ event_type: "deposit.succeeded", data: { deposit_id: "dep_1" } }, { msgId: "d1" }), deps);
+  assertEquals(deposits.length, 0);
+  const notes = db.tables.notifications.filter((n) => n.event_type === "payout_needs_review");
+  assertEquals(notes.length, 1);
+  assert(String(notes[0].body).includes("A refund of $50.00."));
+  await sweep(deps); // skips needs_review payouts — no second notice
+  assertEquals(db.tables.notifications.filter((n) => n.event_type === "payout_needs_review").length, 1);
+});
+
+Deno.test("sweep: wrong or missing CRON_SECRET → 401; right one runs", async () => {
+  const { deps } = setup();
+  const bad = await handle(new Request("http://x", { method: "POST", headers: { Authorization: "Bearer nope" }, body: "{}" }), deps);
+  assertEquals(bad.status, 401);
+  const good = await handle(new Request("http://x", { method: "POST", headers: { Authorization: "Bearer cron-secret-value" }, body: "{}" }), deps);
+  assertEquals(good.status, 200);
+  assertEquals((await good.json()).sweep.errors, 0);
+});
+
+Deno.test("sweep: bank payments still clearing are left alone", async () => {
+  const { db, deps, posted } = setup();
+  db.tables.processor_payments.push({ processor_payin_id: "pyi_9", shop_owner: OWNER, qb_invoice_id: "3815", amount_cents: 1000, method: "ach", status: "processing", updated_at: "2026-10-01T00:00:00Z" });
+  await sweep(deps);
+  assertEquals(posted.length, 0);
 });

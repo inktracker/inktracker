@@ -97,7 +97,11 @@ create table if not exists public.processor_payouts (
   -- QuickBooks Deposit that matches this payout 1:1 with the bank.
   qb_deposit_id         text,
   qb_deposit_posted_at  timestamptz,
+  -- Same exactly-once claim as processor_payments.qb_posting_at.
+  qb_posting_at         timestamptz,
   qb_post_error         text,
+  -- When the shop was told this payout needs recording by hand (once).
+  review_notified_at    timestamptz,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()
 );
