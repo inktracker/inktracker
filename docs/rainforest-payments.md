@@ -97,7 +97,7 @@ shop, never the request body.
 | `_shared/rainforestAccount.js` | roles, onboarding stage, QB account mapping |
 | `_shared/qbShopClient.ts` | QB reads/writes for a shop (serialized token refresh) |
 | `rainforest/` | edge fn: status, qbAccounts, saveQbAccounts, setEnabled |
-| migration `20261118000000` | `processor_accounts`, `processor_payments`, `processor_payouts`, `invoices.public_token` |
+| migration `20261120000000` | `processor_accounts`, `processor_payments`, `processor_payouts`, `invoices.public_token` |
 
 Tables are `processor_*` because `payment_accounts` already exists (the
 Expenses feature's accounts a shop pays bills from).
