@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import { cachedFilter, cachedList } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { Trash2 } from "lucide-react";
@@ -34,6 +34,9 @@ import { todayInShopTz } from "@/lib/shopTimezone";
 import { shopScope } from "@/lib/shopScope";
 import { buildQuoteDuplicate } from "@/lib/quotes/customerSwitch";
 import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
+import { getShopPricingConfig } from "@/components/shared/pricing";
+import { billBrokerForOrder } from "@/lib/orders/billBrokerForOrder";
+import { decideUpFrontBill, isBrokerBillUpFront } from "@/lib/broker/brokerBillTiming";
 
 
 // A saved quote is a snapshot — read what was stamped at save time. We
@@ -419,7 +422,33 @@ export default function Quotes() {
         today: todayInShopTz(),
         approvalDate,
       });
-      await base44.entities.Order.create(orderPayload);
+      const createdOrder = await base44.entities.Order.create(orderPayload);
+
+      // Broker billing (Phase A) — UP-FRONT trigger. If the shop auto-bills
+      // brokers AND this broker is set to bill up front, invoice the wholesale
+      // amount NOW (at order creation, before production) instead of waiting for
+      // completion. Same idempotent invoicer as the completion path, so
+      // completion won't double-bill; a failed up-front bill is picked up at
+      // completion. Fail-open — a QB hiccup must never block the conversion.
+      try {
+        const brokerEmail = String(createdOrder?.broker_email || createdOrder?.broker_id || "").toLowerCase().trim();
+        const masterEnabled = getShopPricingConfig()?.brokerBillingEnabled === true;
+        if (brokerEmail && masterEnabled) {
+          const rows = await base44.entities.BrokerPricingOverride.filter({
+            shop_owner: shopScope(user),
+            broker_email: brokerEmail,
+          });
+          const billUpFront = isBrokerBillUpFront(rows?.[0]);
+          if (decideUpFrontBill({ isBrokerOrder: true, masterEnabled, billUpFront })) {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.access_token) {
+              await billBrokerForOrder({ base44, order: createdOrder, session });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[Quotes.convert] up-front broker billing failed (non-fatal):", err?.message || err);
+      }
 
       // Broker pricing reference rows (legacy "commissions" table) are
       // created when the invoice is marked paid — not on quote conversion

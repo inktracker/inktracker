@@ -3,6 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
 import { hasBrokerOverrides, brokerPricingMode } from "@/lib/broker/brokerPricing";
+import { isBrokerBillUpFront } from "@/lib/broker/brokerBillTiming";
 import BrokerPricingEditor from "@/components/broker/BrokerPricingEditor";
 
 // Account → Pricing → Per-Broker Pricing. Wraps the shared
@@ -63,6 +64,29 @@ export default function BrokerPricingSection({ user, config }) {
   const rowFor = (email) =>
     rows.find((r) => (r.broker_email || "").toLowerCase() === (email || "").toLowerCase());
 
+  // Per-broker wholesale billing timing (bill_up_front on the broker_pricing
+  // row). Upserts: update the row if it exists, else create a minimal one.
+  // Stored in its own column so it never collides with the pricing overrides.
+  async function setBillUpFront(brokerEmail, next) {
+    try {
+      const existing = rowFor(brokerEmail);
+      const saved = existing
+        ? await base44.entities.BrokerPricingOverride.update(existing.id, { bill_up_front: next })
+        : await base44.entities.BrokerPricingOverride.create({
+            shop_owner: shopEmail,
+            broker_email: brokerEmail,
+            overrides: {},
+            bill_up_front: next,
+          });
+      setRows((prev) => {
+        const without = prev.filter((r) => r.id !== (existing?.id ?? saved?.id));
+        return saved ? [...without, saved] : without;
+      });
+    } catch (err) {
+      notify.error("Couldn't update billing timing", err);
+    }
+  }
+
   return (
     <div>
       <button
@@ -116,6 +140,35 @@ export default function BrokerPricingSection({ user, config }) {
 
                 {isOpen && (
                   <div className="border-t border-slate-100 px-3 py-3">
+                    {/* Wholesale billing timing — when the shop bills this broker
+                        the wholesale amount. Only takes effect when broker
+                        billing is on (Account → QuickBooks). */}
+                    <div className="mb-3 pb-3 border-b border-slate-100">
+                      <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">Wholesale billing timing</div>
+                      {config?.brokerBillingEnabled !== true && (
+                        <div className="text-[10px] text-amber-600 mb-1.5">
+                          Turn on broker billing in Account → QuickBooks for this to take effect.
+                        </div>
+                      )}
+                      <label className="flex items-center gap-2 text-xs text-slate-600 mb-1 cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`billing-timing-${b.email}`}
+                          checked={!isBrokerBillUpFront(saved)}
+                          onChange={() => setBillUpFront(b.email, false)}
+                        />
+                        When the job is done
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`billing-timing-${b.email}`}
+                          checked={isBrokerBillUpFront(saved)}
+                          onChange={() => setBillUpFront(b.email, true)}
+                        />
+                        Up front, before production starts
+                      </label>
+                    </div>
                     <BrokerPricingEditor
                       key={`${b.email}:${saved?.id || "new"}`}
                       broker={{ email: b.email, label: brokerLabel(b) }}
