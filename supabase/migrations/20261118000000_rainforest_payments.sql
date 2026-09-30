@@ -26,8 +26,14 @@ create table if not exists public.processor_accounts (
   shop_owner          text primary key,
   processor           text not null default 'rainforest' check (processor in ('rainforest')),
   merchant_id         text unique,
-  -- Rainforest's merchant lifecycle, mirrored from its webhooks/API.
+  -- Rainforest's merchant lifecycle, mirrored (lowercased) from its webhooks:
+  -- pending | onboarding | active | suspended | deactivated | canceled.
   merchant_status     text,
+  -- The underwriting application the onboarding component needs, and its
+  -- state (created | in_progress | processing | in_review |
+  -- needs_information | completed | declined).
+  merchant_application_id     text,
+  merchant_application_status text,
   -- The shop's choice to collect through InkTracker. Only takes effect
   -- when merchant_status is active (enforced in the edge functions).
   enabled             boolean not null default false,
@@ -61,6 +67,10 @@ create table if not exists public.processor_payments (
   -- QuickBooks Payment posted for this payin (gross, linked to the invoice).
   qb_payment_id         text,
   qb_payment_posted_at  timestamptz,
+  -- Claim taken before posting the QB Payment, so two concurrent webhooks
+  -- (card "processing" + "succeeded" can arrive together) can't both post.
+  -- A stale claim (> 10 min, e.g. the function died mid-post) may be retaken.
+  qb_posting_at         timestamptz,
   qb_post_error         text,
   -- Payout that settled it to the shop's bank.
   processor_payout_id   text,

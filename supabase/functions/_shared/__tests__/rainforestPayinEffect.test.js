@@ -81,6 +81,24 @@ describe("planPayinEffect — a matched successful payment", () => {
     expect(r).toMatchObject({ ok: true, ledger: null, postQbPayment: false });
   });
 
+  it("card captured (processing) → posted right away, like QuickBooks Payments", () => {
+    const r = plan({ event: ev({ kind: "processing", method: "card" }) });
+    expect(r.ledger.status).toBe("processing");
+    expect(r.postQbPayment).toBe(true);
+  });
+
+  it("card processing then succeeded → no second post once QuickBooks has it", () => {
+    expect(plan({ ledger: { status: "processing", method: "card", qb_payment_id: "501" } }).postQbPayment).toBe(false);
+    expect(plan({ ledger: { status: "processing", method: "card", qb_payment_id: null } }).postQbPayment).toBe(true);
+  });
+
+  it("card voided after it was booked → alert with the QB payment to delete, nothing auto-deleted", () => {
+    const r = plan({ event: ev({ kind: "canceled" }), ledger: { status: "processing", method: "card", qb_payment_id: "501" } });
+    expect(r.ledger.status).toBe("canceled");
+    expect(r.postQbPayment).toBe(false);
+    expect(r.notify.body).toMatch(/payment #501/);
+  });
+
   it("bank payment processing → recorded, NOT posted to QuickBooks yet", () => {
     const r = plan({ event: ev({ kind: "processing", method: "ach" }) });
     expect(r.ledger.status).toBe("processing");

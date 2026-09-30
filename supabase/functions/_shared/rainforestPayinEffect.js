@@ -95,7 +95,12 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
   }
   const shop = account.shop_owner;
   const md = event.metadata ?? {};
-  const moneyIn = kind === PAYIN_EVENT.SUCCEEDED;
+  // When is the invoice paid? A CARD payin is captured at "processing"
+  // (Rainforest then settles T+1) — same moment QuickBooks Payments marks a
+  // card invoice paid, so quote→order isn't held a day. A BANK payment isn't
+  // money until "succeeded" (T+4 by default).
+  const moneyIn = kind === PAYIN_EVENT.SUCCEEDED ||
+    (kind === PAYIN_EVENT.PROCESSING && event.method === "card");
 
   const baseLedger = {
     processor_payin_id: event.payinId,
@@ -142,7 +147,9 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
   //    re-trying a QB post that hadn't landed yet.
   const advances = statusAdvances(ledger?.status, kind);
   const qbPending = moneyIn && !ledger?.qb_payment_id;
-  const succeededNow = moneyIn && (advances || ledger?.status === PAYIN_EVENT.SUCCEEDED);
+  const moneyInRecorded = ledger?.status === PAYIN_EVENT.SUCCEEDED ||
+    (ledger?.status === PAYIN_EVENT.PROCESSING && ledger?.method === "card");
+  const succeededNow = moneyIn && (advances || moneyInRecorded);
 
   const isInvoiceDoc = md.inktracker_doc_type === "invoice";
   const ledgerRow = advances ? {
@@ -155,7 +162,18 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
   } : null;
 
   let notify = null;
-  if (advances && kind === PAYIN_EVENT.FAILED && event.method === "ach") {
+  const voidedAfterBooked = advances && ledger?.qb_payment_id &&
+    (kind === PAYIN_EVENT.CANCELED || kind === PAYIN_EVENT.FAILED);
+  if (voidedAfterBooked) {
+    // Card captured → booked in QB → then voided/failed before settling.
+    // Never delete a QB payment on our own; tell the shop exactly what to do.
+    notify = {
+      severity: "alert",
+      title: `Payment canceled after it was recorded: ${docNumber(quote) ?? "a payment"}`,
+      body: `A $${(amt / 100).toFixed(2)} payment was canceled before it settled, but it was already recorded in QuickBooks (payment #${ledger.qb_payment_id}). Delete that payment in QuickBooks so the invoice shows as open again.`,
+      metadata: { processor: "rainforest", payin_id: event.payinId, qb_payment_id: ledger.qb_payment_id },
+    };
+  } else if (advances && kind === PAYIN_EVENT.FAILED && event.method === "ach") {
     notify = {
       severity: "alert",
       title: `Bank payment didn't go through: ${docNumber(quote) ?? "a payment"}`,

@@ -17,7 +17,10 @@ type Rows = Row[];
 type Filter = { op: string; col: string; val: unknown };
 export type RecordedWrite = { op: "insert" | "update" | "upsert" | "delete"; table: string; patch?: Row; rows?: Rows; filters: Filter[]; onConflict?: string };
 
-export function fakeSupabase(tables: Record<string, Rows>, opts: { rpcs?: Record<string, (args: unknown) => unknown> } = {}) {
+// opts.unique: per-table unique key columns. An insert that collides returns
+// PostgREST's { error: { code: "23505" } } (e.g. processed_webhook_events on
+// ["source","event_id"]) so dedupe paths can be exercised.
+export function fakeSupabase(tables: Record<string, Rows>, opts: { rpcs?: Record<string, (args: unknown) => unknown>; unique?: Record<string, string[]> } = {}) {
   const store: Record<string, Rows> = {};
   for (const [t, rows] of Object.entries(tables)) store[t] = rows.map((r) => ({ ...r }));
   const writes: RecordedWrite[] = [];
@@ -27,7 +30,7 @@ export function fakeSupabase(tables: Record<string, Rows>, opts: { rpcs?: Record
     // deno-lint-ignore no-explicit-any
     from(table: string): any {
       if (!store[table]) store[table] = [];
-      return builder(table, store, writes);
+      return builder(table, store, writes, opts.unique?.[table] ?? null);
     },
     rpc(name: string, args?: unknown) {
       const fn = opts.rpcs?.[name];
@@ -49,17 +52,20 @@ function matches(r: Row, f: Filter): boolean {
     case "lte": return (v as number) <= (f.val as number);
     case "gt": return (v as number) > (f.val as number);
     case "lt": return (v as number) < (f.val as number);
+    case "or": return (f.val as Filter[]).some((c) => matches(r, c));
     default: return true;
   }
 }
 
 // deno-lint-ignore no-explicit-any
-function builder(table: string, store: Record<string, Rows>, writes: RecordedWrite[]): any {
+function builder(table: string, store: Record<string, Rows>, writes: RecordedWrite[], uniqueKey: string[] | null = null): any {
   const filters: Filter[] = [];
   let limitN: number | null = null;
   let countOnly = false;
   let pending: RecordedWrite | null = null;
   let returning = false;
+  let insertCount = false;
+  let conflict = false;
 
   const current = () => {
     let rows = store[table].filter((r) => filters.every((f) => matches(r, f)));
@@ -82,7 +88,12 @@ function builder(table: string, store: Record<string, Rows>, writes: RecordedWri
       store[table] = store[table].filter((r) => !affected.includes(r));
     } else if (pending.op === "insert") {
       affected = pending.rows ?? [];
-      store[table].push(...affected);
+      if (uniqueKey && affected.some((row) => store[table].some((r) => uniqueKey.every((k) => r[k] === row[k])))) {
+        conflict = true;
+        affected = [];
+      } else {
+        store[table].push(...affected);
+      }
     } else if (pending.op === "upsert") {
       affected = pending.rows ?? [];
       // Conflict target: the onConflict columns when given (like PostgREST),
@@ -117,11 +128,22 @@ function builder(table: string, store: Record<string, Rows>, writes: RecordedWri
     lte(col: string, val: unknown) { filters.push({ op: "lte", col, val }); return api; },
     gt(col: string, val: unknown) { filters.push({ op: "gt", col, val }); return api; },
     lt(col: string, val: unknown) { filters.push({ op: "lt", col, val }); return api; },
-    or() { return api; },
+    // PostgREST or-filter, simple form only: "col.op.val,col.op.val" with
+    // op in eq/neq/is/lt/gt/lte/gte ("is.null" → null). A row passes when ANY
+    // condition matches.
+    or(expr: string) {
+      const conds = String(expr).split(",").map((c) => {
+        const [col, op, ...rest] = c.split(".");
+        const raw = rest.join(".").replace(/^"(.*)"$/, "$1");
+        return { op, col, val: raw === "null" ? null : raw } as Filter;
+      });
+      filters.push({ op: "or", col: "", val: conds });
+      return api;
+    },
     ilike() { return api; },
     contains() { return api; },
     limit(n: number) { limitN = n; return api; },
-    insert(rows: Row | Rows) { pending = { op: "insert", table, rows: Array.isArray(rows) ? rows.map((r) => ({ ...r })) : [{ ...rows }], filters: [] }; return api; },
+    insert(rows: Row | Rows, o?: { count?: string }) { if (o?.count) insertCount = true; pending = { op: "insert", table, rows: Array.isArray(rows) ? rows.map((r) => ({ ...r })) : [{ ...rows }], filters: [] }; return api; },
     upsert(rows: Row | Rows, o?: { onConflict?: string }) { pending = { op: "upsert", table, rows: Array.isArray(rows) ? rows.map((r) => ({ ...r })) : [{ ...rows }], filters: [], onConflict: o?.onConflict }; return api; },
     update(patch: Row) { pending = { op: "update", table, patch: { ...patch }, filters: [] }; return api; },
     delete() { pending = { op: "delete", table, filters: [] }; return api; },
@@ -140,9 +162,11 @@ function builder(table: string, store: Record<string, Rows>, writes: RecordedWri
     then(resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) {
       const wasWrite = Boolean(pending);
       const rows = settle();
-      const out = countOnly
+      const out = conflict
+        ? { data: null, count: 0, error: { code: "23505", message: "duplicate key value violates unique constraint" } }
+        : countOnly
         ? { data: null, count: rows.length, error: null }
-        : { data: wasWrite && !returning ? null : rows, error: null };
+        : { data: wasWrite && !returning ? null : rows, error: null, ...(insertCount ? { count: rows.length } : {}) };
       return Promise.resolve(out).then(resolve, reject);
     },
   };

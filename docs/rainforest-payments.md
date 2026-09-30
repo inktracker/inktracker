@@ -52,6 +52,24 @@ Rules that keep it safe:
   the next payout's Deposit so the bank still matches.
 * **Broker invoices always stay on QuickBooks.**
 
+### When is an invoice "paid"?
+
+* **Card:** at `payin.processing`, when the card is captured. That's the same moment QuickBooks Payments marks a card invoice paid, so quote → order isn't held a day (Rainforest deposits card T+1). If a captured card is later voided (`payin.canceled`), the shop is alerted with the QB payment to delete. We never delete it ourselves.
+* **Bank (ACH):** only at `payin.succeeded`, after the default T+4 hold. `processing` is recorded but not booked. Returns can still arrive later (up to 90 days for unauthorized), and are handled as reversals.
+
+### Platform fee setup (Rainforest billing profile)
+
+The fee is the merchant's **all-in** price. Rainforest keeps its cost and pays InkTracker the spread monthly as residuals. Rates are integers where 3000 = 3%:
+`card_rate: 2990`, `card_fee: 0`, `card_amex_rate_surcharge: 0`, `card_business_rate_surcharge: 0`, `card_international_rate_surcharge: 0`, `ach_rate: 1000`, `ach_rate_cap: 0` (confirm 0 = no cap), `ach_fee: 0`. Leaving the surcharges at 0 keeps it a flat 2.99% like QuickBooks, which charges no Amex premium.
+Create it first: a billing profile must exist before the first merchant.
+
+### Rainforest rules that affect rollout
+
+* InkTracker's own company has to be the first production merchant, and that sets the residuals bank account.
+* Production review checks every session is constrained to one merchant (never `group#all`).
+* Rainforest discourages letting trial or free accounts sign up for payments, and says they're usually declined. Gate Account → Payments to paying shops.
+* Merchants that never finish onboarding are auto-canceled after 120 days.
+
 ## What changes for an opted-in shop
 
 | Surface | QuickBooks rail (today) | Processor rail |
@@ -92,7 +110,8 @@ billing.
 
 - [ ] Merchant onboarding session + the onboarding component on Account → Payments
 - [ ] `createPayinSession` (anon, token-gated, amount from live QB) + the payment component on QuotePayment and a new InvoicePayment page
-- [ ] `rainforestWebhook`: signature verification, event-name mapping → `PAYIN_EVENT`, claim via `processed_webhook_events`, execute `planPayinEffect`, post the QB Payment (`planQbApplication` + `buildQbPaymentBody`)
+- [x] `rainforestWebhook`: Svix signature check, event mapping → `PAYIN_EVENT`, claim via `processed_webhook_events`, `planPayinEffect`, QB Payment posted once (ledger claim + ref-number lookup). **Confirm on the first sandbox delivery that the headers are `svix-id` / `svix-timestamp` / `svix-signature` and the secret starts `whsec_`.**
+- [ ] Backstop sweep (nightly, with qbReconcile): retry `processor_payments` rows that are money-in with `qb_payment_id` null (QB was disconnected/down past Rainforest's ≈28h retries), then switch the "not recorded" notice to say it will be recorded automatically
 - [ ] Payout reconciliation → `buildQbDepositBody`
 - [ ] Billing profile for the 2.99% / 1% platform fees
 - [ ] Account → Payments card
