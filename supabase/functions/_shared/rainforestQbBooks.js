@@ -85,6 +85,22 @@ export function buildQbPaymentBody(a) {
 }
 
 /**
+ * Find the QB Payment we already posted for a payin, among the customer's
+ * recent payments. Matched by PaymentRefNum (last 21 chars of the payin id)
+ * or the full payin id in the memo. The payments come from a CustomerRef
+ * query — a filter qbSync already relies on in production — rather than
+ * filtering on PaymentRefNum, which QuickBooks may not support.
+ * @returns {object|null}
+ */
+export function findBookedPayment(payments, payinId) {
+  const id = String(payinId ?? "");
+  if (!id) return null;
+  const ref = refNum(id);
+  return (Array.isArray(payments) ? payments : []).find((p) =>
+    String(p?.PaymentRefNum ?? "") === ref || String(p?.PrivateNote ?? "").includes(id)) ?? null;
+}
+
+/**
  * QB Deposit body for one Rainforest payout to the shop's bank.
  *
  * @param {object} a

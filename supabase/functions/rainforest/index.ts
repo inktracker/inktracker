@@ -116,16 +116,37 @@ async function loadPublicDoc(admin: Any, body: Any) {
   return { doc, docType };
 }
 
-/** Public: which way this document is paid (no session created). */
+/** What the pay page shows at the top (never internal fields). */
+async function loadDisplay(admin: Any, doc: Any, docType: string) {
+  const { data: shopProfile } = await admin.from("profiles").select("shop_name, logo_url, zip").eq("email", doc.shop_owner).maybeSingle();
+  return {
+    display: {
+      shopName: shopProfile?.shop_name ?? null,
+      logoUrl: shopProfile?.logo_url ?? null,
+      docNumber: docType === "invoice" ? doc.invoice_id : doc.quote_id,
+      customerName: doc.customer_name ?? null,
+    },
+    shopZip: shopProfile?.zip ?? null,
+  };
+}
+
+/**
+ * Public: which way this document is paid, plus what the page shows.
+ * Database reads only — no Rainforest or QuickBooks calls — because email
+ * link scanners prefetch these pages; the payment session is only opened
+ * when a person clicks Pay (payinSession).
+ */
 async function payRail(body: Any, deps: Deps) {
   const found = await loadPublicDoc(deps.admin, body);
   if (!found) return json({ error: "Not found" }, 404);
-  const { doc } = found;
+  const { doc, docType } = found;
   const rail = await loadPaymentRail(deps.admin, doc.shop_owner, {
     envEnabled: flagOn(deps.env("RAINFOREST_ENABLED")),
     broker: Boolean(doc.broker_id || doc.broker_email),
   });
-  return json({ rail: rail === RAIL.PROCESSOR ? "processor" : "qb" });
+  if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
+  const { display } = await loadDisplay(deps.admin, doc, docType);
+  return json({ rail: "processor", display, paid: Boolean(doc.paid) });
 }
 
 /** Public: build a payment session for a quote or invoice. */
@@ -151,14 +172,7 @@ async function payinSession(body: Any, deps: Deps) {
   const account = await loadAccount(admin, doc.shop_owner);
   if (!account?.merchant_id) return json({ rail: "qb" });
 
-  // What the page shows at the top (never internal fields).
-  const { data: shopProfile } = await admin.from("profiles").select("shop_name, logo_url, zip").eq("email", doc.shop_owner).maybeSingle();
-  const display = {
-    shopName: shopProfile?.shop_name ?? null,
-    logoUrl: shopProfile?.logo_url ?? null,
-    docNumber: docType === "invoice" ? doc.invoice_id : doc.quote_id,
-    customerName: doc.customer_name ?? null,
-  };
+  const { display, shopZip } = await loadDisplay(admin, doc, docType);
 
   // A payment already in flight for this document (bank payment clearing, or
   // a card payment not yet in QuickBooks) → don't open a second one.
@@ -201,7 +215,7 @@ async function payinSession(body: Any, deps: Deps) {
     target,
     liveInvoice,
     customer: { name: doc.customer_name, email: doc.customer_email },
-    shopPostalCode: shopProfile?.zip ?? null,
+    shopPostalCode: shopZip,
     attempt,
   });
   let config;

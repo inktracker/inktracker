@@ -37,7 +37,7 @@ import {
 } from "../_shared/rainforestWebhookAdapter.js";
 import { planPayinEffect, planQbApplication, statusesBelow } from "../_shared/rainforestPayinEffect.js";
 import { platformFeeCents } from "../_shared/rainforestPricing.js";
-import { buildQbPaymentBody, pickQbPaymentMethod } from "../_shared/rainforestQbBooks.js";
+import { buildQbPaymentBody, pickQbPaymentMethod, findBookedPayment } from "../_shared/rainforestQbBooks.js";
 import {
   claimWebhookEventDetailed,
   releaseWebhookEvent,
@@ -46,11 +46,12 @@ import {
 import { insertShopNotification } from "../_shared/notifications.js";
 import { captureError } from "../_shared/observability.ts";
 import { planPayoutDeposit, PAYOUT_PLAN } from "../_shared/rainforestPayout.js";
+import { shopTimezone, localDate } from "../_shared/shopDate.js";
 import {
   getShopQb,
   qbGetInvoice,
   qbListPaymentMethods,
-  qbFindPaymentByRef,
+  qbRecentCustomerPayments,
   qbPost,
   type QbConn,
 } from "../_shared/qbShopClient.ts";
@@ -70,7 +71,7 @@ export type Deps = {
     connect: (shopOwner: string) => Promise<QbConn | null>;
     getInvoice: (c: QbConn, id: string) => Promise<Any | null>;
     paymentMethods: (c: QbConn) => Promise<Any[]>;
-    findPaymentByRef: (c: QbConn, ref: string) => Promise<Any | null>;
+    recentCustomerPayments: (c: QbConn, customerRef: string) => Promise<Any[]>;
     postPayment: (c: QbConn, body: unknown) => Promise<Any>;
     postDeposit: (c: QbConn, body: unknown) => Promise<Any>;
   };
@@ -83,6 +84,15 @@ const ok = (body: unknown = { ok: true }, status = 200) => Response.json(body, {
 function opsAlert(message: string, context: Record<string, unknown> = {}) {
   console.error(`[rainforestWebhook] ${message}`, context);
   captureError(new Error(message), { fn: "rainforestWebhook", ...context }).catch(() => {});
+}
+
+/** The shop's timezone, for QuickBooks transaction dates. */
+async function loadShopTz(admin: Any, shopOwner: string): Promise<string> {
+  const [{ data: shop }, { data: profile }] = await Promise.all([
+    admin.from("shops").select("timezone").eq("owner_email", shopOwner).maybeSingle(),
+    admin.from("profiles").select("state").eq("email", shopOwner).maybeSingle(),
+  ]);
+  return shopTimezone({ timezone: shop?.timezone, state: profile?.state });
 }
 
 async function loadDoc(admin: Any, md: Any) {
@@ -152,17 +162,6 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
       return "no_qb_connection";
     }
 
-    // Already in QuickBooks (e.g. a crash after posting, before our write)?
-    const ref = String(payinId).slice(-21);
-    // This lookup is the guard against posting twice after a crash or a
-    // timed-out POST that actually landed. If it can't run, don't post —
-    // throw so the event (or the sweep) retries later.
-    const existing = await deps.qb.findPaymentByRef(conn, ref);
-    if (existing?.Id) {
-      await release({ qb_payment_id: String(existing.Id), qb_payment_posted_at: now.toISOString(), qb_post_error: null });
-      return "already_in_qb";
-    }
-
     const inv = await deps.qb.getInvoice(conn, String(row.qb_invoice_id));
     if (!inv) {
       await release({ qb_post_error: `QuickBooks invoice ${row.qb_invoice_id} not found` });
@@ -177,6 +176,16 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
       return "invoice_missing";
     }
 
+    // Already in QuickBooks (e.g. a crash after posting, before our write)?
+    // This lookup is the guard against posting twice after a crash or a
+    // timed-out POST that actually landed. If it can't run, don't post —
+    // throw so the event (or the sweep) retries later.
+    const existing: Any = findBookedPayment(await deps.qb.recentCustomerPayments(conn, String(inv?.CustomerRef?.value ?? "")), payinId);
+    if (existing?.Id) {
+      await release({ qb_payment_id: String(existing.Id), qb_payment_posted_at: now.toISOString(), qb_post_error: null });
+      return "already_in_qb";
+    }
+
     const app = planQbApplication({ amountCents: row.amount_cents, liveBalanceCents: Math.round(Number(inv.Balance) * 100) });
     if (!app.ok) throw new Error(`bad amounts for ${payinId}`);
     const method = pickQbPaymentMethod(await deps.qb.paymentMethods(conn), row.method === "ach" ? "ach" : "card");
@@ -186,7 +195,8 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
       amountCents: row.amount_cents,
       applyCents: app.applyCents,
       payinId,
-      txnDate: String(row.last_event_at ?? now.toISOString()).slice(0, 10),
+      // The shop's calendar date — a 6pm payment isn't "tomorrow" in its books.
+      txnDate: localDate(row.last_event_at ?? now.toISOString(), await loadShopTz(admin, row.shop_owner)),
       paymentMethodRef: method,
       platformFeeCents: row.platform_fee_cents ?? 0,
     });
@@ -234,6 +244,8 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
     .eq("merchant_id", deposit.merchant_id).maybeSingle();
   if (!account) { opsAlert(`payout ${depositId} for merchant ${deposit.merchant_id} that no shop owns`); return "unknown_merchant"; }
 
+  const tz = await loadShopTz(admin, account.shop_owner);
+  const payoutDate = localDate(deposit.created_at ?? now.toISOString(), tz);
   const { data: existing } = await admin.from("processor_payouts")
     .select("qb_deposit_id, review_notified_at").eq("processor_payout_id", depositId).maybeSingle();
   if (existing?.qb_deposit_id) return "already_booked";
@@ -243,7 +255,7 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
       shop_owner: account.shop_owner,
       merchant_id: deposit.merchant_id,
       net_cents: Number(deposit.amount) || 0,
-      payout_date: String(deposit.created_at ?? now.toISOString()).slice(0, 10),
+      payout_date: payoutDate,
       status: String(deposit.status ?? "").toLowerCase(),
     }, { onConflict: "processor_payout_id" });
     if (error) throw new Error(`payout row write failed: ${error.message}`);
@@ -267,7 +279,7 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
     for (const r of rows ?? []) ledgerByPayin.set(String(r.processor_payin_id), r);
   }
 
-  const plan: Any = planPayoutDeposit({ deposit, activities, ledgerByPayin, account });
+  const plan: Any = planPayoutDeposit({ deposit, activities, ledgerByPayin, account, txnDate: payoutDate });
   if (plan.plan === PAYOUT_PLAN.SKIP) return `skip:${plan.reason}`;
   if (plan.plan === PAYOUT_PLAN.WAIT) {
     await admin.from("processor_payouts").update({ qb_post_error: "waiting: payments not yet in QuickBooks", updated_at: now.toISOString() }).eq("processor_payout_id", depositId);
@@ -584,7 +596,7 @@ if (import.meta.main) {
       connect: (shop) => getShopQb(admin, shop),
       getInvoice: qbGetInvoice,
       paymentMethods: qbListPaymentMethods,
-      findPaymentByRef: qbFindPaymentByRef,
+      recentCustomerPayments: qbRecentCustomerPayments,
       postPayment: (c, b) => qbPost(c, "payment", b),
       postDeposit: (c, b) => qbPost(c, "deposit", b),
     },

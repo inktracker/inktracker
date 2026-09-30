@@ -27,8 +27,9 @@ export const PAYOUT_PLAN = Object.freeze({ POST: "post", WAIT: "wait", MANUAL: "
  * @param {Array}  a.activities   deposit activity rows
  * @param {Map<string, {qb_payment_id:string|null, amount_cents:number}>} a.ledgerByPayin
  * @param {{qb_bank_account_id:string|null, qb_fee_account_id:string|null}} a.account
+ * @param {string|null} [a.txnDate] payout date in the shop's timezone (YYYY-MM-DD)
  */
-export function planPayoutDeposit({ deposit, activities, ledgerByPayin, account }) {
+export function planPayoutDeposit({ deposit, activities, ledgerByPayin, account, txnDate = null }) {
   if (!deposit?.deposit_id) return { plan: PAYOUT_PLAN.SKIP, reason: "no_deposit" };
   if (String(deposit.status ?? "").toUpperCase() !== "SUCCEEDED") return { plan: PAYOUT_PLAN.SKIP, reason: "not_succeeded" };
   if (String(deposit.deposit_type ?? "FUNDING").toUpperCase() !== "FUNDING") {
@@ -75,7 +76,8 @@ export function planPayoutDeposit({ deposit, activities, ledgerByPayin, account 
   const built = buildQbDepositBody({
     bankAccountId: account?.qb_bank_account_id,
     feeAccountId: account?.qb_fee_account_id,
-    txnDate: String(deposit.created_at ?? "").slice(0, 10),
+    // The shop-local payout date from the caller; UTC date only as a fallback.
+    txnDate: txnDate ?? String(deposit.created_at ?? "").slice(0, 10),
     payoutId: deposit.deposit_id,
     payments,
     feeCents,
