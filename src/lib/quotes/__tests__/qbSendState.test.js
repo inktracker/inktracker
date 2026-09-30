@@ -26,6 +26,22 @@ describe("deriveQbSendState", () => {
     });
   });
 
+  describe("processor rail — shop takes payment on InkTracker's own page", () => {
+    it("invoice exists + no QB link → ready (no link is by design)", () => {
+      expect(deriveQbSendState({ qbInvoiceId: "3815", qbPaymentLink: null, paymentRail: "processor" })).toEqual({
+        status: "ready",
+        sendDisabledByQb: false,
+        warning: null,
+      });
+    });
+    it("still needs the QB invoice first — payments are booked against it", () => {
+      expect(deriveQbSendState({ qbInvoiceId: null, paymentRail: "processor" }).status).toBe("needs_create");
+    });
+    it("QB rail without a link is still send_failed (unchanged)", () => {
+      expect(deriveQbSendState({ qbInvoiceId: "3815", qbPaymentLink: null, paymentRail: "qb" }).status).toBe("send_failed");
+    });
+  });
+
   describe("send_failed — invoice exists, /send didn't return a payment link", () => {
     // Post-PR #174 (which switched to POST /invoice/{id}/send for minting
     // the share link), the only way to land here is if our /send call

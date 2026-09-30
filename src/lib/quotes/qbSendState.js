@@ -24,6 +24,8 @@
  * @param {object} args
  * @param {string|null} args.qbInvoiceId  — present when QB has accepted the invoice
  * @param {string|null} args.qbPaymentLink — present when /send returned a share link
+ * @param {"qb"|"processor"} [args.paymentRail] — "processor" = the shop takes
+ *   payment on InkTracker's own page (no QB link by design)
  *
  * @returns {{
  *   status: "needs_create" | "send_failed" | "ready",
@@ -36,9 +38,16 @@
  *   warning:
  *     human-readable error string for send_failed, otherwise null.
  */
-export function deriveQbSendState({ qbInvoiceId, qbPaymentLink } = {}) {
+export function deriveQbSendState({ qbInvoiceId, qbPaymentLink, paymentRail = "qb" } = {}) {
   if (!qbInvoiceId) {
     return { status: "needs_create", sendDisabledByQb: true, warning: null };
+  }
+
+  // Processor rail: the shop collects on InkTracker's own payment page, so
+  // there is deliberately no QuickBooks link. The invoice existing is all
+  // that's needed (it's what the customer's payment is booked against).
+  if (paymentRail === "processor") {
+    return { status: "ready", sendDisabledByQb: false, warning: null };
   }
 
   if (!qbPaymentLink) {
