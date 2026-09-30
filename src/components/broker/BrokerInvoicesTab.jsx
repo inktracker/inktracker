@@ -26,6 +26,7 @@ import { exportQuoteToPDF, exportInvoiceToPDF, previewPdf } from "../shared/pdfE
 import AttachmentGallery from "../shared/AttachmentGallery";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { toCustomerFacingQuote } from "@/lib/quotes/customerFacingQuote";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import {
   AreaChart,
@@ -134,15 +135,20 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
                         </div>
                         <div className="text-xs font-semibold text-slate-600 bg-slate-200 rounded-full px-2 py-0.5">Qty: {qty}</div>
                       </div>
-                      {(li.imprints || []).filter((imp) => imp.colors > 0).map((imp, j) => (
-                        <div key={j} className="mt-1.5 text-xs text-slate-500 flex flex-wrap gap-2">
-                          <span className="font-semibold text-slate-700">{imp.location}</span>
-                          <span>·</span>
-                          <span>{imp.colors} color{imp.colors !== 1 ? "s" : ""}</span>
-                          <span>·</span>
-                          <span>{imp.technique}</span>
-                        </div>
-                      ))}
+                      {(li.imprints || []).filter((imp) => imp.colors > 0).map((imp, j) => {
+                        // imprintCountText is technique-correct: "3 colors" for
+                        // screen print, "5K-10K stitches" for embroidery (where
+                        // imp.colors is a stitch-tier INDEX, not a color count —
+                        // the gotcha imprintLabels.js exists to prevent).
+                        const countText = imprintCountText(imp);
+                        return (
+                          <div key={j} className="mt-1.5 text-xs text-slate-500 flex flex-wrap gap-2">
+                            <span className="font-semibold text-slate-700">{imp.location}</span>
+                            {countText && (<><span>·</span><span>{countText}</span></>)}
+                            {imp.technique && (<><span>·</span><span>{imp.technique}</span></>)}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -345,8 +351,9 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
     [orders, quotes],
   );
 
-  // Stats
-  const { totalRevenue, totalMargin, avgJobValue } = useMemo(
+  // Stats — a broker's revenue is what they BILL their clients (totalClientRevenue),
+  // not the wholesale they pay the shop. Margin stays client − broker.
+  const { totalClientRevenue, totalMargin, avgClientJobValue } = useMemo(
     () => computeJobKpis(completedJobs),
     [completedJobs],
   );
@@ -387,14 +394,14 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
             <DollarSign className="w-4 h-4 text-emerald-500" />
             <div className="text-xs font-semibold text-emerald-500 uppercase tracking-widest">Your Revenue</div>
           </div>
-          <div className="text-2xl font-bold text-emerald-700">{fmtMoney(totalRevenue)}</div>
+          <div className="text-2xl font-bold text-emerald-700">{fmtMoney(totalClientRevenue)}</div>
         </div>
         <div className="bg-green-50 border border-green-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="w-4 h-4 text-green-500" />
             <div className="text-xs font-semibold text-green-500 uppercase tracking-widest">Avg. Job Value</div>
           </div>
-          <div className="text-2xl font-bold text-green-700">{fmtMoney(avgJobValue)}</div>
+          <div className="text-2xl font-bold text-green-700">{fmtMoney(avgClientJobValue)}</div>
         </div>
         <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">

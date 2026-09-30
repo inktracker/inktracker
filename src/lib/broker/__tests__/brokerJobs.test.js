@@ -233,6 +233,7 @@ describe("computeJobKpis", () => {
       totalClientRevenue: 370,
       totalMargin: 70,
       avgJobValue: 150,
+      avgClientJobValue: 185, // client revenue / count — the broker-facing "Avg. Job Value"
     });
   });
 
@@ -243,6 +244,7 @@ describe("computeJobKpis", () => {
       totalClientRevenue: 0,
       totalMargin: 0,
       avgJobValue: 0,
+      avgClientJobValue: 0,
     });
   });
 

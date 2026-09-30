@@ -138,15 +138,22 @@ export function sortJobs(jobs, sortKey) {
 
 export function computeJobKpis(jobs) {
   const list = Array.isArray(jobs) ? jobs : [];
+  // totalRevenue = broker/WHOLESALE (the broker's cost — what they pay the shop).
+  // totalClientRevenue = what the broker BILLS their client — the broker's true
+  // top-line revenue. The broker-facing KPI cards surface the client figures
+  // (revenue + avg job value); margin is client − broker. Both are kept so
+  // callers can choose the frame.
   const totalRevenue = list.reduce((s, j) => s + (Number(j._brokerTotal) || 0), 0);
   const totalClientRevenue = list.reduce((s, j) => s + (Number(j._clientTotal) || 0), 0);
   const totalMargin = totalClientRevenue - totalRevenue;
   const avgJobValue = list.length ? totalRevenue / list.length : 0;
+  const avgClientJobValue = list.length ? totalClientRevenue / list.length : 0;
   return {
     count: list.length,
     totalRevenue,
     totalClientRevenue,
     totalMargin,
     avgJobValue,
+    avgClientJobValue,
   };
 }
