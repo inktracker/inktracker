@@ -359,6 +359,23 @@ async function handleDepositInvoicePaid(supabase: any, qbInvoiceId: string, shop
 }
 
 async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: string) {
+  // Broker billing: if this paid invoice is a shop→broker WHOLESALE bill, it's
+  // tracked on orders.qb_broker_invoice_id (never quotes/invoices), so the
+  // normal client-invoice lookup below won't find it. Flip the order's broker
+  // paid flag here, best-effort and in parallel. A non-broker invoice matches
+  // zero rows (no-op); a broker invoice matches its order and never a quote, so
+  // the path below SKIPs it cleanly.
+  try {
+    const { error: brokErr } = await supabase.from("orders")
+      .update({ broker_invoice_paid: true, broker_invoice_paid_at: new Date().toISOString() })
+      .eq("qb_broker_invoice_id", qbInvoiceId)
+      .eq("shop_owner", shopOwner)
+      .eq("broker_invoice_paid", false);
+    if (brokErr) console.error(`[qbWebhook] broker-invoice paid flip failed for ${qbInvoiceId}:`, brokErr.message);
+  } catch (e) {
+    console.error("[qbWebhook] broker-invoice paid flip threw (non-fatal):", (e as Error)?.message);
+  }
+
   // CRITICAL: scope the lookup by BOTH qb_invoice_id and shop_owner.
   // QB invoice ids are realm-scoped (not globally unique), so without
   // the shop_owner filter a webhook for Shop B's invoice 1042 could

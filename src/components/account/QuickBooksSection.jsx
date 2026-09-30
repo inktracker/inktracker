@@ -262,6 +262,7 @@ export default function QuickBooksSection({
           </div>
           <QbTaxModeEditor user={user} />
           <QbEditsAuthoritativeEditor user={user} />
+          <QbBrokerBillingEditor user={user} />
           {/* Card-fee disclosure control REMOVED 2026-09-29 (Joe: "remove that
               toggle option for now"). QuickBooks Payments has no
               percentage-based surcharging on this account — Intuit hasn't
@@ -483,6 +484,78 @@ function QbEditsAuthoritativeEditor({ user }) {
             <span className="text-xs text-slate-600">
               <span className="font-semibold text-slate-700">Let QuickBooks invoice edits win automatically</span><br />
               When you change a line price or add a discount in QuickBooks, InkTracker adopts the new total automatically and it never shows up as &ldquo;books drift.&rdquo; Best if you regularly adjust invoices in QuickBooks. Leave this off and each QuickBooks edit is flagged for you to review instead — so an unexpected change gets caught. Sales-tax rounding differences resolve automatically either way.
+            </span>
+          </label>
+          {saved && <div className="text-xs text-emerald-700 font-semibold">Saved ✓</div>}
+          {error && <div className="text-xs text-red-600">{error}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Auto-invoice brokers on order completion — pricing_config.brokerBillingEnabled.
+// OFF (default): nothing changes; the shop bills brokers however it does today.
+// ON: when a broker's order is marked complete, InkTracker creates a wholesale
+// invoice TO the broker in this shop's QuickBooks (B2B, no tax, ACH + card
+// enabled) and tracks it on the order. The broker's client-facing price and
+// the end customer are never touched. Fires only for broker orders.
+function QbBrokerBillingEditor({ user }) {
+  const [on, setOn] = useState(null); // null = not loaded
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  async function ensureLoaded() {
+    if (loaded) return;
+    try {
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+      setOn(shops?.[0]?.pricing_config?.brokerBillingEnabled === true);
+    } catch {
+      setOn(false);
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  async function toggle(next) {
+    setOn(next);
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+      const pc = { ...(shops?.[0]?.pricing_config || {}), brokerBillingEnabled: next };
+      if (shops?.[0]) await base44.entities.Shop.update(shops[0].id, { pricing_config: pc });
+      loadShopPricingConfig(pc);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setOn(!next);
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-emerald-200 pt-3 mt-3">
+      <div className="text-sm font-semibold text-slate-700 mb-1">Broker billing</div>
+      <p className="text-xs text-slate-500 mb-2">
+        Automatically bill brokers for the wholesale amount when their order is done, instead of invoicing them by hand.
+      </p>
+      {!loaded ? (
+        <button onClick={ensureLoaded} className="text-sm font-semibold text-emerald-700 hover:text-emerald-900 transition">
+          Set up broker billing…
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked={on === true} onChange={(e) => toggle(e.target.checked)} disabled={saving} className="mt-0.5" />
+            <span className="text-xs text-slate-600">
+              <span className="font-semibold text-slate-700">Auto-invoice brokers when their order completes</span><br />
+              When a broker&rsquo;s order is marked complete, InkTracker creates a wholesale invoice to the broker in your QuickBooks &mdash; no sales tax (it&rsquo;s a business-to-business sale), with ACH enabled so they can pay with about no fee. It shows the broker as a wholesale customer in your QuickBooks. This only affects broker orders; your regular invoices are untouched. Turn it on, complete one broker order, and check the invoice looks right in QuickBooks before you rely on it.
             </span>
           </label>
           {saved && <div className="text-xs text-emerald-700 font-semibold">Saved ✓</div>}
