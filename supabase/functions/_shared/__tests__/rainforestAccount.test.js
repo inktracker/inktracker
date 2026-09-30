@@ -36,8 +36,12 @@ describe("onboardingStage", () => {
     expect(onboardingStage(null)).toBe("not_started");
     expect(onboardingStage({ merchant_id: null })).toBe("not_started");
     expect(onboardingStage({ merchant_id: "m", merchant_status: "active" })).toBe("active");
-    expect(onboardingStage({ merchant_id: "m", merchant_status: "pending" })).toBe("in_review");
-    expect(onboardingStage({ merchant_id: "m", merchant_status: "DECLINED" })).toBe("declined");
+    expect(onboardingStage({ merchant_id: "m", merchant_status: "pending", merchant_application_status: "created" })).toBe("in_progress");
+    expect(onboardingStage({ merchant_id: "m", merchant_status: "onboarding", merchant_application_status: "processing" })).toBe("in_review");
+    expect(onboardingStage({ merchant_id: "m", merchant_status: "onboarding", merchant_application_status: "needs_information" })).toBe("needs_information");
+    expect(onboardingStage({ merchant_id: "m", merchant_status: "SUSPENDED" })).toBe("suspended");
+    expect(onboardingStage({ merchant_id: "m", merchant_status: "canceled", merchant_application_status: "declined" })).toBe("declined");
+    expect(onboardingStage({ merchant_id: "m", merchant_status: "deactivated" })).toBe("declined");
   });
 });
 
@@ -75,7 +79,7 @@ describe("checkCanEnable", () => {
     expect(checkCanEnable({ envEnabled: true, account: acct, viewer: { role: "manager" } }).error).toMatch(/Only the shop owner/);
     expect(checkCanEnable({ envEnabled: false, account: acct, viewer: owner }).error).toMatch(/aren't available/);
     expect(checkCanEnable({ envEnabled: true, account: null, viewer: owner }).error).toMatch(/sign-up/);
-    expect(checkCanEnable({ envEnabled: true, account: { ...acct, merchant_status: "declined" }, viewer: owner }).error).toMatch(/wasn't approved/);
+    expect(checkCanEnable({ envEnabled: true, account: { ...acct, merchant_status: "canceled" }, viewer: owner }).error).toMatch(/wasn't approved/);
     expect(checkCanEnable({ envEnabled: true, account: { ...acct, qb_bank_account_id: null }, viewer: owner }).error).toMatch(/QuickBooks bank account/);
   });
 });

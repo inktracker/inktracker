@@ -80,7 +80,7 @@ Deno.test("setEnabled: owner turns it on → writes the OWNER's row, rail flips"
 });
 
 Deno.test("setEnabled: refused while under review, without QB accounts, or with the kill switch off", async () => {
-  const review = await call(db({ ...ACTIVE, merchant_status: "pending" }), "own-auth", { action: "setEnabled", enabled: true });
+  const review = await call(db({ ...ACTIVE, merchant_status: "onboarding", merchant_application_status: "processing" }), "own-auth", { action: "setEnabled", enabled: true });
   assertEquals(review.status, 400);
   assert((await review.json()).error.includes("reviewed"));
 

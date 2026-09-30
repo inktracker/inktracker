@@ -42,7 +42,7 @@ function json(body: unknown, status = 200) {
 async function loadAccount(admin: any, shopOwner: string) {
   const { data, error } = await admin
     .from("processor_accounts")
-    .select("shop_owner, merchant_id, merchant_status, enabled, qb_bank_account_id, qb_fee_account_id")
+    .select("shop_owner, merchant_id, merchant_status, merchant_application_status, enabled, qb_bank_account_id, qb_fee_account_id")
     .eq("shop_owner", shopOwner)
     .maybeSingle();
   if (error) throw new Error(`Couldn't read payment settings: ${error.message}`);

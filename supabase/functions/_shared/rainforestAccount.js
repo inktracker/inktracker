@@ -20,11 +20,18 @@ export const canMapQbAccounts = (p) => OWNER_ROLES.includes(p?.role) || p?.role 
 export const canTogglePayments = (p) => OWNER_ROLES.includes(p?.role);
 
 /** Onboarding stage the Account → Payments card shows. */
+// Rainforest merchant statuses: pending | onboarding | active | suspended |
+// deactivated | canceled; application: created | in_progress | processing |
+// in_review | needs_information | completed | declined.
 export function onboardingStage(account) {
   if (!account?.merchant_id) return "not_started";
   const s = String(account.merchant_status ?? "").toLowerCase();
+  const app = String(account.merchant_application_status ?? "").toLowerCase();
   if (ACTIVE_MERCHANT_STATUSES.includes(s)) return "active";
-  if (["declined", "rejected", "closed", "terminated"].includes(s)) return "declined";
+  if (s === "suspended") return "suspended";
+  if (["deactivated", "canceled"].includes(s) || app === "declined") return "declined";
+  if (app === "needs_information") return "needs_information";
+  if (s === "pending" || ["created", "in_progress"].includes(app)) return "in_progress"; // form not submitted yet
   return "in_review";
 }
 
@@ -63,7 +70,10 @@ export function checkCanEnable({ envEnabled, account, viewer }) {
   if (!envEnabled) return { ok: false, error: "InkTracker payments aren't available yet." };
   const stage = onboardingStage(account);
   if (stage === "not_started") return { ok: false, error: "Finish the payments sign-up first." };
+  if (stage === "in_progress") return { ok: false, error: "Finish the payments sign-up first." };
+  if (stage === "needs_information") return { ok: false, error: "The payments team needs a little more information. Open the sign-up again to finish it." };
   if (stage === "in_review") return { ok: false, error: "Your payments account is still being reviewed. You can turn this on once it's approved." };
+  if (stage === "suspended") return { ok: false, error: "Your payments account is on hold. Customers keep paying through QuickBooks until it's resolved." };
   if (stage === "declined") return { ok: false, error: "Your payments account wasn't approved, so customers will keep paying through QuickBooks." };
   if (!account.qb_bank_account_id || !account.qb_fee_account_id) {
     return { ok: false, error: "Pick the QuickBooks bank account your payouts land in and the expense account for fees first." };
