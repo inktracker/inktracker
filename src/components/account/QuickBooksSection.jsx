@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { CheckCircle2, AlertCircle, Link2, RefreshCw, DownloadCloud } from "lucide-react";
-import { loadShopPricingConfig, GARMENT_CATEGORIES, getEnabledTechniques } from "@/components/shared/pricing";
+import { loadShopPricingConfig, GARMENT_CATEGORIES, getEnabledTechniques, fmtMoney } from "@/components/shared/pricing";
 import { shopScope } from "@/lib/shopScope";
+import { summarizeBrokerAR } from "@/lib/broker/brokerAr";
 
 // Account → QuickBooks Integration section (presentational). Extracted
 // verbatim from Account.jsx as a pure decomposition — no behavior change.
@@ -263,6 +264,7 @@ export default function QuickBooksSection({
           <QbTaxModeEditor user={user} />
           <QbEditsAuthoritativeEditor user={user} />
           <QbBrokerBillingEditor user={user} />
+          <QbBrokerArSection user={user} />
           {/* Card-fee disclosure control REMOVED 2026-09-29 (Joe: "remove that
               toggle option for now"). QuickBooks Payments has no
               percentage-based surcharging on this account — Intuit hasn't
@@ -562,6 +564,118 @@ function QbBrokerBillingEditor({ user }) {
           {error && <div className="text-xs text-red-600">{error}</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+// Broker accounts-receivable — what brokers still owe on the wholesale invoices
+// this shop billed them (Phase A). Lazy-loaded on expand (loading the shop's
+// orders isn't worth doing on every Account page view). Read-only: the shop
+// settles these in QuickBooks; the per-invoice link opens the QB invoice.
+function QbBrokerArSection({ user }) {
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [ar, setAr] = useState(null);
+  const [openBroker, setOpenBroker] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      // Cap + recent-first: broker invoices are a small slice of orders, and
+      // this is a summary, not an exhaustive ledger.
+      const orders = await base44.entities.Order.filter(
+        { shop_owner: shopScope(user) },
+        "-created_date",
+        500,
+      );
+      setAr(summarizeBrokerAR(orders || []));
+      setLoaded(true);
+    } catch (err) {
+      setError(err?.message || "Could not load broker invoices.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-emerald-200 pt-3 mt-3">
+      <div className="text-sm font-semibold text-slate-700 mb-1">Broker invoices owed to you</div>
+      <p className="text-xs text-slate-500 mb-2">
+        What brokers still owe on the wholesale invoices you&rsquo;ve billed them. You settle these in QuickBooks.
+      </p>
+      {!loaded ? (
+        <button
+          onClick={load}
+          disabled={loading}
+          className="text-sm font-semibold text-emerald-700 hover:text-emerald-900 transition disabled:opacity-50"
+        >
+          {loading ? "Loading…" : "Show broker invoices…"}
+        </button>
+      ) : error ? (
+        <div className="text-xs text-red-600">{error}</div>
+      ) : ar && ar.invoiceCount === 0 ? (
+        <div className="text-xs text-slate-500">No broker wholesale invoices yet.</div>
+      ) : ar ? (
+        <div className="space-y-3">
+          <div className="flex items-baseline justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+            <span className="text-xs font-semibold text-emerald-600 uppercase tracking-widest">Total outstanding</span>
+            <span className="text-lg font-bold text-emerald-700">
+              {fmtMoney(ar.totalDue)}{!ar.totalDueAmountKnown && "+"}
+            </span>
+          </div>
+          {ar.dueCount === 0 && (
+            <div className="text-xs text-emerald-700 font-semibold">All broker invoices are paid. 🎉</div>
+          )}
+          <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+            {ar.brokers.map((b) => (
+              <div key={b.key || b.email}>
+                <button
+                  onClick={() => setOpenBroker(openBroker === b.key ? null : b.key)}
+                  className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-50 transition"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">{b.name}</div>
+                    <div className="text-xs text-slate-500">
+                      {b.dueCount > 0
+                        ? `${b.dueCount} unpaid of ${b.invoiceCount}`
+                        : `${b.invoiceCount} invoice${b.invoiceCount !== 1 ? "s" : ""} — all paid`}
+                    </div>
+                  </div>
+                  <div className={`text-sm font-bold ${b.dueTotal > 0 || !b.dueAmountKnown ? "text-amber-600" : "text-emerald-600"}`}>
+                    {b.dueCount > 0 ? `${fmtMoney(b.dueTotal)}${!b.dueAmountKnown ? "+" : ""} due` : "Paid"}
+                  </div>
+                </button>
+                {openBroker === b.key && (
+                  <div className="bg-slate-50 px-4 py-2 space-y-1.5">
+                    {b.invoices.map((inv) => (
+                      <div key={inv.orderId} className="flex items-center justify-between text-xs">
+                        <span className="font-mono text-slate-500">{inv.docNumber || inv.orderId}</span>
+                        <span className="flex items-center gap-3">
+                          <span className={inv.paid ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+                            {inv.paid ? "Paid" : (inv.amount != null ? `${fmtMoney(inv.amount)} due` : "Due")}
+                          </span>
+                          {!inv.paid && inv.paymentLink && (
+                            <a
+                              href={inv.paymentLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-teal-600 font-semibold hover:text-teal-700"
+                            >
+                              Open in QuickBooks
+                            </a>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
