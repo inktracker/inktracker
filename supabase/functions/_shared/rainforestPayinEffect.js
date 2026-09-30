@@ -111,6 +111,9 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     platform_fee_cents: Number.isInteger(platformFeeCents) && platformFeeCents >= 0 ? platformFeeCents : null,
     last_event_type: kind,
     last_event_at: event.occurredAt ?? null,
+    // payin.created_at never changes, so re-writing it is harmless; only
+    // written when known so an event without it can't blank it.
+    ...(event.paidAt ? { paid_at: event.paidAt } : {}),
   };
 
   const label = docNumber(quote) ?? (md.quote_number || null);

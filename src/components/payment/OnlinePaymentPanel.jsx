@@ -11,7 +11,7 @@ import { readApproved } from "@/lib/payment/rainforestEvents";
 
 const fmt = (cents) => `$${(Number(cents || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function OnlinePaymentPanel({ session, onPaid }) {
+export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null }) {
   const ref = useRef(null);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -71,6 +71,11 @@ export default function OnlinePaymentPanel({ session, onPaid }) {
         </div>
         <div className="text-xl font-bold text-slate-900 tabular-nums">{fmt(session.amountCents)}</div>
       </div>
+      {Number.isInteger(quotedCents) && quotedCents > 0 && quotedCents !== session.amountCents && (
+        <div className="text-xs text-slate-500">
+          This is the amount on your invoice, including sales tax and any credits. Your quote showed {fmt(quotedCents)}.
+        </div>
+      )}
       {loadError && (
         <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /> {loadError}

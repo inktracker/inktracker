@@ -118,6 +118,9 @@ export function payinToEvent(kind, payin, { reversalCents, occurredAt } = {}) {
     method: methodOf(payin?.method_type),
     metadata: payin?.metadata ?? {},
     occurredAt: occurredAt ?? payin?.updated_at ?? null,
+    // When the customer actually paid — the QuickBooks date, even for a bank
+    // payment that is only booked once it clears days later.
+    paidAt: payin?.created_at ?? null,
     ...(Number.isInteger(reversalCents) ? { reversalCents } : {}),
   };
 }

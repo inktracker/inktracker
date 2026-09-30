@@ -178,10 +178,13 @@ export function buildLevel23({ docNumber, target, liveInvoice, shopPostalCode = 
   const shipTo = String(liveInvoice?.ShipAddr?.PostalCode ?? liveInvoice?.BillAddr?.PostalCode ?? "").trim();
 
   const l23 = {
-    // Tax only belongs to the payment that pays the invoice's lines. A
-    // deposit invoice is untaxed; a partial balance reports 0 rather than
-    // tax it didn't carry.
-    tax_amount: kind === "full" && Number.isFinite(invTax) ? invTax : 0,
+    // The tax this payment carries. A deposit invoice is untaxed. A balance
+    // payment on the final invoice (after a deposit or a QB credit) still
+    // carries ALL of the invoice's tax — the deposit was a prepayment, tax is
+    // billed once on the final invoice — capped at the amount charged.
+    tax_amount: !Number.isFinite(invTax) || invTax < 0 || kind === "deposit"
+      ? 0
+      : Math.min(invTax, Number(target?.amountCents) || 0),
     shipping_amount: 0,
     order_number,
     commodity_code: COMMODITY_CODE,
