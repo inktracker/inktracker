@@ -132,3 +132,9 @@ verify_jwt = false
 
 [functions.artProof]
 verify_jwt = false
+
+[functions.rainforest]
+verify_jwt = false
+
+[functions.rainforestWebhook]
+verify_jwt = false
