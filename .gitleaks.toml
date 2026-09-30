@@ -41,4 +41,13 @@ regexes = [
   # trip the scan. The real VAPID keys live in Supabase/Vercel env vars and
   # never appear in source.
   '''BTBZMqHH6r4Tts7J_aSIgg''',
+
+  # Svix's published webhook-signature verification example (docs.svix.com,
+  # "Verifying manually" — the same fixture Svix ships in its own docs). Used
+  # verbatim in _shared/__tests__/rainforestWebhookAdapter.test.js to prove the
+  # verifier accepts Svix's known-good vector. generic-api-key flags the
+  # `whsec_` assignment on entropy alone. Allowlisted as the EXACT literal, so a
+  # real Svix/Stripe webhook secret would still trip the scan. The real signing
+  # secret lives only in a Supabase function secret, never in source.
+  '''whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw''',
 ]
