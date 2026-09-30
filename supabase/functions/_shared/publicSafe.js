@@ -56,6 +56,13 @@ const BROKER_STRIPPED_QUOTE_KEYS = [
   "qb_doc_number",
   "notes", // shop-internal on broker quotes; client PDF already hides it
 ];
+// DELIBERATELY NOT stripped: qb_broker_client_invoice_id / qb_broker_client_*.
+// Those belong to the BROKER's OWN QuickBooks (a different realm) — the
+// broker's client-facing invoice + pay link, which the end client is MEANT to
+// see and pay on the white-label page. The strip list above is only the SHOP's
+// payable links, which the client must never see. If anyone later tightens
+// this by stripping all qb_* links (e.g. a /^qb_.*link/ regex), EXCLUDE the
+// qb_broker_client_* fields or the broker payment flow silently breaks.
 
 /**
  * Sanitize a quote row for the anonymous payment page. Call AFTER
