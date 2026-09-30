@@ -79,6 +79,19 @@ describe("quoteAlreadyPaid — unchanged from the inline QuotePayment logic", ()
     expect(quoteAlreadyPaid({ status: "Approved", paid: true })).toBe(true);
   });
 
+  it("true for a broker quote whose CLIENT paid the broker (Phase B)", () => {
+    // The end client pays the broker in the broker's own QB → the webhook flips
+    // broker_client_invoice_paid, NOT quote.paid/status. On the white-label page
+    // this is fully settled; without it the paid client saw a live "Approve
+    // Quote" CTA + "we'll be in touch about payment".
+    expect(quoteAlreadyPaid({ status: "Sent to Client", broker_client_invoice_paid: true })).toBe(true);
+  });
+
+  it("false for a broker quote not yet paid by the client", () => {
+    expect(quoteAlreadyPaid({ status: "Sent to Client", broker_client_invoice_paid: false })).toBe(false);
+    expect(quoteAlreadyPaid({ status: "Sent to Client" })).toBe(false);
+  });
+
   it("false on null quote", () => {
     expect(quoteAlreadyPaid(null)).toBe(false);
   });
