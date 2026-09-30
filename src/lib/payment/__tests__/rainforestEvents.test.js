@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readApproved } from "../rainforestEvents.js";
+import { readApproved, readMethodUpdated } from "../rainforestEvents.js";
 
 describe("readApproved", () => {
   it("reads the documented array form and common nestings", () => {
@@ -10,5 +10,15 @@ describe("readApproved", () => {
   it("never throws on junk", () => {
     expect(readApproved(null)).toEqual({ payinId: null, method: null });
     expect(readApproved("x")).toEqual({ payinId: null, method: null });
+  });
+});
+
+describe("readMethodUpdated", () => {
+  it("reads the selected method in the shapes we might get", () => {
+    expect(readMethodUpdated(["ACH"])).toBe("ach");
+    expect(readMethodUpdated([{ method: "CARD" }])).toBe("card");
+    expect(readMethodUpdated({ data: { method_type: "ACH" } })).toBe("ach");
+    expect(readMethodUpdated(null)).toBeNull();
+    expect(readMethodUpdated([{ method: "VENMO" }])).toBeNull();
   });
 });

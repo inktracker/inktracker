@@ -44,6 +44,9 @@ import {
   CLAIM_OUTCOMES,
 } from "../_shared/webhookIdempotency.js";
 import { insertShopNotification } from "../_shared/notifications.js";
+import { sendResendEmail } from "../_shared/resendClient.js";
+import { escapeHtml } from "../_shared/emailSanitize.js";
+import { renderEmailLayout } from "../_shared/emailLayout.ts";
 import { captureError } from "../_shared/observability.ts";
 import { planPayoutDeposit, PAYOUT_PLAN } from "../_shared/rainforestPayout.js";
 import { shopTimezone, localDate } from "../_shared/shopDate.js";
@@ -76,9 +79,41 @@ export type Deps = {
     postDeposit: (c: QbConn, body: unknown) => Promise<Any>;
   };
   now?: () => Date;
+  /** Email sender (Resend by default); injectable for tests. */
+  sendEmail?: (payload: Any) => Promise<Any>;
 };
 
 const ok = (body: unknown = { ok: true }, status = 200) => Response.json(body, { status });
+
+/**
+ * Tell the shop. Every notice goes to the in-app bell (and push, if they
+ * turned it on). ALERTS — a dispute with an evidence deadline, a bounced
+ * bank payment, money not recorded in QuickBooks — are also emailed to the
+ * owner, so they don't sit unseen in the bell. Email failure never blocks
+ * the webhook.
+ */
+async function notifyShop(deps: Deps, n: Any) {
+  await insertShopNotification(deps.admin, n);
+  if (n?.severity !== "alert" || !n?.shopOwner) return;
+  try {
+    const html = renderEmailLayout({
+      shopName: "InkTracker",
+      subhead: "Payments",
+      contentHtml: `<p style="font-size:16px;font-weight:600;margin:0 0 12px">${escapeHtml(n.title)}</p><p style="margin:0 0 16px;line-height:1.5">${escapeHtml(n.body ?? "")}</p><p style="margin:0"><a href="https://www.inktracker.app/Dashboard">Open InkTracker</a></p>`,
+    });
+    const send = deps.sendEmail ?? ((payload: Any) => sendResendEmail(payload));
+    const r = await send({
+      from: `InkTracker <${deps.env("FROM_EMAIL") ?? "quotes@info.inktracker.app"}>`,
+      to: [n.shopOwner],
+      subject: n.title,
+      html,
+      text: `${n.title}\n\n${n.body ?? ""}`,
+    });
+    if (r && r.ok === false) console.error(`[rainforestWebhook] alert email not sent: ${r.reason ?? r.status}`);
+  } catch (err) {
+    console.error(`[rainforestWebhook] alert email threw: ${err}`);
+  }
+}
 
 // deno-lint-ignore no-explicit-any
 function opsAlert(message: string, context: Record<string, unknown> = {}) {
@@ -143,7 +178,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
   // sweep retries silently after that).
   const notifyOnce = async (n: Any) => {
     if (row.qb_post_notified_at) return;
-    await insertShopNotification(admin, n);
+    await notifyShop(deps, n);
     await admin.from("processor_payments").update({ qb_post_notified_at: now.toISOString() }).eq("processor_payin_id", payinId);
   };
 
@@ -217,7 +252,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     if (wErr) opsAlert(`posted QB payment ${qbPaymentId} but ledger write failed`, { payinId, error: wErr.message });
 
     if (app.overpaid) {
-      await insertShopNotification(admin, {
+      await notifyShop(deps, {
         shopOwner: row.shop_owner,
         eventType: "payment_overpaid",
         severity: "alert",
@@ -292,7 +327,7 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
       updated_at: now.toISOString(),
     }).eq("processor_payout_id", depositId);
     if (!existing?.review_notified_at) {
-      await insertShopNotification(admin, <Any>{
+      await notifyShop(deps, <Any>{
         shopOwner: account.shop_owner,
         eventType: "payout_needs_review",
         severity: plan.notify.severity,
@@ -501,7 +536,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       // A switched-on shop just lost the ability to take payments here.
       const lost = ["suspended", "deactivated", "canceled"].includes(String(route.merchantStatus ?? ""));
       if (lost && before?.enabled && before.merchant_status === "active") {
-        await insertShopNotification(admin, <Any>{
+        await notifyShop(deps, <Any>{
           shopOwner: before.shop_owner,
           eventType: "payments_account_on_hold",
           severity: "alert",
@@ -553,7 +588,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       }
     }
     if (plan.notify && account?.shop_owner) {
-      await insertShopNotification(admin, <Any>{
+      await notifyShop(deps, <Any>{
         shopOwner: account.shop_owner,
         eventType: `payment_${event.kind}`,
         severity: plan.notify.severity,
