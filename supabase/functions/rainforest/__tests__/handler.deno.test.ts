@@ -240,7 +240,11 @@ Deno.test("payinSession: broker quotes never take payment here", async () => {
 
 Deno.test("payRail: token-gated, answers the rail only", async () => {
   const on = withQuote({ ...ACTIVE, enabled: true });
-  assertEquals(await (await call(on, "", { action: "payRail", id: QUOTE_ID, token: "tok" })).json(), { rail: "processor" });
+  const calls: RfCall[] = [];
+  const j = await (await call(on, "", { action: "payRail", id: QUOTE_ID, token: "tok" }, undefined, calls)).json();
+  assertEquals(j.rail, "processor");
+  assertEquals(j.display, { shopName: "Biota Mfg", logoUrl: null, docNumber: "Q-2026-HKSO", customerName: "Tahoe Gift Co" });
+  assertEquals(calls.length, 0); // no Rainforest calls on page load (link scanners)
   assertEquals((await call(on, "", { action: "payRail", id: QUOTE_ID, token: "x" })).status, 404);
   assertEquals(await (await call(withQuote(ACTIVE), "", { action: "payRail", id: QUOTE_ID, token: "tok" })).json(), { rail: "qb" });
 });

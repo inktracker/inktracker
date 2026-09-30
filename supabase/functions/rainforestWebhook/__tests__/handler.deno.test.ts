@@ -74,7 +74,7 @@ function setup({ qbConnected = true, qbPostFails = false, balance = 1643, deposi
       connect: () => Promise.resolve(qbConnected ? { token: "t", realmId: "r" } : null),
       getInvoice: () => Promise.resolve({ Id: "3815", Balance: balance, TotalAmt: 1643, CustomerRef: { value: "61" } }),
       paymentMethods: () => Promise.resolve([{ Id: "3", Name: "Credit Card", Type: "CREDIT_CARD" }, { Id: "7", Name: "ACH" }]),
-      findPaymentByRef: () => Promise.resolve(null),
+      recentCustomerPayments: () => Promise.resolve([]),
       postPayment: (_c, body) => {
         if (failNext) { failNext = false; return Promise.reject(new Error("QuickBooks 503")); }
         posted.push(body);
@@ -278,7 +278,7 @@ Deno.test("merchant suspended, reactivated, suspended again → each change appl
 
 Deno.test("QuickBooks lookup failing → nothing posted (no blind double-post), retried later", async () => {
   const { db, deps, posted } = setup();
-  deps.qb.findPaymentByRef = () => Promise.reject(new Error("QuickBooks 500"));
+  deps.qb.recentCustomerPayments = () => Promise.reject(new Error("QuickBooks 500"));
   const r = await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
   assertEquals(r.status, 500);
   assertEquals(posted.length, 0);
@@ -323,4 +323,25 @@ Deno.test("switched-on shop suspended → told to re-send open invoices; a pendi
   other.db.tables.processor_accounts[0].enabled = false;
   await handle(await request({ event_type: "merchant.suspended", data: { merchant_id: "mid_1", status: "SUSPENDED" } }), other.deps);
   assertEquals(other.db.tables.notifications.length, 0);
+});
+
+Deno.test("payment already in QuickBooks (crash after posting) → recorded, not posted again", async () => {
+  const { db, deps, posted } = setup();
+  deps.qb.recentCustomerPayments = (_c, customerRef) => Promise.resolve(customerRef === "61"
+    ? [{ Id: "777", PaymentRefNum: "other" }, { Id: "501", PaymentRefNum: "pyi_1" }]
+    : []);
+  const r = await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  assertEquals((await r.json()).posted, "already_in_qb");
+  assertEquals(posted.length, 0);
+  assertEquals(db.tables.processor_payments[0].qb_payment_id, "501");
+});
+
+Deno.test("QuickBooks dates are the shop's calendar date, not UTC", async () => {
+  const { db, deps, posted, deposits } = setup({ deposit: { ...cleanDeposit, created_at: "2026-10-04T02:30:00Z" }, activities: [payinActivity] });
+  db.tables.shops = [{ owner_email: OWNER, timezone: "America/Los_Angeles" }];
+  // 6pm PDT Oct 2 = 01:00 UTC Oct 3
+  await handle(await request({ event_type: "payin.processing", data: payin({ updated_at: "2026-10-03T01:00:00Z" }) }), deps);
+  assertEquals((posted[0] as Record<string, unknown>).TxnDate, "2026-10-02");
+  await handle(await request({ event_type: "deposit.succeeded", data: { deposit_id: "dep_1" } }, { msgId: "d1" }), deps);
+  assertEquals((deposits[0] as Record<string, unknown>).TxnDate, "2026-10-03");
 });

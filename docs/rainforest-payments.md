@@ -142,7 +142,7 @@ Each item needs a pass in the Rainforest sandbox **and** the QuickBooks sandbox 
 **QuickBooks API behaviour (verify, don't assume)**
 - [ ] A Deposit with linked Payments **plus a negative `DepositLineDetail` fee line** is accepted, and its total = payments − fee
 - [ ] A Payment with `Line: []` (fully unapplied) is accepted as a customer credit
-- [ ] `SELECT … FROM Payment WHERE PaymentRefNum = '…'` is queryable (dedupe); if not, dedupe relies on the ledger's `qb_payment_id` alone
+- [ ] Dedupe before posting reads the customer's recent Payments (`WHERE CustomerRef = …`, the same query qbSync already uses) and matches `PaymentRefNum` / the payin id in the memo. Confirm both are stored on sandbox payments.
 - [ ] Sparse update with `AllowOnlineCreditCardPayment:false` / `AllowOnlineACHPayment:false` removes the Pay button from the QB-sent invoice and portal
 - [ ] With both flags false, `include=invoiceLink` returns no link (otherwise the refresh writers would repopulate `qb_payment_link`, which is harmless because the processor-rail screens ignore it, but confirm)
 - [ ] Posting a Payment fires QuickBooks' own webhook → `qbWebhook` runs the paid pipeline (convert, cascade, notify) exactly as a QB Payments payment does

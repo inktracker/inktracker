@@ -4,6 +4,7 @@ import {
   buildQbPaymentBody,
   buildQbDepositBody,
   planReversal,
+  findBookedPayment,
 } from "../rainforestQbBooks.js";
 
 // Biota's real QuickBooks payment methods (pulled 2026-09-30).
@@ -147,5 +148,16 @@ describe("planReversal", () => {
   it("refuses unknown kinds and bad amounts", () => {
     expect(planReversal({ kind: "gift", amountCents: 1 }).ok).toBe(false);
     expect(planReversal({ kind: "refund", amountCents: 0 }).ok).toBe(false);
+  });
+});
+
+describe("findBookedPayment", () => {
+  it("matches by ref number (last 21 chars) or the full payin id in the memo", () => {
+    const id = "pyi_2abcDEFghiJKLmnoPQRstuVWX";
+    expect(findBookedPayment([{ Id: "1", PaymentRefNum: "x" }, { Id: "2", PaymentRefNum: id.slice(-21) }], id).Id).toBe("2");
+    expect(findBookedPayment([{ Id: "3", PrivateNote: `Paid online via InkTracker (Rainforest payment ${id})` }], id).Id).toBe("3");
+    expect(findBookedPayment([{ Id: "4", PaymentRefNum: "1234" }], id)).toBeNull();
+    expect(findBookedPayment(null, id)).toBeNull();
+    expect(findBookedPayment([{ Id: "5", PaymentRefNum: "" }], "")).toBeNull();
   });
 });

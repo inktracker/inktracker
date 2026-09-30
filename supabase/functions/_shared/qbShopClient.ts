@@ -87,9 +87,13 @@ export async function qbListPaymentMethods(conn: QbConn): Promise<any[]> {
   return j?.QueryResponse?.PaymentMethod ?? [];
 }
 
-/** Existing QB Payment for this processor payin (dedupe before posting). */
+/**
+ * A customer's most recent QB Payments (dedupe before posting). Filters on
+ * CustomerRef — the same query qbSync's deposit settlement uses in
+ * production — and the caller matches the payin with findBookedPayment.
+ */
 // deno-lint-ignore no-explicit-any
-export async function qbFindPaymentByRef(conn: QbConn, paymentRefNum: string): Promise<any | null> {
-  const j = await qbQuery(conn, `SELECT Id, TotalAmt, PrivateNote FROM Payment WHERE PaymentRefNum = '${escapeQbStringLiteral(paymentRefNum)}'`);
-  return j?.QueryResponse?.Payment?.[0] ?? null;
+export async function qbRecentCustomerPayments(conn: QbConn, customerRef: string): Promise<any[]> {
+  const j = await qbQuery(conn, `SELECT * FROM Payment WHERE CustomerRef = '${escapeQbStringLiteral(String(customerRef))}' ORDERBY MetaData.CreateTime DESC MAXRESULTS 200`);
+  return j?.QueryResponse?.Payment ?? [];
 }
