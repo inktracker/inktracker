@@ -106,15 +106,27 @@ Roles: status is visible to the shop's team (not brokers). Owner or manager
 maps QB accounts. **Only the owner** switches it on or off, because it's
 billing.
 
-## Still to build (needs Rainforest sandbox + API docs)
+## Status
 
-- [ ] Merchant onboarding session + the onboarding component on Account → Payments
-- [ ] `createPayinSession` (anon, token-gated, amount from live QB) + the payment component on QuotePayment and a new InvoicePayment page
-- [x] `rainforestWebhook`: Svix signature check, event mapping → `PAYIN_EVENT`, claim via `processed_webhook_events`, `planPayinEffect`, QB Payment posted once (ledger claim + ref-number lookup). **Confirm on the first sandbox delivery that the headers are `svix-id` / `svix-timestamp` / `svix-signature` and the secret starts `whsec_`.**
-- [ ] Backstop sweep (nightly, with qbReconcile): retry `processor_payments` rows that are money-in with `qb_payment_id` null (QB was disconnected/down past Rainforest's ≈28h retries), then switch the "not recorded" notice to say it will be recorded automatically
-- [ ] Payout reconciliation → `buildQbDepositBody`
-- [ ] Billing profile for the 2.99% / 1% platform fees
-- [ ] Account → Payments card
+Built (dormant):
+
+- [x] Merchant sign-up: `startOnboarding` creates the merchant once, prefilled from the shop profile (never SSN/tax id), plus a 1-hour session scoped to that merchant. The Account → Payments card embeds Rainforest's form. Owner only, paid plans only.
+- [x] QuickBooks account mapping + owner-only on/off switch (Account → Payments)
+- [x] Customer payment: `payRail` / `payinSession` (public, token-gated). The quote page's "Approve & Pay" opens the embedded form for switched shops. New `/invoicepayment` page for invoice emails and PDFs.
+- [x] Level 2/3 data in Rainforest's `level_2_3` shape, with exact arithmetic
+- [x] `rainforestWebhook`: signature check, event mapping, ledger, QB Payment exactly once
+- [x] Payouts → QB Deposit (clean payouts only; anything else is sent to the shop with a breakdown)
+- [x] Nightly sweep for anything not recorded (gated by the `RAINFOREST_SWEEP` repo variable)
+- [x] CSP (report-only) allows `static.rainforestpay.com`, `*.rainforestpay.com`, Plaid
+
+Needs Joe / Rainforest before going live:
+
+- [ ] **Payment Processing Agreement page.** Rainforest's sign-up form requires a terms link titled "Payment Processing Agreement" with their required language and a fee table. It's a legal document for Joe to approve (and ideally a lawyer). Then set `RAINFOREST_TERMS_URL`. It's a placeholder until then.
+- [ ] Billing profile (2.99% / 1%, no surcharges) created in the Rainforest portal; it must exist before the first merchant
+- [ ] Webhook endpoint in the portal → `…/functions/v1/rainforestWebhook`; secret → `RAINFOREST_WEBHOOK_SECRET`
+- [ ] Secrets: `RAINFOREST_API_KEY`, `RAINFOREST_API_BASE`, and finally `RAINFOREST_ENABLED=true`
+- [ ] Confirm with Rainforest: Svix headers, `address` vs `billing_contact`, commodity code `8212`, whether `ach_rate_cap: 0` means no cap
+- [ ] Apple Pay / Google Pay: not enabled (`allowed-methods="CARD,ACH"`). If added, `Permissions-Policy: payment` needs Rainforest's origin.
 
 ## Deploy order (when it's time)
 

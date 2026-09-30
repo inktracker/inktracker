@@ -32,6 +32,7 @@ import { isQuoteDateExpired } from "@/lib/quotes/quoteExpiry";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
+import OnlinePaymentPanel from "@/components/payment/OnlinePaymentPanel";
 import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { cardSurchargeNote } from "@/lib/payment/cardSurcharge";
@@ -214,16 +215,20 @@ export default function QuotePayment() {
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  // checkoutLoading was used by the removed Stripe path. Keeping the
-  // variable name in the JSX (alongside approveLoading) — always false
-  // now so the button disable state degrades to "while approving" only.
-  const checkoutLoading = false;
+  // True while an InkTracker payment session is being opened (the QuickBooks
+  // path redirects immediately, so it never sets this).
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const [recaptchaReady, setRecaptchaReady] = useState(false);
   const [approveLoading, setApproveLoading] = useState(false);
   const [approveError, setApproveError] = useState("");
   const [approveSuccess, setApproveSuccess] = useState(false);
   const [previewArt, setPreviewArt] = useState(null);
+  // InkTracker payments (Rainforest): "processor" when this shop takes
+  // payment on InkTracker instead of a QuickBooks link. Asked once per load;
+  // anything but a clear "processor" keeps the QuickBooks flow.
+  const [payRail, setPayRail] = useState("qb");
+  const [paySession, setPaySession] = useState(null);
 
   const RECAPTCHA_SITE_KEY = "6LdFgbIsAAAAAKlrO8Sv9y-3HUJv4f-1hjHEjsi9";
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -291,6 +296,15 @@ export default function QuotePayment() {
     load();
   }, [quoteDbId]);
 
+  useEffect(() => {
+    if (!quoteDbId || !publicToken) return undefined;
+    let alive = true;
+    base44.functions.invoke("rainforest", { action: "payRail", docType: "quote", id: quoteDbId, token: publicToken })
+      .then((r) => { if (alive && r?.data?.rail === "processor") setPayRail("processor"); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [quoteDbId, publicToken]);
+
   const alreadyPaid = quoteAlreadyPaid(quote);
 
   // Includes "Converted to Order" / "Client Approved" / converted_order_id —
@@ -349,7 +363,15 @@ export default function QuotePayment() {
   // Either rail collects: prefer the deposit when it's live, otherwise the
   // final invoice's link (which bills the correct remaining balance once a
   // deposit has settled onto it).
-  const canCollectPayment = depositAvailable || qbAvailable;
+  // InkTracker payments: the server decides the amount from the live QB
+  // invoice (and refuses stale/paid ones with a plain message), so the page
+  // only needs an invoice to exist.
+  const onlinePay = payRail === "processor";
+  const onlinePayAvailable = onlinePay && !isBrokerQuote(quote) &&
+    Boolean(quote?.qb_invoice_id || quote?.qb_deposit_invoice_id);
+  // Deposit routing for the button label, on either rail.
+  const depositRoute = depositAvailable || (onlinePay && depositDue);
+  const canCollectPayment = onlinePay ? onlinePayAvailable : (depositAvailable || qbAvailable);
 
   // Broker quotes stay approve-only above (the shop's QB/Stripe are gated off).
   // But if the broker invoiced their client from their OWN QuickBooks, the
@@ -427,6 +449,21 @@ export default function QuotePayment() {
     if (!quoteAlreadyApproved(quote)) {
       const approved = await handleApprove();
       if (!approved) return;
+    }
+
+    if (onlinePay) {
+      setCheckoutLoading(true);
+      try {
+        const r = await base44.functions.invoke("rainforest", { action: "payinSession", docType: "quote", id: quote.id, token: publicToken });
+        const d = r?.data;
+        if (d?.payable && d.sessionKey && d.payinConfigId) setPaySession(d);
+        else setCheckoutError(d?.message || "Online payment isn't available right now. Please contact the shop.");
+      } catch {
+        setCheckoutError("Online payment isn't available right now. Please try again in a moment.");
+      } finally {
+        setCheckoutLoading(false);
+      }
+      return;
     }
 
     if (window.self !== window.top) {
@@ -1028,7 +1065,7 @@ export default function QuotePayment() {
             // Label follows ROUTING (depositAvailable), never just the pct:
             // a quote with a stray pct but no live deposit vehicle routes to
             // the full-pay link, so the button must say the full amount.
-            if (depositAvailable && !depositPaid) {
+            if (depositRoute && !depositPaid) {
               buttonLabel = `Approve & Pay Deposit ${fmtMoney(depositAmount)}`;
               chargeAmount = depositAmount;
               subLabel = depositPct > 0
@@ -1043,7 +1080,11 @@ export default function QuotePayment() {
 
             // QuickBooks is the only live payment rail (Stripe removed at
             // launch, PR #201) — no state should claim otherwise.
-            const securityLabel = "Secure payment powered by QuickBooks";
+            const securityLabel = onlinePay ? "Secure payment powered by Rainforest" : "Secure payment powered by QuickBooks";
+
+            if (paySession) {
+              return <OnlinePaymentPanel session={paySession} />;
+            }
 
             return (
               <>
@@ -1069,7 +1110,7 @@ export default function QuotePayment() {
                     QuickBooks. See src/lib/payment/cardSurcharge.js. */}
                 {(() => {
                   const sc = shop?.card_surcharge;
-                  if (!sc?.enabled) return null;
+                  if (onlinePay || !sc?.enabled) return null;
                   const note = cardSurchargeNote({ total: chargeAmount, ratePct: sc.rate_pct });
                   if (!note) return null;
                   return (

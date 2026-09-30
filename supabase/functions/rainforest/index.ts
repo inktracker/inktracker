@@ -11,6 +11,7 @@
 //   setEnabled       → switch InkTracker payments on/off (OWNER only)
 //
 // Public (customer) action, no sign-in, token-gated like the quote page:
+//   payRail          → { docType, id, token } → { rail } only (page load)
 //   payinSession     → { docType: "quote"|"invoice", id, token } → a payment
 //                      session for the LIVE QuickBooks balance, or a reason
 //                      it can't be paid here
@@ -99,20 +100,39 @@ const CUSTOMER_REASON: Record<string, string> = {
   in_flight: "A payment is already being processed for this invoice. Bank payments take a few business days to clear.",
 };
 
-/** Public: build a payment session for a quote or invoice. */
-async function payinSession(body: Any, deps: Deps) {
-  const { admin } = deps;
+/** Load a quote/invoice for the public pay page, token-checked. */
+async function loadPublicDoc(admin: Any, body: Any) {
   const docType = body.docType === "invoice" ? "invoice" : "quote";
   const id = String(body.id ?? "");
-  if (!UUID_RE.test(id)) return json({ error: "Not found" }, 404);
-
+  if (!UUID_RE.test(id)) return null;
   const table = docType === "invoice" ? "invoices" : "quotes";
   const cols = docType === "invoice"
     ? "id, invoice_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, public_token, customer_name, paid"
     : "id, quote_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, broker_email, public_token, customer_name, customer_email, paid";
   const { data: doc } = await admin.from(table).select(cols).eq("id", id).maybeSingle();
   // Same answer for "no such doc" and "wrong token" — don't confirm ids exist.
-  if (!doc || !safeEquals(String(body.token ?? ""), String(doc.public_token ?? ""))) return json({ error: "Not found" }, 404);
+  if (!doc || !safeEquals(String(body.token ?? ""), String(doc.public_token ?? ""))) return null;
+  return { doc, docType };
+}
+
+/** Public: which way this document is paid (no session created). */
+async function payRail(body: Any, deps: Deps) {
+  const found = await loadPublicDoc(deps.admin, body);
+  if (!found) return json({ error: "Not found" }, 404);
+  const { doc } = found;
+  const rail = await loadPaymentRail(deps.admin, doc.shop_owner, {
+    envEnabled: flagOn(deps.env("RAINFOREST_ENABLED")),
+    broker: Boolean(doc.broker_id || doc.broker_email),
+  });
+  return json({ rail: rail === RAIL.PROCESSOR ? "processor" : "qb" });
+}
+
+/** Public: build a payment session for a quote or invoice. */
+async function payinSession(body: Any, deps: Deps) {
+  const { admin } = deps;
+  const found = await loadPublicDoc(admin, body);
+  if (!found) return json({ error: "Not found" }, 404);
+  const { doc, docType } = found;
 
   const envEnabled = flagOn(deps.env("RAINFOREST_ENABLED"));
   const broker = Boolean(doc.broker_id || doc.broker_email);
@@ -125,6 +145,15 @@ async function payinSession(body: Any, deps: Deps) {
   const account = await loadAccount(admin, doc.shop_owner);
   if (!account?.merchant_id) return json({ rail: "qb" });
 
+  // What the page shows at the top (never internal fields).
+  const { data: shopProfile } = await admin.from("profiles").select("shop_name, logo_url, zip").eq("email", doc.shop_owner).maybeSingle();
+  const display = {
+    shopName: shopProfile?.shop_name ?? null,
+    logoUrl: shopProfile?.logo_url ?? null,
+    docNumber: docType === "invoice" ? doc.invoice_id : doc.quote_id,
+    customerName: doc.customer_name ?? null,
+  };
+
   // A payment already in flight for this document (bank payment clearing, or
   // a card payment not yet in QuickBooks) → don't open a second one.
   const invoiceIds = [doc.qb_invoice_id, doc.qb_deposit_invoice_id].filter(Boolean).map(String);
@@ -135,11 +164,11 @@ async function payinSession(body: Any, deps: Deps) {
       .in("qb_invoice_id", invoiceIds)
       .in("status", ["processing", "succeeded"])
       .is("qb_payment_id", null);
-    if (inflight?.length) return json({ rail: "processor", payable: false, reason: "in_flight", message: CUSTOMER_REASON.in_flight });
+    if (inflight?.length) return json({ rail: "processor", payable: false, reason: "in_flight", message: CUSTOMER_REASON.in_flight, display });
   }
 
   const conn = await deps.qb.connect(doc.shop_owner);
-  if (!conn) return json({ rail: "processor", payable: false, reason: "qb_unavailable", message: CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT] });
+  if (!conn) return json({ rail: "processor", payable: false, reason: "qb_unavailable", message: CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT], display });
   const [liveFinal, liveDeposit] = await Promise.all([
     doc.qb_invoice_id ? deps.qb.getInvoice(conn, String(doc.qb_invoice_id)) : Promise.resolve(null),
     doc.qb_deposit_invoice_id && !doc.qb_invoice_id ? deps.qb.getInvoice(conn, String(doc.qb_deposit_invoice_id)) : Promise.resolve(null),
@@ -147,10 +176,9 @@ async function payinSession(body: Any, deps: Deps) {
   // Deposit invoices only exist when the deposit path minted one, so the
   // server can always route to them (the frontend kill switch hides the UI).
   const target = choosePayTarget({ quote: doc, depositsEnabled: true, liveFinal, liveDeposit });
-  if (!target.ok) return json({ rail: "processor", payable: false, reason: target.reason, message: CUSTOMER_REASON[target.reason] ?? CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT] });
+  if (!target.ok) return json({ rail: "processor", payable: false, reason: target.reason, message: CUSTOMER_REASON[target.reason] ?? CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT], display });
 
   const liveInvoice = target.kind === "deposit" ? liveDeposit : liveFinal;
-  const { data: shopProfile } = await admin.from("profiles").select("zip").eq("email", doc.shop_owner).maybeSingle();
   const config = await deps.rf.post("/v1/payin_configs", buildPayinConfig({
     merchantId: account.merchant_id,
     doc,
@@ -171,6 +199,7 @@ async function payinSession(body: Any, deps: Deps) {
     allowedMethods: "CARD,ACH",
     scriptUrl: componentScripts(deps.rf.base).payment,
     pricing: { card: formatRatePct("card"), ach: formatRatePct("ach") },
+    display,
   });
 }
 
@@ -180,6 +209,7 @@ export async function handle(req: Request, deps: Deps) {
   const action = String(body.action || "status");
 
   if (action === "payinSession") return payinSession(body, deps);
+  if (action === "payRail") return payRail(body, deps);
 
   const token = body.accessToken || req.headers.get("Authorization")?.replace("Bearer ", "") || "";
   if (!token) return json({ error: "Unauthorized" }, 401);
