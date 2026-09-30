@@ -15,12 +15,19 @@ import { createBrokerClientInvoice } from "../createBrokerClientInvoice";
 
 const session = { access_token: "tok" };
 
-function mockBase44(invokeResult) {
+function mockBase44(invokeResult, freshRow) {
   const invoke = vi.fn(async () => invokeResult ?? {
     data: { qbInvoiceId: "BQB-1", qbDocNumber: "Q-2026-9", paymentLink: "https://broker-pay" },
   });
   const quoteUpdate = vi.fn(async (id, patch) => ({ id, ...patch }));
-  return { b: { functions: { invoke }, entities: { Quote: { update: quoteUpdate } } }, invoke, quoteUpdate };
+  // Quote.get is the authoritative pre-create re-read. Default: a fresh row with
+  // no invoice id (not yet invoiced). Pass `freshRow` to simulate a concurrent
+  // invoice that landed after the in-memory object was captured.
+  const quoteGet = vi.fn(async (id) => (freshRow !== undefined ? freshRow : { id }));
+  return {
+    b: { functions: { invoke }, entities: { Quote: { update: quoteUpdate, get: quoteGet } } },
+    invoke, quoteUpdate, quoteGet,
+  };
 }
 
 // A broker quote carrying BOTH price sets. Client price is higher than wholesale.
@@ -51,6 +58,28 @@ describe("createBrokerClientInvoice — guards", () => {
     const { b } = mockBase44();
     const r = await createBrokerClientInvoice({ base44: b, quote: brokerQuote, session: {} });
     expect(r.ok).toBe(false);
+  });
+
+  it("refuses when the quote has no client pricing (would bill wholesale)", async () => {
+    // Legacy/partial broker row: client_total is 0, so toCustomerFacingQuote
+    // would fall back to wholesale. Must NOT invoice the client at wholesale.
+    const { b, invoke } = mockBase44();
+    const noClient = { ...brokerQuote, client_total: 0, client_subtotal: 0 };
+    const r = await createBrokerClientInvoice({ base44: b, quote: noClient, session });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/no client pricing/i);
+    expect(invoke).not.toHaveBeenCalled(); // never reached QB
+  });
+
+  it("re-reads the DB and skips a duplicate when the passed object is STALE", async () => {
+    // The in-memory quote has no invoice id (stale), but the DB row already
+    // carries one (a concurrent/earlier send). The pre-create re-read wins and
+    // no second invoice is created.
+    const { b, invoke } = mockBase44(undefined, { id: "q1", qb_broker_client_invoice_id: "BQB-EXISTS" });
+    const r = await createBrokerClientInvoice({ base44: b, quote: brokerQuote, session });
+    expect(r.skipped).toBe("already_invoiced");
+    expect(r.qbInvoiceId).toBe("BQB-EXISTS");
+    expect(invoke).not.toHaveBeenCalled(); // no duplicate created
   });
 });
 

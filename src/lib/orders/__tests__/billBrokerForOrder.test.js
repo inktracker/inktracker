@@ -19,19 +19,23 @@ import { billBrokerForOrder } from "../billBrokerForOrder";
 
 const session = { access_token: "tok" };
 
-function mockBase44({ invokeResult, customers = [] } = {}) {
+function mockBase44({ invokeResult, customers = [], freshOrder } = {}) {
   const invoke = vi.fn(async () => invokeResult ?? { data: { qbInvoiceId: "QB-1", qbDocNumber: "ORD-2026-9", paymentLink: "https://pay" } });
   const orderUpdate = vi.fn(async (id, patch) => ({ id, ...patch }));
   const customerCreate = vi.fn(async (row) => ({ id: "cust-new", ...row }));
+  // Order.get is the authoritative pre-bill re-read. Default: a fresh row with
+  // no invoice id (not yet billed). Pass `freshOrder` to simulate a concurrent
+  // bill that landed after the in-memory object was captured.
+  const orderGet = vi.fn(async (id) => (freshOrder !== undefined ? freshOrder : { id }));
   return {
     b: {
       functions: { invoke },
       entities: {
         Customer: { filter: vi.fn(async () => customers), create: customerCreate },
-        Order: { update: orderUpdate },
+        Order: { update: orderUpdate, get: orderGet },
       },
     },
-    invoke, orderUpdate, customerCreate,
+    invoke, orderUpdate, customerCreate, orderGet,
   };
 }
 
@@ -66,6 +70,17 @@ describe("billBrokerForOrder — guards", () => {
     const { b } = mockBase44();
     const r = await billBrokerForOrder({ base44: b, order: { ...brokerOrder, line_items: [] }, session });
     expect(r.ok).toBe(false);
+  });
+
+  it("re-reads the DB and skips a duplicate when the passed order is STALE", async () => {
+    // In-memory order has no invoice id (stale), but the DB row already carries
+    // one (completion re-ran, or a retry after the idempotency window closed).
+    // The pre-bill re-read wins — the broker is never billed twice.
+    const { b, invoke } = mockBase44({ freshOrder: { id: "o1", qb_broker_invoice_id: "QB-EXISTS" } });
+    const r = await billBrokerForOrder({ base44: b, order: brokerOrder, session });
+    expect(r.skipped).toBe("already_billed");
+    expect(r.qbInvoiceId).toBe("QB-EXISTS");
+    expect(invoke).not.toHaveBeenCalled(); // no duplicate bill
   });
 });
 

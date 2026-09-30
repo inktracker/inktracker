@@ -29,6 +29,31 @@ export async function createBrokerClientInvoice({ base44, quote, session }) {
     }
     if (!session?.access_token) return { ok: false, error: "Not signed in." };
 
+    // Re-read the tracking column straight from the DB right before creating.
+    // The passed quote object can be stale (a "Send to Client" repeated after
+    // the qbSync server-side idempotency window has closed) — without this a
+    // second send would create a DUPLICATE client invoice in the broker's QB.
+    // The in-memory guard above stays for the common fast path; this is the
+    // authority. On a read failure we fall through — qbSync's idempotencyKey is
+    // still a backstop, and we never want to block a send on a transient read.
+    try {
+      const fresh = await base44.entities.Quote.get(quote.id);
+      if (fresh?.qb_broker_client_invoice_id) {
+        return { ok: false, skipped: "already_invoiced", qbInvoiceId: fresh.qb_broker_client_invoice_id };
+      }
+    } catch { /* transient read error — fall through to the server-side idempotencyKey */ }
+
+    // Guard against wholesale leaking into the CLIENT invoice. When a broker
+    // quote has no real client stamps (a legacy/partial row where client_total
+    // is 0/NULL), toCustomerFacingQuote falls back to the WHOLESALE line totals
+    // — so building here would bill the end client the shop's wholesale price
+    // (too low, and it exposes wholesale). Every quote saved through
+    // BrokerQuoteEditor stamps both sides, so this only trips on a broken row;
+    // refuse rather than send the wrong number to the client.
+    if (!(Number(quote.client_total) > 0)) {
+      return { ok: false, error: "This quote has no client pricing yet — re-save it before invoicing the client." };
+    }
+
     // CLIENT-priced payload + the broker's own client tax.
     const clientFacing = toCustomerFacingQuote(quote);
     const invoicePayload = buildQBInvoicePayload(clientFacing);

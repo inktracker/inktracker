@@ -27,6 +27,19 @@ export async function billBrokerForOrder({ base44, order, session }) {
       return { ok: false, error: "Order has no line items to bill." };
     }
 
+    // Re-read the tracking column from the DB right before billing. The passed
+    // order object can be stale (completion re-run, or a retry after the qbSync
+    // idempotency window closed) — without this the shop would bill the broker
+    // TWICE for the same order. The in-memory guard above stays for the fast
+    // path; this is the authority. On a read failure fall through (qbSync's
+    // idempotencyKey is the backstop) — never block completion on a read.
+    try {
+      const fresh = await base44.entities.Order.get(order.id);
+      if (fresh?.qb_broker_invoice_id) {
+        return { ok: false, skipped: "already_billed", qbInvoiceId: fresh.qb_broker_invoice_id };
+      }
+    } catch { /* transient read error — fall through to the server-side idempotencyKey */ }
+
     const brokerEmail = String(order.broker_email || order.broker_id || "").toLowerCase().trim();
     if (!brokerEmail) return { ok: false, error: "Broker has no email to bill to." };
 
