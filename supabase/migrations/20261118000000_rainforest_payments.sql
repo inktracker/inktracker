@@ -93,6 +93,17 @@ create table if not exists public.processor_payouts (
 );
 create index if not exists processor_payouts_shop_idx on public.processor_payouts (shop_owner, payout_date desc);
 
+-- ── Invoice pay page token ─────────────────────────────────────────────
+-- Quotes already carry public_token for the customer's pay page. Invoices
+-- (the order-then-invoice flow) get the same so a processor-rail shop can
+-- send "Pay Invoice" to InkTracker's page instead of a QuickBooks link.
+-- Nullable, no default (no table rewrite): minted at send time only for
+-- processor-rail shops. Existing invoice RLS already covers it — the shop
+-- that owns the invoice can set its own token.
+alter table public.invoices add column if not exists public_token text;
+create unique index if not exists invoices_public_token_key
+  on public.invoices (public_token) where public_token is not null;
+
 -- ── RLS: owner + managers read their own shop; nobody writes from the client
 alter table public.processor_accounts     enable row level security;
 alter table public.processor_payments enable row level security;

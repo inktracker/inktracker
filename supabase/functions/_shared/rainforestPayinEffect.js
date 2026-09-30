@@ -52,6 +52,8 @@ export const REJECT = Object.freeze({
 });
 
 /** True when moving from `from` to `to` is progress (or a same-rank first write). */
+const docNumber = (doc) => doc?.quote_id ?? doc?.invoice_id ?? null;
+
 export function statusAdvances(from, to) {
   if (!(to in RANK)) return false;
   if (!from) return true;
@@ -65,7 +67,9 @@ export function statusAdvances(from, to) {
  *          method:"card"|"ach"|null, metadata:object, occurredAt:string,
  *          reversalCents?:number}} a.event   reversalCents: refund/return size when partial
  * @param {object|null} a.account  processor_accounts row for event.merchantId
- * @param {object|null} a.quote    quotes row for metadata.inktracker_quote_id
+ * @param {object|null} a.quote    the paid document for metadata.inktracker_quote_id:
+ *        a quotes row, or an invoices row when metadata.inktracker_doc_type
+ *        is "invoice" (the handler loads from the matching table)
  * @param {object|null} a.ledger   existing processor_payments row for payinId
  * @param {number} a.platformFeeCents fee for this payin (from rainforestPricing)
  * @returns {{
@@ -117,7 +121,7 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     // Never drop money on the floor: record it against the shop (whose
     // merchant it landed in) with no quote link, and tell them.
     const ledgerRow = statusAdvances(ledger?.status, kind)
-      ? { ...baseLedger, status: kind, quote_id: null, qb_invoice_id: null, pay_kind: null }
+      ? { ...baseLedger, status: kind, quote_id: null, invoice_id: null, qb_invoice_id: null, pay_kind: null }
       : null;
     return {
       ok: false,
@@ -140,10 +144,12 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
   const qbPending = moneyIn && !ledger?.qb_payment_id;
   const succeededNow = moneyIn && (advances || ledger?.status === PAYIN_EVENT.SUCCEEDED);
 
+  const isInvoiceDoc = md.inktracker_doc_type === "invoice";
   const ledgerRow = advances ? {
     ...baseLedger,
     status: kind,
-    quote_id: quote.id,
+    quote_id: isInvoiceDoc ? null : quote.id,
+    invoice_id: isInvoiceDoc ? quote.id : null,
     qb_invoice_id: String(md.qb_invoice_id),
     pay_kind: ["full", "balance", "deposit"].includes(md.pay_kind) ? md.pay_kind : null,
   } : null;
@@ -152,7 +158,7 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
   if (advances && kind === PAYIN_EVENT.FAILED && event.method === "ach") {
     notify = {
       severity: "alert",
-      title: `Bank payment didn't go through: ${quote.quote_id ?? "a quote"}`,
+      title: `Bank payment didn't go through: ${docNumber(quote) ?? "a payment"}`,
       body: `Your customer's bank payment of $${(amt / 100).toFixed(2)} failed. The invoice is still open; nothing was recorded in QuickBooks.`,
       metadata: { processor: "rainforest", payin_id: event.payinId },
     };
@@ -161,13 +167,13 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
       kind: kind === PAYIN_EVENT.RETURNED ? "ach_return" : kind === PAYIN_EVENT.CHARGED_BACK ? "chargeback_lost" : "refund",
       amountCents: Number.isInteger(Number(event.reversalCents)) && Number(event.reversalCents) > 0 ? Number(event.reversalCents) : amt,
       payinId: event.payinId,
-      quoteNumber: quote.quote_id,
+      quoteNumber: docNumber(quote),
     });
     notify = r.ok ? r.notify : null;
   } else if (advances && kind === PAYIN_EVENT.DISPUTED) {
     notify = {
       severity: "alert",
-      title: `Card payment disputed: ${quote.quote_id ?? "a quote"}`,
+      title: `Card payment disputed: ${docNumber(quote) ?? "a payment"}`,
       body: `Your customer disputed a $${(amt / 100).toFixed(2)} card payment. Respond with proof of the order (approval, proof, delivery) before the deadline.`,
       metadata: { processor: "rainforest", payin_id: event.payinId },
     };
