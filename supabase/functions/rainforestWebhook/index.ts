@@ -37,7 +37,7 @@ import {
   kindForPayinStatus,
   readListPage,
 } from "../_shared/rainforestWebhookAdapter.js";
-import { planPayinEffect, planQbApplication, statusesBelow, statusAdvances } from "../_shared/rainforestPayinEffect.js";
+import { planPayinEffect, planQbApplication, statusesBelow, statusAdvances, BOOKABLE_STATUSES, PAYIN_EVENT } from "../_shared/rainforestPayinEffect.js";
 import { platformFeeCents } from "../_shared/rainforestPricing.js";
 import { buildQbPaymentBody, pickQbPaymentMethod, findBookedPayment } from "../_shared/rainforestQbBooks.js";
 import {
@@ -52,6 +52,7 @@ import { renderEmailLayout } from "../_shared/emailLayout.ts";
 import { captureError } from "../_shared/observability.ts";
 import { planPayoutDeposit, PAYOUT_PLAN } from "../_shared/rainforestPayout.js";
 import { shopTimezone, localDate } from "../_shared/shopDate.js";
+import { merchantStatusFields } from "../_shared/rainforestAccount.js";
 import {
   getShopQb,
   qbGetInvoice,
@@ -169,7 +170,9 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
   // Query builders are thenable but have no .catch — always await in a try.
   const release = async (patch: Record<string, unknown>) => {
     try {
-      const { error } = await admin.from("processor_payments").update({ qb_posting_at: null, ...patch }).eq("processor_payin_id", payinId);
+      const { error } = await admin.from("processor_payments")
+        .update({ qb_posting_at: null, updated_at: new Date().toISOString(), ...patch })
+        .eq("processor_payin_id", payinId);
       if (error) opsAlert(`ledger release failed for ${payinId}`, { error: error.message });
     } catch (e) {
       opsAlert(`ledger release threw for ${payinId}`, { error: String(e) });
@@ -308,15 +311,18 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
   }
   const payinIds = activities.filter((a) => String(a?.type).toUpperCase() === "PAYIN").map((a) => String(a.id ?? a.payin_id));
   const ledgerByPayin = new Map<string, Any>();
-  if (payinIds.length) {
-    const { data: rows } = await admin.from("processor_payments")
-      .select("processor_payin_id, qb_payment_id, amount_cents")
+  // Chunked (long payouts would overflow the URL); a read error must retry,
+  // never read as "not our payments".
+  for (let i = 0; i < payinIds.length; i += 100) {
+    const { data: rows, error } = await admin.from("processor_payments")
+      .select("processor_payin_id, qb_payment_id, qb_invoice_id, amount_cents")
       .eq("shop_owner", account.shop_owner)
-      .in("processor_payin_id", payinIds);
+      .in("processor_payin_id", payinIds.slice(i, i + 100));
+    if (error) throw new Error(`ledger read failed: ${error.message}`);
     for (const r of rows ?? []) ledgerByPayin.set(String(r.processor_payin_id), r);
   }
 
-  const plan: Any = planPayoutDeposit({ deposit, activities, ledgerByPayin, account, txnDate: payoutDate });
+  const plan: Any = planPayoutDeposit({ deposit, activities, ledgerByPayin, account, txnDate: payoutDate, now });
   if (plan.plan === PAYOUT_PLAN.SKIP) return `skip:${plan.reason}`;
   if (plan.plan === PAYOUT_PLAN.WAIT) {
     await admin.from("processor_payouts").update({ qb_post_error: "waiting: payments not yet in QuickBooks", updated_at: now.toISOString() }).eq("processor_payout_id", depositId);
@@ -365,16 +371,23 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
     qbDepositId = String(res?.Deposit?.Id ?? res?.Id ?? "");
     if (!qbDepositId) throw new Error("QuickBooks returned no Deposit id");
   } catch (err) {
-    // Not posted (or QuickBooks said no): safe to release for a retry. A
-    // timeout here is the one ambiguous case — release anyway would risk a
-    // double; keep the claim and flag it.
+    // Release the claim ONLY when QuickBooks definitely refused (400 = a
+    // validation Fault, 401/403 = never reached the books). Everything else —
+    // 5xx, gateway timeouts, a dropped connection, an unreadable response —
+    // may have created the Deposit, and a retry would double-count the bank.
+    // Keep the claim and flag it for a person (the sweep reports it daily).
     const msg = String((err as Error)?.message ?? err).slice(0, 500);
-    const ambiguous = /timed? ?out|network|ECONNRESET|fetch failed/i.test(msg);
+    const status = Number((err as Any)?.status);
+    const definitelyRejected = [400, 401, 403].includes(status);
     try {
-      await admin.from("processor_payouts").update(ambiguous
-        ? { qb_post_error: `check_quickbooks: ${msg}` }
-        : { qb_posting_at: null, qb_post_error: msg }).eq("processor_payout_id", depositId);
+      await admin.from("processor_payouts").update(definitelyRejected
+        ? { qb_posting_at: null, qb_post_error: msg, updated_at: now.toISOString() }
+        : { qb_post_error: `check_quickbooks: ${msg}` }).eq("processor_payout_id", depositId);
     } catch { /* surfaced below */ }
+    if (!definitelyRejected) {
+      opsAlert(`payout ${depositId}: QuickBooks Deposit may have been created (${msg}) — check QuickBooks before retrying`, { depositId });
+      return "check_quickbooks";
+    }
     throw err;
   }
 
@@ -404,6 +417,70 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
   await admin.from("processor_payments").update({ processor_payout_id: depositId })
     .eq("shop_owner", account.shop_owner).in("processor_payin_id", plan.payinIds);
   return "booked";
+}
+
+/**
+ * Bring our copy of a merchant's status up to date. The webhook body is a
+ * snapshot from when the event fired, and Rainforest retries for ~28h with
+ * no ordering guarantee — a retried old "active" landing after "suspended"
+ * would put a suspended shop back on InkTracker payments. So the event is
+ * only a trigger: read the merchant's CURRENT state and store that. Also
+ * used by the nightly sweep. Tells the owner about changes that matter.
+ */
+export async function syncMerchant(deps: Deps, merchantId: string): Promise<string> {
+  const { admin } = deps;
+  const { data: before } = await admin.from("processor_accounts")
+    .select("shop_owner, merchant_status, merchant_application_status, enabled, onboarded_at")
+    .eq("merchant_id", merchantId).maybeSingle();
+  if (!before) return "unknown_merchant";
+  const current = await deps.rainforestGet(`/v1/merchants/${encodeURIComponent(merchantId)}`);
+  const fields = merchantStatusFields(current);
+  if (!fields.merchant_status && !fields.merchant_application_status) return "no_status";
+  const now = new Date().toISOString();
+  const becameActive = fields.merchant_status === "active" && before.merchant_status !== "active";
+  const { error } = await admin.from("processor_accounts").update({
+    ...fields,
+    ...(becameActive && !before.onboarded_at ? { onboarded_at: now } : {}),
+    updated_at: now,
+  }).eq("merchant_id", merchantId);
+  if (error) throw new Error(`merchant update failed: ${error.message}`);
+
+  const ms = fields.merchant_status ?? before.merchant_status;
+  const app = fields.merchant_application_status ?? before.merchant_application_status;
+  const lost = ["suspended", "deactivated", "canceled"].includes(String(ms)) && before.merchant_status === "active";
+  if (lost && before.enabled) {
+    // A switched-on shop just lost the ability to take payments here.
+    await notifyShop(deps, <Any>{
+      shopOwner: before.shop_owner,
+      eventType: "payments_account_on_hold",
+      severity: "alert",
+      title: ms === "suspended" ? "Your payments account is on hold" : "Your payments account was closed",
+      body: "Customers pay through QuickBooks again. Quotes and invoices you already sent with an InkTracker pay link can't be paid online until you re-send them from InkTracker, which adds a QuickBooks pay link. Check your email from Rainforest for details.",
+      metadata: { processor: SOURCE, merchant_status: ms },
+    });
+  } else if (app === "needs_information" && before.merchant_application_status !== "needs_information") {
+    // Unanswered, the application is auto-canceled after 120 days.
+    await notifyShop(deps, <Any>{
+      shopOwner: before.shop_owner,
+      eventType: "payments_needs_information",
+      severity: "alert",
+      title: "Your payments sign-up needs more information",
+      body: "Rainforest needs a bit more information to approve your payments account. Open Account → Payments and click Continue sign-up.",
+      metadata: { processor: SOURCE },
+    });
+  } else if (becameActive) {
+    await notifyShop(deps, <Any>{
+      shopOwner: before.shop_owner,
+      eventType: "payments_approved",
+      severity: "info",
+      title: "Your payments account is approved",
+      body: before.enabled
+        ? "Customers can pay on InkTracker again."
+        : "Next: open Account → Payments, choose your QuickBooks accounts, and turn InkTracker payments on.",
+      metadata: { processor: SOURCE },
+    });
+  }
+  return "synced";
 }
 
 /**
@@ -494,28 +571,151 @@ export async function reconcileRecentPayins(deps: Deps, sinceIso: string): Promi
   return out;
 }
 
-/** Nightly: retry what couldn't be booked at the time. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Reversals Rainforest has that our ledger hasn't caught up with (a lost
+ * chargeback / ACH-return event). Applied only when the ledger is BEHIND, so
+ * the shop is told once — not every night.
+ */
+async function reconcileRecentReversals(deps: Deps): Promise<number> {
+  const { admin } = deps;
+  const { items } = readListPage(await deps.rainforestGet(`/v1/payments?payment_type=CHARGEBACK&payment_type=ACH_RETURN&sort_by=created_at&sort_order=desc&limit=200`));
+  let replayed = 0;
+  for (const it of items) {
+    const payinId = String(it?.payin_id ?? it?.parent_id ?? "");
+    if (!payinId) continue;
+    const type = String(it?.type ?? it?.payment_type ?? "").toUpperCase();
+    const st = String(it?.status ?? "").toUpperCase();
+    const kind = type === "ACH_RETURN" ? PAYIN_EVENT.RETURNED
+      : st === "LOST" ? PAYIN_EVENT.CHARGED_BACK
+      : ["DISPUTE_ACTION_REQUIRED", "INQUIRY_ACTION_REQUIRED", "CHARGEBACK_PROCESSING"].includes(st) ? PAYIN_EVENT.DISPUTED
+      : null;
+    if (!kind) continue;
+    const { data: row } = await admin.from("processor_payments").select("status").eq("processor_payin_id", payinId).maybeSingle();
+    if (!row || !statusAdvances(row.status, kind)) continue; // not ours, or already known
+    const payin = await deps.rainforestGet(`/v1/payins/${encodeURIComponent(payinId)}`);
+    const amt = Number(it?.amount?.amount ?? it?.amount);
+    await applyPayinEvent(deps, payinToEvent(kind, payin, { reversalCents: Number.isInteger(amt) ? Math.abs(amt) : undefined }));
+    replayed++;
+  }
+  return replayed;
+}
+
+/** Payouts Rainforest made that we have no row for (a lost deposit event). */
+async function reconcileRecentDeposits(deps: Deps, sinceIso: string): Promise<number> {
+  const { admin } = deps;
+  const { data: accounts } = await admin.from("processor_accounts").select("merchant_id").not("merchant_id", "is", null);
+  const ours = new Set((accounts ?? []).map((a: Any) => String(a.merchant_id)));
+  if (!ours.size) return 0;
+  const { items } = readListPage(await deps.rainforestGet(`/v1/deposits?created_at.start=${encodeURIComponent(sinceIso)}&status=SUCCEEDED&limit=1000`));
+  let found = 0;
+  for (const d of items) {
+    if (!ours.has(String(d?.merchant_id ?? "")) || !d?.deposit_id) continue;
+    const { data: row } = await admin.from("processor_payouts").select("processor_payout_id").eq("processor_payout_id", String(d.deposit_id)).maybeSingle();
+    if (row) continue;
+    await processPayout(deps, String(d.deposit_id));
+    found++;
+  }
+  return found;
+}
+
+/**
+ * A payout the shop's bank returned (wrong account, closed account). If it
+ * was already booked in QuickBooks, that Deposit is now money that never
+ * arrived — tell the shop exactly which one to void. Rainforest re-sends the
+ * funds once the bank details are fixed.
+ */
+export async function payoutFailed(deps: Deps, depositId: string): Promise<string> {
+  const { admin } = deps;
+  const deposit = await deps.rainforestGet(`/v1/deposits/${encodeURIComponent(depositId)}`);
+  const { data: account } = await admin.from("processor_accounts").select("shop_owner").eq("merchant_id", String(deposit?.merchant_id ?? "")).maybeSingle();
+  if (!account) return "unknown_merchant";
+  const { data: row } = await admin.from("processor_payouts").select("qb_deposit_id").eq("processor_payout_id", depositId).maybeSingle();
+  if (row) {
+    await admin.from("processor_payouts").update({ status: "failed", updated_at: new Date().toISOString() }).eq("processor_payout_id", depositId);
+  }
+  const amt = Number(deposit?.amount);
+  const money = Number.isInteger(amt) ? `$${(amt / 100).toFixed(2)}` : "A payout";
+  await notifyShop(deps, <Any>{
+    shopOwner: account.shop_owner,
+    eventType: "payout_failed",
+    severity: "alert",
+    title: `${money} payout to your bank was returned`,
+    body: (row?.qb_deposit_id
+      ? `InkTracker had recorded it in QuickBooks as deposit #${row.qb_deposit_id}, but the money didn't arrive. Delete or void that deposit in QuickBooks. `
+      : "It wasn't recorded in QuickBooks, so there's nothing to change there. ") +
+      "Check the bank account in your payments settings; Rainforest sends the money again once it's fixed.",
+    metadata: { processor: SOURCE, deposit_id: depositId, failure: deposit?.failure_code ?? null },
+  });
+  opsAlert(`payout ${depositId} failed (${deposit?.failure_code ?? "?"})`, { shop: account.shop_owner });
+  return "failed_notified";
+}
+
+/** Nightly: recover anything missed, then retry what couldn't be booked. */
 export async function sweep(deps: Deps): Promise<Record<string, number>> {
   const { admin } = deps;
   const now = (deps.now ?? (() => new Date()))();
   const olderThan = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
   const out = { payments: 0, paymentsBooked: 0, payouts: 0, payoutsBooked: 0, errors: 0, backstopChecked: 0, backstopReplayed: 0 };
+  const step = async (name: string, fn: () => Promise<void>) => {
+    try { await fn(); } catch (err) {
+      out.errors++;
+      opsAlert(`sweep: ${name} failed: ${(err as Error)?.message ?? err}`);
+    }
+  };
 
-  // 1. Anything Rainforest has that we don't (runs first, so step 2 books it).
-  try {
-    const r = await reconcileRecentPayins(deps, new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString());
+  // 0. Merchant status, in case a merchant event was lost.
+  await step("merchant sync", async () => {
+    const { data: accts } = await admin.from("processor_accounts")
+      .select("merchant_id, merchant_status").not("merchant_id", "is", null).limit(500);
+    for (const a of accts ?? []) {
+      if (["canceled", "deactivated"].includes(String(a.merchant_status))) continue;
+      await syncMerchant(deps, String(a.merchant_id));
+    }
+  });
+
+  // 1. Payins Rainforest has that we don't. 10 days: a bank payment's
+  //    clearing (T+4 business days) plus a weekend and slack.
+  await step("payin backstop", async () => {
+    const r = await reconcileRecentPayins(deps, new Date(now.getTime() - 10 * DAY_MS).toISOString());
     out.backstopChecked = r.checked;
     out.backstopReplayed = r.replayed;
-  } catch (err) {
-    out.errors++;
-    opsAlert(`sweep: Rainforest backstop failed: ${(err as Error)?.message ?? err}`);
-  }
+  });
 
+  // 1b. Bank payments still "processing" after 4+ days: ask Rainforest for
+  //     the payin directly (its "succeeded" event may have been lost, and it
+  //     can fall outside any list window).
+  await step("stuck bank payments", async () => {
+    const { data: stale } = await admin.from("processor_payments")
+      .select("processor_payin_id")
+      .eq("status", "processing")
+      .eq("method", "ach")
+      .lt("created_at", new Date(now.getTime() - 4 * DAY_MS).toISOString())
+      .order("created_at", { ascending: true })
+      .limit(100);
+    for (const r of stale ?? []) {
+      const payin = await deps.rainforestGet(`/v1/payins/${encodeURIComponent(String(r.processor_payin_id))}`);
+      const kind = kindForPayinStatus(payin?.status);
+      if (kind && kind !== PAYIN_EVENT.PROCESSING) {
+        await applyPayinEvent(deps, payinToEvent(kind, payin));
+        out.backstopReplayed++;
+      }
+    }
+  });
+
+  // 1c. Lost chargeback / return events, and lost payouts.
+  await step("reversal backstop", async () => { out.backstopReplayed += await reconcileRecentReversals(deps); });
+  await step("payout backstop", async () => { await reconcileRecentDeposits(deps, new Date(now.getTime() - 10 * DAY_MS).toISOString()); });
+
+  // 2. Book payments that came in but aren't in QuickBooks yet. Ordered by
+  //    last attempt (each attempt bumps updated_at) so one stuck row can't
+  //    starve the rest.
   const { data: pending } = await admin.from("processor_payments")
     .select("processor_payin_id, status, method")
     .is("qb_payment_id", null)
     .not("qb_invoice_id", "is", null)
-    .in("status", ["succeeded", "processing"])
+    .in("status", [...BOOKABLE_STATUSES])
     .lt("updated_at", olderThan)
     .order("updated_at", { ascending: true })
     .limit(100);
@@ -530,13 +730,13 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
     }
   }
 
-  // Payouts still to book: not sent to the shop for review, not mid-post.
+  // 3. Payouts still to book: not sent to the shop for review, not mid-post.
   const { data: payouts } = await admin.from("processor_payouts")
     .select("processor_payout_id, qb_post_error")
     .is("qb_deposit_id", null)
     .is("review_notified_at", null)
     .is("qb_posting_at", null)
-    .order("created_at", { ascending: true })
+    .order("updated_at", { ascending: true })
     .limit(100);
   // Payouts whose post was interrupted: never retried automatically.
   const { data: stuck } = await admin.from("processor_payouts")
@@ -603,7 +803,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
   const route = routeWebhook(body);
   if (route.route === "ignore") return ok({ ok: true, ignored: route.reason });
-  if (route.route === "deposit" && (route.status !== "succeeded" || !route.depositId)) {
+  if (route.route === "deposit" && (!["succeeded", "failed"].includes(String(route.status)) || !route.depositId)) {
     return ok({ ok: true, ignored: `deposit.${route.status}` });
   }
 
@@ -618,34 +818,32 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
   try {
     if (route.route === "deposit") {
-      return ok({ ok: true, payout: await processPayout(deps, String(route.depositId)) });
+      return ok({ ok: true, payout: route.status === "failed"
+        ? await payoutFailed(deps, String(route.depositId))
+        : await processPayout(deps, String(route.depositId)) });
+    }
+
+    if (route.route === "dispute_won") {
+      if (!route.payinId) return ok({ ok: true, ignored: "no payin id" });
+      const payin = await deps.rainforestGet(`/v1/payins/${encodeURIComponent(route.payinId)}`);
+      const { data: account } = await admin.from("processor_accounts").select("shop_owner").eq("merchant_id", String(payin?.merchant_id ?? "")).maybeSingle();
+      if (account?.shop_owner) {
+        const label = payin?.metadata?.quote_number;
+        await notifyShop(deps, <Any>{
+          shopOwner: account.shop_owner,
+          eventType: "payment_dispute_won",
+          severity: "info",
+          title: `Dispute won${label ? `: ${label}` : ""}`,
+          body: "The card network ruled in your favour. The disputed money comes back in a coming payout. Nothing to change in QuickBooks.",
+          metadata: { processor: SOURCE, payin_id: route.payinId },
+        });
+      }
+      return ok({ ok: true, disputeWon: true });
     }
 
     if (route.route === "merchant") {
       if (!route.merchantId) return ok({ ok: true, ignored: "no merchant id" });
-      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      if (route.merchantStatus) patch.merchant_status = route.merchantStatus;
-      if (route.applicationStatus) patch.merchant_application_status = route.applicationStatus;
-      if (route.merchantStatus === "active") patch.onboarded_at = new Date().toISOString();
-      // Suspended/deactivated/canceled merchants can't take payments: the rail
-      // falls back to QuickBooks automatically (resolvePaymentRail).
-      const { data: before } = await admin.from("processor_accounts")
-        .select("shop_owner, merchant_status, enabled").eq("merchant_id", route.merchantId).maybeSingle();
-      const { error } = await admin.from("processor_accounts").update(patch).eq("merchant_id", route.merchantId);
-      if (error) throw new Error(`merchant update failed: ${error.message}`);
-      // A switched-on shop just lost the ability to take payments here.
-      const lost = ["suspended", "deactivated", "canceled"].includes(String(route.merchantStatus ?? ""));
-      if (lost && before?.enabled && before.merchant_status === "active") {
-        await notifyShop(deps, <Any>{
-          shopOwner: before.shop_owner,
-          eventType: "payments_account_on_hold",
-          severity: "alert",
-          title: route.merchantStatus === "suspended" ? "Your payments account is on hold" : "Your payments account was closed",
-          body: "Customers pay through QuickBooks again. Quotes and invoices you already sent with an InkTracker pay link can't be paid online until you re-send them from InkTracker, which adds a QuickBooks pay link. Check your email from Rainforest for details.",
-          metadata: { processor: SOURCE, merchant_status: route.merchantStatus },
-        });
-      }
-      return ok();
+      return ok({ ok: true, merchant: await syncMerchant(deps, route.merchantId) });
     }
 
     let event: Any;

@@ -112,8 +112,22 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
     if (fresh?.qb_tax_hold) return { taxHold: fresh.qb_tax_hold };
     let token = fresh?.public_token || invoice.public_token || null;
     if (!token) {
-      token = crypto.randomUUID();
-      await base44.entities.Invoice.update(invoice.id, { public_token: token });
+      // Write only if still unset: two people sending at once must not
+      // overwrite each other's token (the first email's link would 404).
+      const mine = crypto.randomUUID();
+      const { data: won, error: writeErr } = await supabase.from("invoices")
+        .update({ public_token: mine })
+        .eq("id", invoice.id)
+        .is("public_token", null)
+        .select("public_token");
+      if (writeErr) throw new Error(`Couldn't create the payment link: ${writeErr.message}`);
+      if (won?.length) {
+        token = mine;
+      } else {
+        const again = await base44.entities.Invoice.get(invoice.id);
+        token = again?.public_token || null;
+      }
+      if (!token) throw new Error("Couldn't create the payment link. Try sending again.");
     }
     return { url: invoicePaymentUrl(invoice.id, token) };
   }
@@ -223,9 +237,12 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       // tab loaded can be hours old (owner switched payments off, or the
       // payments account was put on hold). A stale "processor" would email
       // a pay link the customer can't use; stale "qb" is the safe side.
-      const sendRail = isPaid || invoice?.broker_id
-        ? "qb"
-        : (await fetchPaymentStatus({ fresh: true })).rail;
+      let sendRail = "qb";
+      if (!isPaid && !invoice?.broker_id) {
+        const fresh = await fetchPaymentStatus({ fresh: true });
+        // Couldn't reach the server → keep what this tab knew.
+        sendRail = fresh.unavailable ? paymentRail : fresh.rail;
+      }
       const sendOnline = sendRail === "processor";
       if (!isPaid && sendOnline && qbInvoiceId) {
         // Pay on InkTracker: never mint (or fall back to) a QuickBooks link.

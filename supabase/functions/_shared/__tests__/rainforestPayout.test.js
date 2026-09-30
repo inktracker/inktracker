@@ -4,7 +4,8 @@ import { planPayoutDeposit, PAYOUT_PLAN } from "../rainforestPayout.js";
 const account = { qb_bank_account_id: "35", qb_fee_account_id: "88" };
 const dep = (over = {}) => ({ deposit_id: "dep_1", status: "SUCCEEDED", deposit_type: "FUNDING", amount: 0, created_at: "2026-10-03T12:00:00Z", deposit_fee_amount: { amount: 0 }, ...over });
 const payin = (id, gross, fee) => ({ id, type: "PAYIN", gross_amount: { amount: gross }, billing_fees_amount: { amount: -fee }, net_amount: { amount: gross - fee } });
-const ledger = (entries) => new Map(entries.map(([id, qb, amt]) => [id, { qb_payment_id: qb, amount_cents: amt }]));
+const ledger = (entries) => new Map(entries.map(([id, qb, amt, inv = "3815"]) => [id, { qb_payment_id: qb, amount_cents: amt, qb_invoice_id: inv }]));
+const NOW = new Date("2026-10-04T12:00:00Z");
 
 describe("planPayoutDeposit", () => {
   it("clean payout → QB deposit that equals the bank to the cent", () => {
@@ -39,15 +40,15 @@ describe("planPayoutDeposit", () => {
     expect(r).toEqual({ plan: PAYOUT_PLAN.WAIT, reason: "payment_not_yet_in_quickbooks" });
   });
 
-  it("refunds, returns, chargebacks and outside payments → manual with a plain breakdown", () => {
+  it("refunds, returns, chargebacks → manual with a plain breakdown", () => {
     const r = planPayoutDeposit({
       deposit: dep({ amount: 1000 }),
-      activities: [payin("pyi_1", 100000, 2990), { id: "rfd_1", type: "REFUND", gross_amount: { amount: -5000 } }, payin("pyi_x", 2000, 60)],
+      activities: [payin("pyi_1", 100000, 2990), { id: "rfd_1", type: "REFUND", gross_amount: { amount: -5000 } }, { id: "chb_1", type: "CHARGEBACK", gross_amount: { amount: 3000 } }],
       ledgerByPayin: ledger([["pyi_1", "501", 100000]]),
       account,
     });
     expect(r.plan).toBe(PAYOUT_PLAN.MANUAL);
-    expect(r.problems).toEqual(["A refund of $50.00.", "A $20.00 payment wasn't taken through InkTracker."]);
+    expect(r.problems).toEqual(["A refund of $50.00.", "A chargeback reversed in your favour ($30.00 back)."]);
     expect(r.notify.title).toBe("Payout of $10.00 needs recording in QuickBooks");
   });
 
@@ -62,5 +63,21 @@ describe("planPayoutDeposit", () => {
   it("not succeeded yet / billing deposits", () => {
     expect(planPayoutDeposit({ deposit: dep({ status: "PROCESSING" }), activities: [], ledgerByPayin: new Map(), account }).plan).toBe(PAYOUT_PLAN.SKIP);
     expect(planPayoutDeposit({ deposit: dep({ deposit_type: "BILLING" }), activities: [], ledgerByPayin: new Map(), account }).plan).toBe(PAYOUT_PLAN.MANUAL);
+  });
+});
+
+describe("audit: waiting payouts have an end state", () => {
+  const acts = [payin("pyi_1", 100000, 2990)];
+  it("a payment not in our ledger yet → WAIT (the backstop recovers it), not 'not ours'", () => {
+    expect(planPayoutDeposit({ deposit: dep({ amount: 97010, created_at: "2026-10-03T12:00:00Z" }), activities: acts, ledgerByPayin: new Map(), account, now: NOW }).plan).toBe(PAYOUT_PLAN.WAIT);
+  });
+  it("still waiting after 5 days → the shop is asked to record it", () => {
+    const r = planPayoutDeposit({ deposit: dep({ amount: 97010, created_at: "2026-09-25T12:00:00Z" }), activities: acts, ledgerByPayin: ledger([["pyi_1", null, 100000]]), account, now: NOW });
+    expect(r.plan).toBe(PAYOUT_PLAN.MANUAL);
+    expect(r.problems[0]).toMatch(/not yet recorded in QuickBooks/);
+  });
+  it("a payment that never matched an invoice → manual right away (it will never be booked)", () => {
+    const r = planPayoutDeposit({ deposit: dep({ amount: 97010, created_at: "2026-10-03T12:00:00Z" }), activities: acts, ledgerByPayin: ledger([["pyi_1", null, 100000, null]]), account, now: NOW });
+    expect(r.plan).toBe(PAYOUT_PLAN.MANUAL);
   });
 });

@@ -55,7 +55,8 @@ export function buildMerchantCreate(profile) {
       postal_code: clean(profile?.zip, 10),
       country: "US",
     } : undefined,
-    metadata: { inktracker_shop_owner: String(profile?.email ?? "") },
+    // No metadata: the merchant schema has none. The shop is recognised by
+    // name + this email (findOurMerchant).
   };
   return JSON.parse(JSON.stringify(body)); // drop undefined
 }

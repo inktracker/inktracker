@@ -11,7 +11,7 @@ import { readApproved, readMethodUpdated } from "@/lib/payment/rainforestEvents"
 
 const fmt = (cents) => `$${(Number(cents || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null }) {
+export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null, onReopen = null }) {
   const ref = useRef(null);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -45,7 +45,10 @@ export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null
       onPaid?.({ ...r, method });
     };
     const onDeclined = () => setDeclined("That payment was declined. Check the details or try a different card or account.");
-    const onError = () => setDeclined("Something went wrong with that payment. You haven't been charged. Try again.");
+    // Most often an expired form (they last 30 minutes): offer a fresh one.
+    const onError = () => setDeclined(onReopen
+      ? "The payment form stopped working. It may have timed out. You haven't been charged. Reload it and try again."
+      : "Something went wrong with that payment. You haven't been charged. Refresh this page and try again.");
     el.addEventListener("method-updated", onMethod);
     el.addEventListener("approved", onApproved);
     el.addEventListener("declined", onDeclined);
@@ -56,7 +59,7 @@ export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null
       el.removeEventListener("declined", onDeclined);
       el.removeEventListener("error", onError);
     };
-  }, [ready, onPaid]);
+  }, [ready, onPaid, onReopen]);
 
   if (paid) {
     return (
@@ -109,7 +112,13 @@ export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null
       )}
       {declined && (
         <div className="flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /> {declined}
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            {declined}
+            {onReopen && declined.startsWith("The payment form") && (
+              <button type="button" onClick={onReopen} className="ml-2 font-semibold text-teal-700 hover:text-teal-800 underline">Reload payment form</button>
+            )}
+          </div>
         </div>
       )}
       <div className="text-xs text-slate-500">

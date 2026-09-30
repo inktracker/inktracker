@@ -368,7 +368,10 @@ export default function QuotePayment() {
   // only needs an invoice to exist.
   const onlinePay = payRail === "processor";
   const onlinePayAvailable = onlinePay && !isBrokerQuote(quote) &&
-    Boolean(quote?.qb_invoice_id || quote?.qb_deposit_invoice_id);
+    Boolean(quote?.qb_invoice_id || quote?.qb_deposit_invoice_id) &&
+    // Deposit paid, final invoice not made yet: nothing to pay here (the
+    // approved-state message says the final invoice comes later).
+    !(quote?.deposit_paid && !quote?.qb_invoice_id);
   // Deposit routing for the button label, on either rail.
   const depositRoute = depositAvailable || (onlinePay && depositDue);
   const canCollectPayment = onlinePay ? onlinePayAvailable : (depositAvailable || qbAvailable);
@@ -1093,7 +1096,14 @@ export default function QuotePayment() {
             }
 
             if (paySession) {
-              return <OnlinePaymentPanel session={paySession} quotedCents={Math.round(chargeAmount * 100)} />;
+              return (
+                <OnlinePaymentPanel
+                  key={paySession.sessionKey}
+                  session={paySession}
+                  quotedCents={Math.round(chargeAmount * 100)}
+                  onReopen={() => { setPaySession(null); handleCheckout(); }}
+                />
+              );
             }
 
             return (

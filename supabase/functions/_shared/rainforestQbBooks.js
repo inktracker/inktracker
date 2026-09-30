@@ -179,7 +179,7 @@ export function buildQbDepositBody(a) {
  * money movement shows up as a signed line on the next payout's Deposit so
  * the bank still matches. Returns the ledger + notification plan.
  */
-export function planReversal({ kind, amountCents, payinId, quoteNumber }) {
+export function planReversal({ kind, amountCents, payinId, quoteNumber, booked = true }) {
   const amt = Number(amountCents);
   const label = {
     refund: "Refund issued",
@@ -197,7 +197,9 @@ export function planReversal({ kind, amountCents, payinId, quoteNumber }) {
       title: `${label}: $${dollars(amt).toFixed(2)} on ${quoteNumber || "a payment"}`,
       body: kind === "refund"
         ? `The refund is on its way back to your customer. In QuickBooks, record a refund receipt against this invoice so your books match — it will come out of your next payout.`
-        : `Your customer's payment was reversed, so this invoice is effectively unpaid. It will come out of your next payout. Follow up with the customer and re-open the invoice in QuickBooks.`,
+        : !booked
+          ? `Your customer's bank returned the payment before it cleared, so it was never recorded in QuickBooks and the invoice is still open. Ask the customer to pay another way. The bank's return fee comes out of your next payout.`
+          : `Your customer's payment was reversed, so this invoice is effectively unpaid. It will come out of your next payout. Follow up with the customer and re-open the invoice in QuickBooks.`,
       metadata: { processor: "rainforest", payin_id: payinId, kind, amount_cents: amt },
     },
   };

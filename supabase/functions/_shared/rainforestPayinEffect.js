@@ -54,6 +54,21 @@ export const REJECT = Object.freeze({
 /** True when moving from `from` to `to` is progress (or a same-rank first write). */
 const docNumber = (doc) => doc?.quote_id ?? doc?.invoice_id ?? null;
 
+/**
+ * Did money come IN for a payin in this status? Card: at capture. Bank: once
+ * it cleared. Later reversals (dispute, refund, lost chargeback) don't undo
+ * that the customer paid — the payment still belongs in QuickBooks, and the
+ * reversal is recorded by the shop against it. Failed/canceled and a bank
+ * payment RETURNED before it cleared never brought money in.
+ */
+export function moneyCameIn(status, method) {
+  if (["succeeded", "disputed", "partially_refunded", "refunded", "charged_back"].includes(String(status))) return true;
+  return status === "processing" && method === "card";
+}
+
+/** Ledger statuses the sweep should try to book (see moneyCameIn). */
+export const BOOKABLE_STATUSES = Object.freeze(["processing", "succeeded", "disputed", "partially_refunded", "refunded", "charged_back"]);
+
 export function statusAdvances(from, to) {
   if (!(to in RANK)) return false;
   if (!from) return true;
@@ -181,6 +196,7 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
       amountCents: Number.isInteger(Number(event.reversalCents)) && Number(event.reversalCents) > 0 ? Number(event.reversalCents) : amt,
       payinId: event.payinId,
       quoteNumber: label,
+      booked: Boolean(ledger?.qb_payment_id),
     });
     notify = r.ok ? r.notify : null;
   } else if (kind === PAYIN_EVENT.DISPUTED) {
@@ -216,10 +232,14 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
 
   // 3. Matched (or trusted). Replays are no-ops except for re-trying a QB
   //    post that hadn't landed yet.
-  const qbPending = moneyIn && !ledger?.qb_payment_id;
-  const moneyInRecorded = ledger?.status === PAYIN_EVENT.SUCCEEDED ||
-    (ledger?.status === PAYIN_EVENT.PROCESSING && ledger?.method === "card");
-  const succeededNow = moneyIn && (advances || moneyInRecorded);
+  // Book it once money came in — even if a refund or dispute arrived first
+  // (out-of-order events, or QuickBooks was disconnected until after).
+  // …but never on the event that says the money DIDN'T arrive (card voided
+  // or failed, bank payment returned) — those alert the shop instead.
+  const cameIn = ![PAYIN_EVENT.FAILED, PAYIN_EVENT.CANCELED, PAYIN_EVENT.RETURNED].includes(kind) &&
+    (moneyCameIn(kind, event.method) || moneyCameIn(ledger?.status, ledger?.method ?? event.method));
+  const qbPending = cameIn && !ledger?.qb_payment_id;
+  const succeededNow = qbPending;
   // A trusted row without a QB invoice (recorded unmatched) is never posted.
   const postable = trusted ? Boolean(ledger.qb_invoice_id) : true;
 

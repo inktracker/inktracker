@@ -174,3 +174,17 @@ Each item needs a pass in the Rainforest sandbox **and** the QuickBooks sandbox 
 **Money checks**
 - [ ] Platform fee on the sandbox statement = `platformFeeCents` for every test payment (2.99% card, 1% bank, half-up to the cent)
 - [ ] Level 2/3 data present on a full-invoice business-card payment; absent on deposit/balance payments
+
+## Structured audit (2026-09-30)
+
+Four passes (sign-up/settings, customer pays, payouts/reversals/sweep, security), each walking every step through seven questions: dies here · stale state · duplicate/out-of-order/missing events · time/timezone · multi-day delays · unverified external assumptions · fix-induced failures. 29 findings, all fixed. Highlights:
+
+- Merchant webhooks are triggers only: the current status is read from Rainforest (a late retry can't undo a suspension)
+- Nightly backstops for everything the webhook can lose: payins (10-day window), bank payments stuck "processing", chargebacks/returns, payouts, merchant status
+- A QuickBooks Deposit post is released for retry only on a definite 4xx; anything ambiguous is flagged, never re-posted
+- Payments are booked whenever money came in, even if a refund/dispute event arrived first
+- Waiting payouts escalate to the shop after 5 days; unmatched payments go straight to review
+- Deposit invoices aren't voided while a bank-paid deposit is clearing
+- Pay-link throttle (90s session reuse); race-safe invoice token
+- Sign-up: merchants matched by name + email (Rainforest merchants have no metadata); closed applications can be restarted; application status read from `latest_merchant_application`
+- Owner alerts: needs-information, approved, payout returned, dispute won

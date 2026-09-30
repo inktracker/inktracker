@@ -1925,6 +1925,23 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         if (lateLinked.length > 0) {
           throw new Error(`deposit invoice ${depositInvoiceId} received a payment mid-settlement — retry the sync to settle it properly`);
         }
+        // InkTracker payments: a bank payment for the deposit can be clearing
+        // (~4 business days) with nothing in QuickBooks yet. Voiding now would
+        // turn it into a stray credit and let the customer pay the full
+        // invoice on top. Wait for it to clear.
+        {
+          const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+          const { data: clearing, error: clearingErr } = await adminClient.from("processor_payments")
+            .select("processor_payin_id")
+            .eq("qb_invoice_id", String(depositInvoiceId))
+            .in("status", ["processing", "succeeded"])
+            .is("qb_payment_id", null)
+            .limit(1);
+          // Table missing (migration not applied yet) = no InkTracker payments.
+          if (!clearingErr && clearing?.length) {
+            throw new Error("The customer's deposit payment is still clearing (bank payments take about 4 business days). Create the final invoice once it clears, so the deposit is applied instead of voided.");
+          }
+        }
         await qbVoidInvoice(token, realmId, depositInvoiceId, depInvoice.SyncToken);
         // Fresh row wins over the caller's snapshot (?? not ||): a stale
         // payload must neither skip a real cash deposit nor invent one
@@ -2290,7 +2307,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
 // re-minted if missing), never duplicated.
 const DEPOSIT_ITEM_NAME = "Customer Deposit";
 
-async function handleCreateDepositInvoice(token: string, realmId: string, params: any, supabase: any, paymentRail: string = RAIL.QB) {
+async function handleCreateDepositInvoice(token: string, realmId: string, params: any, supabase: any, paymentRail: string = RAIL.QB, restoreQbPay = false) {
   const quote = params?.quote ?? {};
   if (!quote?.id) throw new Error("createDepositInvoice requires quote.id");
 
@@ -2353,6 +2370,13 @@ async function handleCreateDepositInvoice(token: string, realmId: string, params
           await supabase.from("quotes").update({ qb_deposit_payment_link: null }).eq("id", fresh.id);
         }
         return { qbDepositInvoiceId: String(existing.Id), depositAmount, depositPaymentLink: null, linkFailureReason: PROCESSOR_LINK_REASON, paymentRail, adopted: true };
+      }
+      // Back on QuickBooks after InkTracker payments: this deposit invoice
+      // may have online payment turned off by us — turn it back on first,
+      // or the new link opens a page with no Pay button.
+      const restoreFields = restoreQbOnlinePayFields(existing, restoreQbPay);
+      if (Object.keys(restoreFields).length) {
+        await qbUpdate(token, realmId, "invoice", { Id: existing.Id, SyncToken: existing.SyncToken, sparse: true, ...restoreFields });
       }
       let link = fresh.qb_deposit_payment_link || null;
       let linkFailureReason: string | null = null;
@@ -3923,9 +3947,10 @@ Deno.serve(async (req) => {
         );
         const depQuote = params?.quote ?? {};
         const depShop = depQuote?.shop_owner || shopOwnerEmail;
-        const depRail = (await loadPaymentRailState(depAdmin, shopOwnerEmail, {
+        const depRailState = await loadPaymentRailState(depAdmin, shopOwnerEmail, {
           envEnabled: flagOn(Deno.env.get("RAINFOREST_ENABLED")),
-        })).rail;
+        });
+        const depRail = depRailState.rail;
         const depIdempKey = params?.idempotencyKey ?? (depQuote?.id ? `createDepositInvoice:${depQuote.id}` : null);
         const depAuditCtx = {
           shop_owner: depShop,
@@ -3956,7 +3981,7 @@ Deno.serve(async (req) => {
               depLockKey,
               { shop_owner: depShop, action: "create_deposit_invoice_lock" },
               () => withQbAudit(depAdmin, depAuditCtx, () =>
-                handleCreateDepositInvoice(qbToken, realmId, params, supabase, depRail),
+                handleCreateDepositInvoice(qbToken, realmId, params, supabase, depRail, depRailState.restore),
               ),
             );
             if (!serialized.acquired) {

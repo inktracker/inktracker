@@ -85,6 +85,10 @@ export function choosePayTarget({ quote, depositsEnabled, liveFinal = null, live
     return { ok: true, kind: "deposit", qbInvoiceId: String(liveDeposit.Id ?? quote.qb_deposit_invoice_id), amountCents: cents };
   }
 
+  // Deposit already paid and the final invoice not made yet: nothing is due.
+  if (quote?.deposit_paid && quote?.qb_deposit_invoice_id && !quote?.qb_invoice_id) {
+    return { ok: false, reason: NOT_PAYABLE.DEPOSIT_PAID_AWAITING_FINAL };
+  }
   if (!quote?.qb_invoice_id || !liveFinal) return { ok: false, reason: NOT_PAYABLE.NO_INVOICE };
   if (liveInvoiceIsStale(quote, liveFinal)) return { ok: false, reason: NOT_PAYABLE.STALE };
 

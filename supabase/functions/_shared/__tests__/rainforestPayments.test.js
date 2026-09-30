@@ -103,6 +103,11 @@ describe("choosePayTarget", () => {
       .toBe(NOT_PAYABLE.DEPOSIT_PAID_AWAITING_FINAL);
   });
 
+  it("deposit paid (flag set) and no final invoice yet → 'awaiting final', not 'not set up'", () => {
+    const q = quote({ qb_invoice_id: null, qb_deposit_invoice_id: "3900", deposit_amount: 500, deposit_paid: true });
+    expect(choosePayTarget({ quote: q, depositsEnabled: true }).reason).toBe(NOT_PAYABLE.DEPOSIT_PAID_AWAITING_FINAL);
+  });
+
   it("once the final invoice exists, the deposit window is over — pay the final balance", () => {
     const q = quote({ qb_deposit_invoice_id: "3900", deposit_amount: 500, deposit_paid: true });
     expect(choosePayTarget({ quote: q, depositsEnabled: true, liveFinal: inv({ Balance: 1143 }) }))

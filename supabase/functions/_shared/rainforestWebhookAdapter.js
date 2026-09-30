@@ -132,7 +132,8 @@ export function payinToEvent(kind, payin, { reversalCents, occurredAt } = {}) {
  *        return events: the handler GETs the payin (authoritative amount +
  *        metadata) and calls payinToEvent(kind, payin, { reversalCents })
  *   { route: "merchant", merchantId, merchantStatus?, applicationStatus? }
- *   { route: "deposit", depositId, status }
+ *   { route: "deposit", depositId, status }       succeeded → book; failed → alert
+ *   { route: "dispute_won", payinId, amountCents }
  *   { route: "ignore", reason }
  */
 export function routeWebhook(body) {
@@ -160,6 +161,7 @@ export function routeWebhook(body) {
       return { route: "fetch_payin", payinId: d.payin_id ?? null, kind: PAYIN_EVENT.DISPUTED, reversalCents: rev };
     }
     if (status === "lost") return { route: "fetch_payin", payinId: d.payin_id ?? null, kind: PAYIN_EVENT.CHARGED_BACK, reversalCents: rev };
+    if (status === "won") return { route: "dispute_won", payinId: d.payin_id ?? null, amountCents: rev };
     return { route: "ignore", reason: `chargeback.${status}` };
   }
   if (resource === "merchant") {

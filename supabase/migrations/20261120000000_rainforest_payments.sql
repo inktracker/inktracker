@@ -119,6 +119,19 @@ create table if not exists public.processor_payouts (
 );
 create index if not exists processor_payouts_shop_idx on public.processor_payouts (shop_owner, payout_date desc);
 
+-- ── Recent customer payment sessions (throttle) ─────────────────────────
+-- One row per paid document: the last payment session handed out. A repeat
+-- request within ~90s reuses it instead of calling QuickBooks + Rainforest
+-- again, so a looped or hammered pay link can't burn the shop's QuickBooks
+-- rate limit or our Rainforest quota. Service role only (holds session keys).
+create table if not exists public.processor_pay_sessions (
+  doc_id      uuid primary key,
+  response    jsonb not null,
+  created_at  timestamptz not null default now()
+);
+alter table public.processor_pay_sessions enable row level security;
+-- No policies: service role only.
+
 -- ── Invoice pay page token ─────────────────────────────────────────────
 -- Quotes already carry public_token for the customer's pay page. Invoices
 -- (the order-then-invoice flow) get the same so a processor-rail shop can

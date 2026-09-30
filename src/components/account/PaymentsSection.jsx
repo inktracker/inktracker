@@ -19,7 +19,7 @@ const STEPS = [
 const STAGE_TEXT = {
   in_review: "Submitted. Rainforest usually approves within two business days. You'll see it here when it's done.",
   needs_information: "Rainforest needs a bit more information. Open the sign-up again to finish it.",
-  declined: "Your payments account wasn't approved, so customers keep paying through QuickBooks.",
+  declined: "This payments application was closed: it wasn't approved, or it wasn't finished within 120 days. Customers keep paying through QuickBooks.",
   suspended: "Your payments account is on hold. Customers pay through QuickBooks until it's resolved.",
 };
 
@@ -32,10 +32,11 @@ async function call(action, extra = {}) {
   return data;
 }
 
-function OnboardingForm({ session, onSubmitted }) {
+function OnboardingForm({ session, onSubmitted, onReopen }) {
   const ref = useRef(null);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [formError, setFormError] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -49,13 +50,27 @@ function OnboardingForm({ session, onSubmitted }) {
     const el = ref.current;
     if (!ready || !el) return undefined;
     const handler = () => onSubmitted();
+    // The sign-up session lasts an hour; an owner who steps away to find
+    // their EIN comes back to an expired form. Offer a fresh one.
+    const onError = () => setFormError(true);
     el.addEventListener("submitted", handler);
-    return () => el.removeEventListener("submitted", handler);
+    el.addEventListener("error", onError);
+    return () => {
+      el.removeEventListener("submitted", handler);
+      el.removeEventListener("error", onError);
+    };
   }, [ready, onSubmitted]);
 
   if (loadError) return <div className="text-xs text-red-700">{loadError}. Refresh the page and try again.</div>;
   if (!ready) return <div className="text-xs text-slate-400">Loading the sign-up form…</div>;
   return (
+    <div className="space-y-2">
+      {formError && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
+          <span>The sign-up form stopped working. It may have timed out. What you entered so far is saved.</span>
+          <button type="button" className="font-semibold text-teal-700 hover:text-teal-800 shrink-0" onClick={onReopen}>Reopen sign-up</button>
+        </div>
+      )}
     <rainforest-merchant-onboarding
       ref={ref}
       session-key={session.sessionKey}
@@ -63,6 +78,7 @@ function OnboardingForm({ session, onSubmitted }) {
       merchant-application-id={session.merchantApplicationId}
       terms-and-conditions-url={session.termsUrl}
     />
+    </div>
   );
 }
 
@@ -151,6 +167,13 @@ export default function PaymentsSection() {
         </div>
       )}
 
+      {state.enabled && !approved && state.canToggle && (
+        <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
+          <span>InkTracker payments are switched on but paused until your account is active again. Customers pay through QuickBooks meanwhile.</span>
+          <button className={ghost} disabled={!!busy} onClick={toggle}>{busy === "setEnabled" ? "Saving…" : "Turn off"}</button>
+        </div>
+      )}
+
       {state.payingPlan && (
         <ol className="space-y-3">
           {STEPS.map((s) => {
@@ -169,7 +192,16 @@ export default function PaymentsSection() {
                   <div className="mt-2 pl-7 space-y-2 text-xs text-slate-600">
                     {STAGE_TEXT[stage] && <div>{STAGE_TEXT[stage]}</div>}
                     {onboarding ? (
-                      <OnboardingForm session={onboarding} onSubmitted={onSubmitted} />
+                      <OnboardingForm
+                        key={onboarding.sessionKey}
+                        session={onboarding}
+                        onSubmitted={onSubmitted}
+                        onReopen={() => run("startOnboarding", {}, setOnboarding)}
+                      />
+                    ) : stage === "declined" && state.canStartOver ? (
+                      <button className={btn} disabled={!!busy} onClick={() => run("startOnboarding", {}, setOnboarding)}>
+                        {busy === "startOnboarding" ? "Opening…" : "Start a new application"}
+                      </button>
                     ) : ["not_started", "in_progress", "needs_information"].includes(stage) && (
                       <>
                         {stage === "not_started" && (

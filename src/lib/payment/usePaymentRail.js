@@ -23,9 +23,14 @@ export function fetchPaymentStatus({ fresh = false } = {}) {
       action: "status",
       accessToken: session.access_token,
     });
-    if (error || !data || data.error) return QB_STATUS;
+    if (error || !data || data.error) throw new Error("status unavailable");
     return { ...QB_STATUS, ...data, rail: data.rail === "processor" ? "processor" : "qb" };
-  })().catch(() => QB_STATUS);
+  })().catch(() => {
+    // Don't cache a failure for the life of the tab: the next caller retries.
+    // `unavailable` lets callers tell "couldn't ask" from "QuickBooks".
+    _cache = null;
+    return { ...QB_STATUS, unavailable: true };
+  });
   return _cache;
 }
 

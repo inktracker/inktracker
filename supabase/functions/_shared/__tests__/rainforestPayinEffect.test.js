@@ -272,3 +272,17 @@ describe("statusesBelow (guarded forward-only update)", () => {
     expect(statusesBelow("bogus")).toEqual([]);
   });
 });
+
+describe("audit: booking when events arrive out of order", () => {
+  it("refund/dispute arriving before the payment was booked → still booked (money did come in)", () => {
+    expect(plan({ event: ev({ kind: "partially_refunded", reversalCents: 100 }), ledger: { status: "processing", method: "ach", qb_invoice_id: "3815" } }).postQbPayment).toBe(true);
+    expect(plan({ event: ev({ kind: "disputed" }), ledger: null }).postQbPayment).toBe(true);
+    // succeeded arriving AFTER a refund (bank payment retried late)
+    expect(plan({ event: ev({ method: "ach" }), ledger: { status: "partially_refunded", method: "ach" } }).postQbPayment).toBe(true);
+  });
+  it("never books on a void, failure or bounce, even if QuickBooks had been down", () => {
+    expect(plan({ event: ev({ kind: "canceled" }), ledger: { status: "processing", method: "card" } }).postQbPayment).toBe(false);
+    expect(plan({ event: ev({ kind: "failed", method: "ach" }), ledger: { status: "processing", method: "ach" } }).postQbPayment).toBe(false);
+    expect(plan({ event: ev({ kind: "returned", method: "ach" }), ledger: { status: "processing", method: "ach" } }).postQbPayment).toBe(false);
+  });
+});

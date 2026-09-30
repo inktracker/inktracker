@@ -306,8 +306,9 @@ Deno.test("startOnboarding: a second click while the first is creating → 409, 
 
 Deno.test("startOnboarding: a merchant created by a failed earlier attempt is ADOPTED, not duplicated", async () => {
   existingMerchants = [
-    { merchant_id: "mid_orphan", merchant_application_id: "app_orphan", status: "PENDING", metadata: { inktracker_shop_owner: OWNER } },
-    { merchant_id: "mid_other", merchant_application_id: "app_x", status: "PENDING", metadata: { inktracker_shop_owner: "someone@else.com" } },
+    { merchant_id: "mid_orphan", merchant_application_id: "app_orphan", status: "PENDING", name: "Biota Mfg", email: OWNER },
+    { merchant_id: "mid_other", merchant_application_id: "app_x", status: "PENDING", name: "Biota Mfg", email: "someone@else.com" },
+    { merchant_id: "mid_closed", merchant_application_id: "app_c", status: "CANCELED", name: "Biota Mfg", email: OWNER },
   ];
   try {
     const fake = db(null);
@@ -336,4 +337,42 @@ Deno.test("startOnboarding: Rainforest rejecting the create releases the claim (
   }
   assert(threw);
   assertEquals(fake.tables.processor_accounts[0].merchant_creating_at, null);
+});
+
+Deno.test("payinSession: a hammered pay link reuses the recent session — no extra QuickBooks/Rainforest calls", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 1643, Balance: 1643, TxnTaxDetail: { TotalTax: 0 }, CustomerRef: { value: "61" }, Line: [] };
+  const fake = withQuote({ ...ACTIVE, enabled: true });
+  const calls: RfCall[] = [];
+  const first = await (await call(fake, "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls)).json();
+  for (let i = 0; i < 5; i++) {
+    const again = await (await call(fake, "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls)).json();
+    assertEquals(again.sessionKey, first.sessionKey);
+  }
+  assertEquals(calls.filter((c) => c.path === "/v1/payin_configs").length, 1);
+});
+
+Deno.test("startOnboarding: a closed (declined / expired) application can be replaced with a new one", async () => {
+  const fake = db({ merchant_id: "mid_old", merchant_status: "canceled", merchant_application_status: "declined", enabled: true });
+  const calls: RfCall[] = [];
+  const st = await (await call(fake, "own-auth", { action: "status" })).json();
+  assertEquals(st.stage, "declined");
+  assertEquals(st.canStartOver, true);
+  const j = await (await call(fake, "own-auth", { action: "startOnboarding" }, undefined, calls)).json();
+  assertEquals(j.merchantId, "mid_new");
+  assertEquals(calls.filter((c) => c.method === "POST" && c.path === "/v1/merchants").length, 1);
+  assertEquals(fake.tables.processor_accounts[0].merchant_id, "mid_new");
+  assertEquals(fake.tables.processor_accounts[0].enabled, false); // must re-enable after approval
+});
+
+Deno.test("refreshStatus reads the application status from latest_merchant_application", async () => {
+  const fake = db({ merchant_id: "mid_1", merchant_status: "pending", merchant_application_status: "created" });
+  const req = new Request("http://x/rainforest", { method: "POST", headers: { Authorization: "Bearer t" }, body: JSON.stringify({ action: "refreshStatus" }) });
+  const r = await handle(req, {
+    admin: fake, getUser: () => Promise.resolve({ id: "own-auth" }), env: (k) => ({ RAINFOREST_ENABLED: "true" } as Record<string, string>)[k],
+    rf: { base: "x", get: () => Promise.resolve({ merchant_id: "mid_1", status: "ONBOARDING", latest_merchant_application: { merchant_application_id: "app_1", status: "PROCESSING" } }), post: () => Promise.resolve({}) },
+    qb: { connect: () => Promise.resolve(null), listAccounts: () => Promise.resolve([]), getInvoice: () => Promise.resolve(null) },
+  });
+  const j = await r.json();
+  assertEquals(j.stage, "in_review");
+  assertEquals(fake.tables.processor_accounts[0].merchant_application_status, "processing");
 });
