@@ -925,6 +925,16 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // (B2B: the shop never charges the broker sales tax), and (c) enable ACH +
   // card so the broker can pay by ACH (~0 fee). Normal invoices are untouched.
   const billBroker = !!params?.billBroker;
+  // brokerClientInvoice: the BROKER is invoicing their own END CLIENT in their
+  // OWN QuickBooks realm (server-set from the caller's role in the router). The
+  // customer is the end client, the pricing is the CLIENT price, the tax is the
+  // broker's own. Like billBroker, it (a) bypasses the broker-quote guard below
+  // — that guard stops the SHOP billing the client at wholesale; here the BROKER
+  // is billing their own client at the client price, in their own books — and
+  // (b) skips the quote/invoice write-back so the broker's client invoice id
+  // lands on the quote's qb_broker_client_* columns (via the caller), never
+  // qb_invoice_id (which is the SHOP's realm). Normal tax applies (not exempt).
+  const brokerClientInvoice = !!params?.brokerClientInvoice;
 
   if (!invoicePayload?.lines?.length) {
     throw new Error("Missing invoicePayload — frontend must compute quote totals");
@@ -980,7 +990,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // stranger for the wrong amount. The wholesale bill belongs to the
   // BROKER, which is a different flow (broker billing, not built yet).
   // Same rule the deposit path already enforces (skipped:"broker_quote").
-  if (!billBroker && (quote.broker_id || quote.broker_email || sourceRow?.broker_id)) {
+  if (!billBroker && !brokerClientInvoice && (quote.broker_id || quote.broker_email || sourceRow?.broker_id)) {
     return {
       error: "Broker quotes can't create a QuickBooks invoice to the end client — the QB amount would be your wholesale price billed to the broker's customer. Bill the broker directly for now; in-app broker billing is coming.",
       brokerBlocked: true,
@@ -2051,13 +2061,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // totals back to the source record. Both ids matter — the internal id
   // for API calls, the DocNumber for the operator-facing UI.
   //
-  // billBroker SKIPS this write-back entirely. This is a shop→BROKER wholesale
-  // invoice; its id must NOT land in the quote/invoice qb_invoice_id, or the
-  // reconcile/webhook layer would compare this WHOLESALE invoice against the
-  // quote's CLIENT total and fire permanent false books-drift. The caller
-  // (billBrokerForOrder) stores the returned id + link in the order's own
-  // broker-invoice columns, which reconcile ignores.
-  if (quote.id && !billBroker) {
+  // billBroker AND brokerClientInvoice both SKIP this write-back entirely.
+  // - billBroker: shop→broker wholesale invoice; its id must NOT land in
+  //   qb_invoice_id or reconcile compares it against the quote's client total
+  //   → permanent false books-drift. Caller stores it on the order's own cols.
+  // - brokerClientInvoice: the id is in the BROKER's realm, not the shop's, so
+  //   it must never sit in qb_invoice_id (a shop-realm field) — the caller
+  //   stores it on the quote's qb_broker_client_* columns instead.
+  if (quote.id && !billBroker && !brokerClientInvoice) {
     // Recording qb_invoice_id locally is CRITICAL: the QB invoice already
     // exists, so if this write-back is lost we have an invoice in QB that
     // InkTracker doesn't know about, and a re-send after the idempotency TTL
@@ -2145,7 +2156,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       customer,
       isTaxExempt,
     });
-    if (taxRecord.shop_owner && taxRecord.qb_invoice_id && (reconciliation.taxMismatch !== true || acceptQbTax)) {
+    // Skip for a broker-client invoice: it's the BROKER's sale in the BROKER's
+    // realm, not the shop's — recording it in the shop's tax_records would put
+    // a phantom sale in the shop's by-state filing report.
+    if (!brokerClientInvoice && taxRecord.shop_owner && taxRecord.qb_invoice_id && (reconciliation.taxMismatch !== true || acceptQbTax)) {
       const taxAdmin = createClient(
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -3561,14 +3575,18 @@ Deno.serve(async (req) => {
     // curated set of actions to broker accounts; everything else stays denied,
     // keeping the surface minimal. Every allowed action runs through
     // findUserProfile, so it can only ever touch the broker's own realm.
+    let callerIsBroker = false;
     {
       const { data: roleRow } = await supabase
         .from("profiles")
         .select("role")
         .eq("auth_id", user.id)
         .maybeSingle();
-      if (roleRow?.role === "broker") {
-        const BROKER_ALLOWED_ACTIONS = new Set(["checkConnection"]);
+      callerIsBroker = roleRow?.role === "broker";
+      if (callerIsBroker) {
+        // checkConnection: see their own connection. createInvoice: bill their
+        // own CLIENT in their own realm (broker-client mode, flagged below).
+        const BROKER_ALLOWED_ACTIONS = new Set(["checkConnection", "createInvoice"]);
         if (!BROKER_ALLOWED_ACTIONS.has(action)) {
           return Response.json(
             { success: false, error: "This QuickBooks action isn't available on broker accounts." },
@@ -3710,6 +3728,12 @@ Deno.serve(async (req) => {
     let result: any;
     switch (action) {
       case "createInvoice": {
+        // Broker-client invoice: when the CALLER is a broker, this is the
+        // broker invoicing their own END CLIENT in their OWN QuickBooks realm
+        // (getValidTokens already resolved the broker's tokens). Server-set
+        // from the DB role — never trusted from the request body — so it can't
+        // be spoofed to bill from the shop's realm.
+        params.brokerClientInvoice = callerIsBroker;
         // ── Idempotency + audit envelope ─────────────────────────────
         // Every createInvoice is wrapped twice:
         //   (a) withQbIdempotency — short-circuits a duplicate request
