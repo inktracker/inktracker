@@ -18,6 +18,7 @@ import {
   hoursOnPressDay as schedulerHoursOnPressDay,
 } from "@/lib/scheduler/schedulerHelpers";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
+import { useOrderCompletionSend } from "@/lib/invoices/useOrderCompletionSend";
 import OrderNotesIcon, { orderNotesTooltip } from "../components/orders/OrderNotesIcon";
 import { canSeeMoney } from "@/lib/managerPermissions";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
@@ -143,6 +144,8 @@ export default function Production() {
   const [advFilters, setAdvFilters] = useState({});
   const [dragOverDate, setDragOverDate] = useState(null);
   const [user, setUser] = useState(null);
+  // After an admin/manager finishes an order, offer to email the invoice.
+  const { promptSend, sendModal } = useOrderCompletionSend(user);
   // Shop record — needed for the press scheduler's lane list
   // (`shop.presses` is the configured press names from Account →
   // Presses). Soft-failing: if the shop row isn't there, the scheduler
@@ -485,6 +488,9 @@ export default function Production() {
       // Keep the modal open on the just-completed order so its action bar can
       // reveal Create Invoice → Send. Only updates if this order is being viewed.
       setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+      // Offer to email the invoice to the customer right away (admin/manager,
+      // non-broker orders with an invoice). Best-effort — never blocks.
+      promptSend(updated);
     } catch (err) {
       notify.error("Couldn't complete the order", err);
     }
@@ -1705,6 +1711,8 @@ export default function Production() {
         />
       )}
 
+      {/* Post-completion "email the invoice" prompt (admin/manager). */}
+      {sendModal}
     </div>
   );
 }
