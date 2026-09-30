@@ -5,7 +5,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { FormSkeleton } from "@/components/shared/Skeletons";
 import { uploadLogo } from "@/lib/uploadFile";
 import { normalizeBrandColor } from "@/lib/branding";
-import { User, LogOut, Package, Link2, Mail, ChevronDown, Wand2, CreditCard, CheckSquare, Shield, Handshake, BellRing } from "lucide-react";
+import { User, LogOut, Package, Link2, Mail, ChevronDown, Wand2, CreditCard, CheckSquare, Shield, Handshake, BellRing, Wallet } from "lucide-react";
 import PartnersSection from "../components/account/PartnersSection";
 import PushNotificationsSection from "../components/account/PushNotificationsSection";
 import CustomerUpdatesSection from "../components/account/CustomerUpdatesSection";
@@ -23,6 +23,8 @@ import DeleteAccountSection from "../components/account/DeleteAccountSection";
 import ExportDataSection from "../components/account/ExportDataSection";
 import ImportCustomersSection from "../components/account/ImportCustomersSection";
 import SupplierKeysSection from "../components/account/SupplierKeysSection";
+import PaymentsSection from "../components/account/PaymentsSection";
+import { usePaymentRail } from "@/lib/payment/usePaymentRail";
 import StepUpConfirmModal from "@/components/StepUpConfirmModal";
 import { notify } from "@/lib/notify";
 import { qbOAuthErrorMessage } from "@/lib/qb/oauthErrorMessage";
@@ -72,6 +74,8 @@ function buildQBAuthUrl(state) {
 export default function Account() {
   const navigate = useNavigate();
   const location = useLocation();
+  // InkTracker payments card: hidden until the platform switch is on.
+  const { status: paymentStatus } = usePaymentRail();
   const [user, setUser] = useState(null);
   const [shopName, setShopName] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -639,6 +643,12 @@ export default function Account() {
         {(user?.role === "admin" || user?.role === "shop") && !isNative() && <Section icon={CreditCard} title="Billing & Plan" defaultOpen={location.search?.includes("billing")}>
           <BillingSection user={user} />
         </Section>}
+
+        {paymentStatus?.platformEnabled && (user?.role === "admin" || user?.role === "shop" || user?.role === "manager") && (
+          <Section icon={Wallet} title="Payments" defaultOpen={location.search?.includes("payments")}>
+            <PaymentsSection />
+          </Section>
+        )}
 
         {(user?.role === "admin" || user?.role === "shop" || user?.role === "manager") && (
           <Section icon={Handshake} title="Partners">

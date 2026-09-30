@@ -237,3 +237,10 @@ Deno.test("payinSession: broker quotes never take payment here", async () => {
   const j = await (await call(withQuote({ ...ACTIVE, enabled: true }, { broker_email: "b@x.com" }), "", { action: "payinSession", id: QUOTE_ID, token: "tok" })).json();
   assertEquals(j, { rail: "qb" });
 });
+
+Deno.test("payRail: token-gated, answers the rail only", async () => {
+  const on = withQuote({ ...ACTIVE, enabled: true });
+  assertEquals(await (await call(on, "", { action: "payRail", id: QUOTE_ID, token: "tok" })).json(), { rail: "processor" });
+  assertEquals((await call(on, "", { action: "payRail", id: QUOTE_ID, token: "x" })).status, 404);
+  assertEquals(await (await call(withQuote(ACTIVE), "", { action: "payRail", id: QUOTE_ID, token: "tok" })).json(), { rail: "qb" });
+});
