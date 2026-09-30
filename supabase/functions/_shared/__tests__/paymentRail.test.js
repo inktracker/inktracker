@@ -1,0 +1,112 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import {
+  RAIL,
+  resolvePaymentRail,
+  applyRailToInvoiceBody,
+  loadPaymentRail,
+  flagOn,
+} from "../paymentRail.js";
+
+const ready = { shop_owner: "joe@biotamfg.co", merchant_id: "mid_1", merchant_status: "active", enabled: true };
+
+describe("resolvePaymentRail — processor only when everything lines up", () => {
+  it("fully set up + switched on + platform on → processor", () => {
+    expect(resolvePaymentRail({ envEnabled: true, account: ready })).toBe(RAIL.PROCESSOR);
+    expect(resolvePaymentRail({ envEnabled: true, account: { ...ready, merchant_status: "ACTIVE" } })).toBe(RAIL.PROCESSOR);
+  });
+
+  it("anything missing → QuickBooks, like today", () => {
+    expect(resolvePaymentRail({ envEnabled: false, account: ready })).toBe(RAIL.QB);
+    expect(resolvePaymentRail({ envEnabled: true, account: null })).toBe(RAIL.QB);
+    expect(resolvePaymentRail({ envEnabled: true, account: { ...ready, enabled: false } })).toBe(RAIL.QB);
+    expect(resolvePaymentRail({ envEnabled: true, account: { ...ready, enabled: "true" } })).toBe(RAIL.QB);
+    expect(resolvePaymentRail({ envEnabled: true, account: { ...ready, merchant_id: null } })).toBe(RAIL.QB);
+    expect(resolvePaymentRail({ envEnabled: true, account: { ...ready, merchant_status: "pending" } })).toBe(RAIL.QB);
+    expect(resolvePaymentRail({ envEnabled: true, account: { ...ready, merchant_status: null } })).toBe(RAIL.QB);
+  });
+
+  it("broker invoices always stay on QuickBooks", () => {
+    expect(resolvePaymentRail({ envEnabled: true, account: ready, broker: true })).toBe(RAIL.QB);
+  });
+});
+
+describe("applyRailToInvoiceBody", () => {
+  it("QuickBooks rail: body untouched — InkTracker never sets the shop's QB payment flags", () => {
+    const body = { Line: [] };
+    expect(applyRailToInvoiceBody(body, RAIL.QB)).toBe(body);
+    expect(applyRailToInvoiceBody({}, RAIL.QB)).toEqual({});
+    expect("AllowOnlineCreditCardPayment" in applyRailToInvoiceBody(body, RAIL.QB)).toBe(false);
+  });
+
+  it("processor rail: both QB online-payment flags explicitly OFF", () => {
+    expect(applyRailToInvoiceBody({ Line: [] }, RAIL.PROCESSOR)).toEqual({
+      Line: [], AllowOnlineCreditCardPayment: false, AllowOnlineACHPayment: false,
+    });
+  });
+});
+
+describe("flagOn", () => {
+  it("reads env switches strictly", () => {
+    for (const v of ["1", "true", "TRUE", " yes "]) expect(flagOn(v)).toBe(true);
+    for (const v of ["", "0", "false", "on", undefined, null]) expect(flagOn(v)).toBe(false);
+  });
+});
+
+describe("loadPaymentRail — fails to QuickBooks", () => {
+  const client = (result) => ({
+    from: (table) => {
+      expect(table).toBe("processor_accounts");
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: async () => {
+          if (result instanceof Error) throw result;
+          return result;
+        } }) }),
+      };
+    },
+  });
+
+  it("reads the shop's row", async () => {
+    expect(await loadPaymentRail(client({ data: ready, error: null }), "joe@biotamfg.co", { envEnabled: true })).toBe(RAIL.PROCESSOR);
+  });
+  it("platform off → never even reads", async () => {
+    const boom = { from: () => { throw new Error("should not read"); } };
+    expect(await loadPaymentRail(boom, "joe@biotamfg.co", { envEnabled: false })).toBe(RAIL.QB);
+  });
+  it("read error or throw → QuickBooks", async () => {
+    expect(await loadPaymentRail(client({ data: null, error: { message: "relation does not exist" } }), "a@b.co", { envEnabled: true })).toBe(RAIL.QB);
+    expect(await loadPaymentRail(client(new Error("network")), "a@b.co", { envEnabled: true })).toBe(RAIL.QB);
+  });
+  it("no shop / broker → QuickBooks", async () => {
+    expect(await loadPaymentRail(client({ data: ready, error: null }), "", { envEnabled: true })).toBe(RAIL.QB);
+    expect(await loadPaymentRail(client({ data: ready, error: null }), "a@b.co", { envEnabled: true, broker: true })).toBe(RAIL.QB);
+  });
+});
+
+// ── Source contract: how qbSync uses the rail ─────────────────────────────
+// Pinned so a refactor can't quietly (a) read the rail from the request body
+// (a caller could switch another shop's invoices off QuickBooks), (b) set the
+// QB payment flags for QB-rail shops (Joe's 18 Sept rule), or (c) mint a QB
+// link for a processor-rail shop.
+describe("qbSync payment-rail contract", () => {
+  const src = readFileSync(path.resolve(__dirname, "../../qbSync/index.ts"), "utf8");
+
+  it("the rail comes from the authenticated shop, never params", () => {
+    const calls = src.match(/loadPaymentRail\([^)]*\)/g) ?? [];
+    expect(calls.length).toBe(2);
+    for (const c of calls) expect(c).toMatch(/loadPaymentRail\((adminClient|depAdmin), shopOwnerEmail,/);
+    expect(src).not.toMatch(/params\??\.\w*[Rr]ail/);
+  });
+
+  it("AllowOnline* is only ever set through applyRailToInvoiceBody", () => {
+    const setters = src.split("\n").filter((l) => /AllowOnline\w*Payment\s*:/.test(l));
+    expect(setters).toEqual([]);
+  });
+
+  it("every QB link mint is skipped on the processor rail", () => {
+    const mints = src.split("\n").filter((l) => /await mintInvoicePaymentLink\(/.test(l)).length;
+    expect(mints).toBe(3); // createInvoice, deposit adopt, deposit fresh
+    expect((src.match(/PROCESSOR_LINK_REASON/g) ?? []).length).toBeGreaterThanOrEqual(4); // import + 3 skips
+  });
+});
