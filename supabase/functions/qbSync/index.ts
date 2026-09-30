@@ -910,6 +910,15 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // When true, suppress QBO's /send fallback so creating the invoice never
   // emails the customer (invoice/order flow — the shop sends via InkTracker).
   const noEmail = !!params?.noEmail;
+  // billBroker: this is the shop→BROKER wholesale invoice, not a client bill.
+  // The caller (billBrokerForOrder) has already set params.customer to the
+  // BROKER and built invoicePayload at BROKER_MARKUP (wholesale) with
+  // taxPercent 0. In this mode we (a) bypass the broker-quote guard below —
+  // its whole point is to stop billing the END CLIENT at wholesale, which is
+  // exactly NOT what's happening here — (b) force the invoice tax-exempt
+  // (B2B: the shop never charges the broker sales tax), and (c) enable ACH +
+  // card so the broker can pay by ACH (~0 fee). Normal invoices are untouched.
+  const billBroker = !!params?.billBroker;
 
   if (!invoicePayload?.lines?.length) {
     throw new Error("Missing invoicePayload — frontend must compute quote totals");
@@ -965,7 +974,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // stranger for the wrong amount. The wholesale bill belongs to the
   // BROKER, which is a different flow (broker billing, not built yet).
   // Same rule the deposit path already enforces (skipped:"broker_quote").
-  if (quote.broker_id || quote.broker_email || sourceRow?.broker_id) {
+  if (!billBroker && (quote.broker_id || quote.broker_email || sourceRow?.broker_id)) {
     return {
       error: "Broker quotes can't create a QuickBooks invoice to the end client — the QB amount would be your wholesale price billed to the broker's customer. Bill the broker directly for now; in-app broker billing is coming.",
       brokerBlocked: true,
@@ -1070,7 +1079,9 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // docs/qb-multistate-tax-scope.md.
   const todayIso = new Date().toISOString().slice(0, 10);
   const destinationState = customer?.ship_to_address?.state;
-  let isTaxExempt = isExemptionActive(customer, { asOf: todayIso, destinationState });
+  // Broker (B2B) invoices are always tax-exempt — the shop never charges the
+  // broker sales tax; the broker charges their own client tax downstream.
+  let isTaxExempt = billBroker ? true : isExemptionActive(customer, { asOf: todayIso, destinationState });
   try {
     const qbCustData = await qbQuery(token, realmId, `SELECT * FROM Customer WHERE Id = '${escapeQbStringLiteral(qbCustomerId)}'`);
     const qbCust = qbCustData?.QueryResponse?.Customer?.[0];
@@ -1488,10 +1499,15 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       DocNumber: docNumber,
       TxnDate: quote.date,
       DueDate: quote.date || undefined,
-      // Do NOT set AllowOnline*Payment here. Omitting them lets QuickBooks
-      // apply the shop's own Payments settings (card / ACH toggles) per
-      // invoice. Hard-coding them overrode the shop owner's QB config —
-      // e.g. an ACH-only shop still had card enabled, eating ~3% fees.
+      // Do NOT set AllowOnline*Payment here for normal invoices. Omitting
+      // them lets QuickBooks apply the shop's own Payments settings (card /
+      // ACH toggles) per invoice. Hard-coding them overrode the shop owner's
+      // QB config — e.g. an ACH-only shop still had card enabled, eating ~3%.
+      // EXCEPTION — broker (B2B) invoices: explicitly enable ACH + card so the
+      // broker can pay by ACH (~0 fee), which is the whole point of in-app
+      // broker billing. This is scoped to billBroker only; normal invoices are
+      // unaffected and keep deferring to the shop's QB Payments settings.
+      ...(billBroker ? { AllowOnlineACHPayment: true, AllowOnlineCreditCardPayment: true } : {}),
       Line: lines,
       // Self tax, PROPER path: reference the shop's manual QB tax code so QB
       // records our rate. (Line-fallback shops carry the tax as a line instead.)
@@ -2028,7 +2044,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // 5. Save QB invoice ID + DocNumber + payment link + final QB-computed
   // totals back to the source record. Both ids matter — the internal id
   // for API calls, the DocNumber for the operator-facing UI.
-  if (quote.id) {
+  //
+  // billBroker SKIPS this write-back entirely. This is a shop→BROKER wholesale
+  // invoice; its id must NOT land in the quote/invoice qb_invoice_id, or the
+  // reconcile/webhook layer would compare this WHOLESALE invoice against the
+  // quote's CLIENT total and fire permanent false books-drift. The caller
+  // (billBrokerForOrder) stores the returned id + link in the order's own
+  // broker-invoice columns, which reconcile ignores.
+  if (quote.id && !billBroker) {
     // Recording qb_invoice_id locally is CRITICAL: the QB invoice already
     // exists, so if this write-back is lost we have an invoice in QB that
     // InkTracker doesn't know about, and a re-send after the idempotency TTL
