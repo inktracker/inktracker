@@ -20,7 +20,7 @@ import { billBrokerForOrder } from "../billBrokerForOrder";
 const session = { access_token: "tok" };
 
 function mockBase44({ invokeResult, customers = [], freshOrder } = {}) {
-  const invoke = vi.fn(async () => invokeResult ?? { data: { qbInvoiceId: "QB-1", qbDocNumber: "ORD-2026-9", paymentLink: "https://pay" } });
+  const invoke = vi.fn(async () => invokeResult ?? { data: { qbInvoiceId: "QB-1", qbDocNumber: "ORD-2026-9", paymentLink: "https://pay", qbTotal: 800 } });
   const orderUpdate = vi.fn(async (id, patch) => ({ id, ...patch }));
   const customerCreate = vi.fn(async (row) => ({ id: "cust-new", ...row }));
   // Order.get is the authoritative pre-bill re-read. Default: a fresh row with
@@ -111,10 +111,11 @@ describe("billBrokerForOrder — happy path", () => {
     expect(payload.invoicePayload.lines.reduce((s, l) => s + l.amount, 0)).toBe(800);
     expect(payload.customer.tax_exempt).toBe(true);
 
-    // The id/link landed on the ORDER's own broker columns, not qb_invoice_id.
+    // The id/link/total landed on the ORDER's own broker columns, not qb_invoice_id.
     expect(orderUpdate).toHaveBeenCalledWith("o1", expect.objectContaining({
       qb_broker_invoice_id: "QB-1",
       qb_broker_payment_link: "https://pay",
+      qb_broker_invoice_total: 800, // QB's authoritative TotalAmt
     }));
     const patch = orderUpdate.mock.calls[0][1];
     expect(patch).not.toHaveProperty("qb_invoice_id");

@@ -133,10 +133,15 @@ export async function billBrokerForOrder({ base44, order, session }) {
     if (!qbInvoiceId) return { ok: false, error: "QuickBooks did not return a broker invoice id." };
 
     // 4. Stamp the order's OWN broker-invoice columns (never qb_invoice_id).
+    //    qb_broker_invoice_total is QB's authoritative TotalAmt for the
+    //    wholesale invoice — the real amount due, used by the broker's "Due"
+    //    line and the shop's broker-AR view (never a stale recompute).
+    const qbTotal = Number(data?.qbTotal);
     const updated = await base44.entities.Order.update(order.id, {
       qb_broker_invoice_id: qbInvoiceId,
       qb_broker_doc_number: data?.qbDocNumber || order.order_id,
       qb_broker_payment_link: data?.paymentLink || data?.qb_payment_link || null,
+      qb_broker_invoice_total: Number.isFinite(qbTotal) && qbTotal > 0 ? qbTotal : null,
       qb_broker_invoice_synced_at: new Date().toISOString(),
     });
 

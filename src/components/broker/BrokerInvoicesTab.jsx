@@ -58,6 +58,24 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
   const brokerTotals = job._brokerTotal || 0;
   const clientTotals = job._clientTotal || 0;
 
+  // Phase B (broker→client) invoice data lives on the linked QUOTE row, not the
+  // order — read it from _rawQuote (order-based jobs) or the job itself
+  // (quote-based jobs spread the quote). Absent → the client-invoice section
+  // hides (the broker never created a client invoice for this job).
+  const clientInv = job._rawQuote || job;
+  const clientPayLink = clientInv?.qb_broker_client_payment_link || "";
+  const clientInvoiced = Boolean(clientInv?.qb_broker_client_invoice_id);
+  const clientPaid = Boolean(clientInv?.broker_client_invoice_paid);
+  const [copied, setCopied] = useState(false);
+  const copyClientLink = async () => {
+    if (!clientPayLink) return;
+    try {
+      await navigator.clipboard.writeText(clientPayLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard blocked — the link is still shown as an <a> fallback */ }
+  };
+
   return (
     <ModalBackdrop onClose={onClose} z="z-50" bg="bg-slate-900/50" layout="slide-right">
       <div className="bg-white w-full max-w-lg h-full overflow-y-auto shadow-2xl">
@@ -200,7 +218,12 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
                   {job.broker_invoice_paid ? (
                     <span className="text-emerald-600">Paid</span>
                   ) : (
-                    <span className="text-amber-600">Due — {fmtMoney(brokerTotals)}</span>
+                    // Prefer the authoritative invoiced total stamped at bill
+                    // time; fall back to the saved quote wholesale for invoices
+                    // created before that column existed.
+                    <span className="text-amber-600">
+                      Due — {fmtMoney(Number(job.qb_broker_invoice_total) > 0 ? job.qb_broker_invoice_total : brokerTotals)}
+                    </span>
                   )}
                 </div>
               </div>
@@ -213,6 +236,36 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
                 >
                   Pay the shop
                 </a>
+              )}
+            </div>
+          )}
+
+          {/* Client invoice (Phase B) — the broker's OWN invoice to their end
+              client, billed in the broker's QuickBooks. Paid state flips via
+              the QB webhook / nightly reconcile. When it's unpaid, the broker
+              can copy the client's pay link to nudge them. Shown only once the
+              broker has actually created the client invoice. */}
+          {clientInvoiced && (
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Your invoice to the client</div>
+                <div className="text-sm font-semibold mt-0.5">
+                  {clientPaid ? (
+                    <span className="text-emerald-600 inline-flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Paid by client
+                    </span>
+                  ) : (
+                    <span className="text-amber-600">Awaiting payment — {fmtMoney(clientTotals)}</span>
+                  )}
+                </div>
+              </div>
+              {!clientPaid && clientPayLink && (
+                <button
+                  onClick={copyClientLink}
+                  className="inline-flex items-center justify-center text-xs font-semibold bg-teal-600 text-white px-4 py-2 rounded-xl hover:bg-teal-700 transition shrink-0"
+                >
+                  {copied ? "Copied!" : "Copy pay link"}
+                </button>
               )}
             </div>
           )}
