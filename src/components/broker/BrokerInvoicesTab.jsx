@@ -183,6 +183,34 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
             )}
           </div>
 
+          {/* Wholesale invoice from the shop (when the shop bills brokers in
+              InkTracker). The job spreads the order row, so the qb_broker_*
+              fields are already here. */}
+          {job.qb_broker_invoice_id && (
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Wholesale invoice from shop</div>
+                <div className="text-sm font-semibold text-slate-700 mt-0.5">
+                  {job.broker_invoice_paid ? (
+                    <span className="text-emerald-600">Paid</span>
+                  ) : (
+                    <span className="text-amber-600">Due — {fmtMoney(brokerTotals)}</span>
+                  )}
+                </div>
+              </div>
+              {!job.broker_invoice_paid && job.qb_broker_payment_link && (
+                <a
+                  href={job.qb_broker_payment_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center text-xs font-semibold bg-teal-600 text-white px-4 py-2 rounded-xl hover:bg-teal-700 transition shrink-0"
+                >
+                  Pay the shop
+                </a>
+              )}
+            </div>
+          )}
+
           {/* Previews */}
           {job._rawQuote && (
             <div>

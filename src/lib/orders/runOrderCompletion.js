@@ -18,6 +18,9 @@ import { buildOrderCompletionPlan } from "./completeOrder";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
 import { shopScope } from "@/lib/shopScope";
+import { billBrokerForOrder } from "./billBrokerForOrder";
+import { getShopPricingConfig } from "@/components/shared/pricing";
+import { supabase } from "@/api/supabaseClient";
 
 // Takes the whole `user` object (not an email) and derives the tenant
 // key itself: when a manager or employee completes an order, the
@@ -132,6 +135,23 @@ export async function runOrderCompletion({ order, user, base44 }) {
   }
   await base44.entities.ShopPerformance.create(plan.shopPerformanceCreate);
   const updated = await base44.entities.Order.update(plan.orderUpdate.id, plan.orderUpdate.patch);
+
+  // Broker billing (Phase A, opt-in). When the shop has turned on
+  // "Auto-invoice brokers on completion" (pricing_config.brokerBillingEnabled),
+  // bill the broker for the wholesale amount in the shop's QuickBooks now.
+  // Off by default, so existing shops are unaffected. Fail-open by contract:
+  // billBrokerForOrder never throws, and a QB hiccup must never undo a job
+  // that just completed — the shop can retry from the order later.
+  if (updated?.broker_id && getShopPricingConfig()?.brokerBillingEnabled === true) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await billBrokerForOrder({ base44, order: updated, session });
+      }
+    } catch (err) {
+      console.error("[runOrderCompletion] broker billing failed (non-fatal):", err?.message || err);
+    }
+  }
 
   // Notify the broker (no-op for non-broker orders). Best-effort —
   // the helper swallows its own errors, so a Resend hiccup here can't
