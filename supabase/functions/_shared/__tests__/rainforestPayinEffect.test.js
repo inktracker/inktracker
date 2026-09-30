@@ -95,6 +95,17 @@ describe("planPayinEffect — a matched successful payment", () => {
   });
 });
 
+describe("planPayinEffect — invoice documents", () => {
+  it("an invoice payment links the ledger to the invoice row, not a quote", () => {
+    const invoiceRow = { id: "inv-uuid", invoice_id: "INV-2026-0042", shop_owner: "joe@biotamfg.co", qb_invoice_id: "3815" };
+    const r = plan({ quote: invoiceRow, event: ev({ metadata: { ...ev().metadata, inktracker_doc_type: "invoice", inktracker_quote_id: "inv-uuid" } }) });
+    expect(r.ok).toBe(true);
+    expect(r.ledger).toMatchObject({ invoice_id: "inv-uuid", quote_id: null });
+    const fail = plan({ quote: invoiceRow, event: ev({ kind: "failed", method: "ach", metadata: { ...ev().metadata, inktracker_doc_type: "invoice" } }) });
+    expect(fail.notify.title).toBe("Bank payment didn't go through: INV-2026-0042");
+  });
+});
+
 describe("planPayinEffect — never trust the metadata alone", () => {
   it("unknown merchant → nothing written, ops alerted", () => {
     const r = plan({ account: null });

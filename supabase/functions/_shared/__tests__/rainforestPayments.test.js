@@ -151,11 +151,25 @@ describe("idempotency + metadata", () => {
 
   it("metadata carries the ids the webhook needs, as strings", () => {
     expect(buildPayinMetadata({ quote: quote(), target: { kind: "full", qbInvoiceId: "3815" } })).toEqual({
+      inktracker_doc_type: "quote",
       inktracker_quote_id: "q-uuid",
       quote_number: "Q-2026-HKSO",
       shop_owner: "joe@biotamfg.co",
       qb_invoice_id: "3815",
       pay_kind: "full",
+    });
+  });
+});
+
+describe("invoices (order-then-invoice flow) pay the same way", () => {
+  const invoiceRow = { id: "inv-uuid", invoice_id: "INV-2026-0042", shop_owner: "joe@biotamfg.co", total: 1643, tax: 0, qb_invoice_id: "3815" };
+  it("routes to the invoice's QB balance and tags the metadata as an invoice", () => {
+    const t = choosePayTarget({ quote: invoiceRow, depositsEnabled: true, liveFinal: inv() });
+    expect(t).toEqual({ ok: true, kind: "full", qbInvoiceId: "3815", amountCents: 164300 });
+    expect(buildPayinMetadata({ quote: invoiceRow, target: t, docType: "invoice" })).toMatchObject({
+      inktracker_doc_type: "invoice",
+      inktracker_quote_id: "inv-uuid",
+      quote_number: "INV-2026-0042",
     });
   });
 });

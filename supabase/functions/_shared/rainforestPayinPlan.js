@@ -110,15 +110,20 @@ export function payinIdempotencyKey({ quoteId, qbInvoiceId, amountCents }) {
 }
 
 /**
- * Metadata that rides with the payment and comes back on every webhook. The
+ * Metadata that rides with the payment and comes back on every webhook.
+ * `inktracker_quote_id` is the id of the paid DOCUMENT — a quote, or an
+ * invoice row when `inktracker_doc_type` is "invoice" (the order-then-invoice
+ * flow). The
  * webhook must NOT trust it on its own (it is round-tripped through the
  * processor) — it re-reads the quote and checks the shop owns the merchant
  * that received the money before applying anything.
  */
-export function buildPayinMetadata({ quote, target }) {
+export function buildPayinMetadata({ quote, target, docType = "quote" }) {
+  const isInvoice = docType === "invoice";
   return {
+    inktracker_doc_type: isInvoice ? "invoice" : "quote",
     inktracker_quote_id: String(quote?.id ?? ""),
-    quote_number: String(quote?.quote_id ?? ""),
+    quote_number: String((isInvoice ? quote?.invoice_id : quote?.quote_id) ?? ""),
     shop_owner: String(quote?.shop_owner ?? ""),
     qb_invoice_id: String(target?.qbInvoiceId ?? ""),
     pay_kind: String(target?.kind ?? ""),
