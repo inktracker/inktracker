@@ -71,6 +71,22 @@ describe("createBrokerClientInvoice — guards", () => {
     expect(invoke).not.toHaveBeenCalled(); // never reached QB
   });
 
+  it("refuses a partially-stamped quote (a line missing client pricing would bill wholesale)", async () => {
+    // client_total > 0 but one qty-bearing line lacks _client_ppp/_client_lineTotal.
+    const { b, invoke } = mockBase44();
+    const partial = {
+      ...brokerQuote,
+      line_items: [
+        { sizes: { M: 10 }, _ppp: 10, _lineTotal: 500, _client_ppp: 14, _client_lineTotal: 700 },
+        { sizes: { L: 5 }, _ppp: 8, _lineTotal: 200 }, // no client stamp
+      ],
+    };
+    const r = await createBrokerClientInvoice({ base44: b, quote: partial, session });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/missing client pricing/i);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it("re-reads the DB and skips a duplicate when the passed object is STALE", async () => {
     // The in-memory quote has no invoice id (stale), but the DB row already
     // carries one (a concurrent/earlier send). The pre-create re-read wins and

@@ -54,6 +54,21 @@ export async function createBrokerClientInvoice({ base44, quote, session }) {
       return { ok: false, error: "This quote has no client pricing yet — re-save it before invoicing the client." };
     }
 
+    // Per-line guard: client_total can be > 0 while an individual line is
+    // missing its client stamp (a partial/legacy save). toCustomerFacingQuote
+    // leaves such a line at its WHOLESALE _lineTotal, so the client invoice
+    // would bill that line at the shop's cost (and the pay page would show the
+    // wholesale per-piece). Every modern BrokerQuoteEditor save stamps all
+    // lines; refuse the malformed row rather than leak wholesale to the client.
+    const lineQty = (li) =>
+      Object.values(li?.sizes || {}).reduce((s, v) => s + (parseInt(v, 10) || 0), 0);
+    const partiallyStamped = (quote.line_items || []).some(
+      (li) => lineQty(li) > 0 && !Number.isFinite(li?._client_lineTotal) && li?._client_ppp == null
+    );
+    if (partiallyStamped) {
+      return { ok: false, error: "Some line items are missing client pricing — re-save the quote before invoicing the client." };
+    }
+
     // CLIENT-priced payload + the broker's own client tax.
     const clientFacing = toCustomerFacingQuote(quote);
     const invoicePayload = buildQBInvoicePayload(clientFacing);

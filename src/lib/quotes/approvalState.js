@@ -58,6 +58,13 @@ export function quoteAlreadyPaid(quote) {
   return (
     quote?.paid === true ||
     quote?.status === "Approved and Paid" ||
-    quote?.status === "Paid"
+    quote?.status === "Paid" ||
+    // Broker quotes (Phase B): the end client pays the BROKER in the broker's
+    // own QB, which flips broker_client_invoice_paid via the webhook — NOT
+    // quote.paid/status (those belong to the shop↔quote leg). On the white-label
+    // page this IS fully settled, so without this the client who already paid
+    // saw a live "Approve Quote" CTA and "we'll be in touch about payment"
+    // instead of "Paid — Thank You!".
+    quote?.broker_client_invoice_paid === true
   );
 }

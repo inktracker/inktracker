@@ -399,6 +399,15 @@ async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: 
     }
   }
 
+  // A BROKER realm has NO shop-scoped rows to touch below. The broker's client
+  // invoice lives only on quotes.qb_broker_client_* (flipped just above), never
+  // on qb_invoice_id. The lookup that follows is keyed by qb_invoice_id +
+  // shop_owner, and for a broker profile shop_owner resolves to the SHOP — so
+  // running it here could ONLY cross-match the shop's own quote that happens to
+  // share this (realm-scoped, non-unique) QB id, and falsely mark it paid /
+  // convert it to an order / email the shop's customer. Stop at the flip.
+  if (flipQuote) return;
+
   // CRITICAL: scope the lookup by BOTH qb_invoice_id and shop_owner.
   // QB invoice ids are realm-scoped (not globally unique), so without
   // the shop_owner filter a webhook for Shop B's invoice 1042 could
@@ -653,6 +662,16 @@ async function processNotification(supabase: any, notification: any) {
     return;
   }
 
+  // A broker connects their OWN QuickBooks, but their profile.shop_owner points
+  // at the SHOP (e.g. Ethan → joe@biotamfg.co). So for a broker realm every
+  // shop-scoped path below (deposit lookup, general paid lookup, edit mirror)
+  // would run keyed to the shop and could cross-match the shop's own rows on a
+  // colliding (realm-scoped, non-unique) QB invoice id. In a broker realm the
+  // ONLY legitimate local row is the broker's client invoice on
+  // quotes.qb_broker_client_* — handlePaidInvoice flips that and returns. Every
+  // other shop-scoped operation is skipped here.
+  const isBrokerRealm = profile.role === "broker";
+
   const accessToken = await getAccessToken(supabase, profile);
 
   for (const entity of dataChangeEvent.entities) {
@@ -671,8 +690,11 @@ async function processNotification(supabase: any, notification: any) {
           if (isInvoiceFullyPaid(invData?.Invoice)) {
             // Deposit invoices are matched first (separate id column) —
             // a paid deposit flips deposit_paid + converts; it must NOT
-            // run the full-payment cascade.
-            const wasDeposit = await handleDepositInvoicePaid(supabase, invId, shopOwner, invData?.Invoice);
+            // run the full-payment cascade. Skipped in a broker realm
+            // (shop-scoped; brokers have no deposit invoices — see above).
+            const wasDeposit = isBrokerRealm
+              ? false
+              : await handleDepositInvoicePaid(supabase, invId, shopOwner, invData?.Invoice);
             if (!wasDeposit) await handlePaidInvoice(supabase, invId, shopOwner, profile.email, profile.role);
           } else {
             console.error(`[qbWebhook] Payment ${entity.id} left invoice ${invId} with an open balance — not marking paid locally`);
@@ -684,7 +706,9 @@ async function processNotification(supabase: any, notification: any) {
         // Fetch the invoice to check if Balance = 0 (fully paid)
         const data = await qbGet(accessToken, realmId, `invoice/${entity.id}`);
         if (isInvoiceFullyPaid(data?.Invoice)) {
-          const wasDeposit = await handleDepositInvoicePaid(supabase, entity.id, shopOwner, data?.Invoice);
+          const wasDeposit = isBrokerRealm
+            ? false
+            : await handleDepositInvoicePaid(supabase, entity.id, shopOwner, data?.Invoice);
           if (!wasDeposit) await handlePaidInvoice(supabase, entity.id, shopOwner, profile.email, profile.role);
         }
         // QB-side EDIT propagation. We used to fetch the fresh invoice
@@ -696,10 +720,17 @@ async function processNotification(supabase: any, notification: any) {
         // totals are never rewritten here; the shop consents via the
         // Sync from QuickBooks button. Best-effort: must never break
         // the webhook.
-        try {
-          await mirrorQbInvoiceEdit(supabase, data?.Invoice, entity.id, shopOwner);
-        } catch (mirrorErr) {
-          console.error(`[qbWebhook] edit mirror failed for invoice ${entity.id}:`, mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr));
+        // Shop-scoped (matches quotes/invoices by qb_invoice_id + shop_owner).
+        // Skip in a broker realm: the broker's client invoice is never on
+        // qb_invoice_id, so this could only cross-match the shop's own quote of
+        // a colliding id and fire a false "modified in QuickBooks" alert / adopt
+        // wrong numbers. The broker manages their client invoice in their own QB.
+        if (!isBrokerRealm) {
+          try {
+            await mirrorQbInvoiceEdit(supabase, data?.Invoice, entity.id, shopOwner);
+          } catch (mirrorErr) {
+            console.error(`[qbWebhook] edit mirror failed for invoice ${entity.id}:`, mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr));
+          }
         }
       }
     } catch (err) {

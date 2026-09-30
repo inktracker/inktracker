@@ -940,6 +940,16 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     throw new Error("Missing invoicePayload — frontend must compute quote totals");
   }
 
+  // billBroker is a body flag (the caller acts in its OWN shop realm, so unlike
+  // brokerClientInvoice it can't be authenticated by role). Require the target
+  // to actually be a broker order — this can't stop a determined same-tenant
+  // caller, but it stops an internal bug from minting a tax-exempt, write-back-
+  // skipped invoice on an ordinary quote. billBrokerForOrder always passes a
+  // broker id, so a legitimate call never trips this.
+  if (billBroker && !(quote?.broker_id || quote?.broker_email)) {
+    return { error: "billBroker requires a broker order (no broker on this quote)." };
+  }
+
   // ── Authoritative state re-read ──────────────────────────────────────────
   // The payload's quote/customer are snapshots of DB rows as the calling
   // window last saw them — possibly fetched before another surface's sync
@@ -1216,7 +1226,17 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
 
   let created: any;
   // DB row wins over the caller's snapshot (see authoritative re-read above).
-  let qbInvoiceId: string = String(sourceRow?.qb_invoice_id || quote.qb_invoice_id || "");
+  // EXCEPT the two broker paths: a broker wholesale bill (billBroker) and a
+  // broker→client bill (brokerClientInvoice) each run in a realm OTHER than the
+  // shop's, and neither tracks its id on qb_invoice_id (they use
+  // orders.qb_broker_invoice_id / quotes.qb_broker_client_invoice_id). Any
+  // qb_invoice_id on the source row is therefore a SHOP-realm id — adopting it
+  // here would UPDATE an unrelated, colliding invoice in the broker's realm
+  // (QB ids are realm-scoped, not unique). Force a fresh CREATE; the callers are
+  // idempotent via their own dedicated columns.
+  let qbInvoiceId: string = (billBroker || brokerClientInvoice)
+    ? ""
+    : String(sourceRow?.qb_invoice_id || quote.qb_invoice_id || "");
   let qbInvoiceFinal: any;
   // How the invoice-to-update was found when the caller's snapshot had no
   // qb_invoice_id. Surfaced in the response (→ qb_event_log) for forensics.
