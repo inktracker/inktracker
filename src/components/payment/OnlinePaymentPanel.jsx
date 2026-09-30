@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { loadRainforestScript } from "@/lib/payment/rainforestScript";
-import { readApproved } from "@/lib/payment/rainforestEvents";
+import { readApproved, readMethodUpdated } from "@/lib/payment/rainforestEvents";
 
 // The customer-facing card / bank form (Rainforest's payment component) for
 // one payin config. Card and bank details go straight to Rainforest; they
@@ -17,6 +17,10 @@ export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null
   const [loadError, setLoadError] = useState("");
   const [declined, setDeclined] = useState("");
   const [paid, setPaid] = useState(null); // { method }
+  // The method the customer picked, from the form's own method-updated
+  // event — the approved event's shape isn't documented, so this is the
+  // reliable signal for "card (done) vs bank (clears in days)".
+  const selectedMethod = useRef(null);
 
   useEffect(() => {
     let alive = true;
@@ -29,18 +33,25 @@ export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null
   useEffect(() => {
     const el = ref.current;
     if (!ready || !el) return undefined;
+    const onMethod = (e) => {
+      const m = readMethodUpdated(e.detail);
+      if (m) selectedMethod.current = m;
+    };
     const onApproved = (e) => {
       const r = readApproved(e.detail);
+      const method = r.method ?? selectedMethod.current;
       setDeclined("");
-      setPaid({ method: r.method });
-      onPaid?.(r);
+      setPaid({ method });
+      onPaid?.({ ...r, method });
     };
     const onDeclined = () => setDeclined("That payment was declined. Check the details or try a different card or account.");
     const onError = () => setDeclined("Something went wrong with that payment. You haven't been charged. Try again.");
+    el.addEventListener("method-updated", onMethod);
     el.addEventListener("approved", onApproved);
     el.addEventListener("declined", onDeclined);
     el.addEventListener("error", onError);
     return () => {
+      el.removeEventListener("method-updated", onMethod);
       el.removeEventListener("approved", onApproved);
       el.removeEventListener("declined", onDeclined);
       el.removeEventListener("error", onError);
@@ -52,11 +63,15 @@ export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 flex items-start gap-3">
         <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
         <div className="text-sm text-emerald-900">
-          <div className="font-semibold">{paid.method === "ach" ? "Bank payment submitted" : "Payment received"}</div>
+          <div className="font-semibold">
+            {paid.method === "card" ? "Payment received" : paid.method === "ach" ? "Bank payment submitted" : "Payment submitted"}
+          </div>
           <div className="mt-0.5 text-emerald-800">
-            {paid.method === "ach"
-              ? `Your bank payment of ${fmt(session.amountCents)} usually clears in a few business days. You don't need to do anything else.`
-              : `Thanks! ${fmt(session.amountCents)} was paid.`}
+            {paid.method === "card"
+              ? `Thanks! ${fmt(session.amountCents)} was paid.`
+              : paid.method === "ach"
+                ? `Your bank payment of ${fmt(session.amountCents)} usually clears in a few business days. You don't need to do anything else.`
+                : `Thanks! Your payment of ${fmt(session.amountCents)} is on its way. Card payments are done now; bank payments take a few business days to clear.`}
           </div>
         </div>
       </div>

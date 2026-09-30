@@ -11,7 +11,7 @@ import { describeEdgeError } from "@/lib/edgeErrors";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
 import { depositAmountFor } from "@/lib/deposits";
 import ModalBackdrop from "../shared/ModalBackdrop";
-import { usePaymentRail } from "@/lib/payment/usePaymentRail";
+import { usePaymentRail, fetchPaymentStatus } from "@/lib/payment/usePaymentRail";
 import { invoicePaymentUrl } from "@/lib/publicUrls";
 
 export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess }) {
@@ -219,7 +219,15 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       // a real one into the To field.
       // Paid invoices are receipts — never mint or attach a pay link.
       let effectiveLink = isPaid ? null : usablePaymentLink;
-      if (!isPaid && onlinePay && qbInvoiceId) {
+      // Re-ask the server right before sending: the value cached when this
+      // tab loaded can be hours old (owner switched payments off, or the
+      // payments account was put on hold). A stale "processor" would email
+      // a pay link the customer can't use; stale "qb" is the safe side.
+      const sendRail = isPaid || invoice?.broker_id
+        ? "qb"
+        : (await fetchPaymentStatus({ fresh: true })).rail;
+      const sendOnline = sendRail === "processor";
+      if (!isPaid && sendOnline && qbInvoiceId) {
         // Pay on InkTracker: never mint (or fall back to) a QuickBooks link.
         const pay = await ensureInvoicePayUrl();
         if (pay.taxHold) {
@@ -255,7 +263,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       try {
         // Processor rail: the PDF's "Pay invoice" button goes to the same
         // InkTracker page as the email (never a stale QuickBooks link).
-        const pdfInvoice = onlinePay && effectiveLink
+        const pdfInvoice = sendOnline && effectiveLink
           ? { ...invoice, qb_payment_link: null, payment_link: effectiveLink }
           : invoice;
         pdfBase64 = await exportInvoiceToPDF(pdfInvoice, customer, shopName, logoUrl, "base64");

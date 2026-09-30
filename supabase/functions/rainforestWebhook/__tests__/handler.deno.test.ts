@@ -59,11 +59,13 @@ function setup({ qbConnected = true, qbPostFails = false, balance = 1643, deposi
   }, { unique: { processed_webhook_events: ["source", "event_id"], processor_payments: ["processor_payin_id"] } });
   const posted: unknown[] = [];
   const deposits: unknown[] = [];
+  const emails: Record<string, any>[] = [];
   let failNext = qbPostFails;
   const deps: Deps = {
     admin: db,
     env: (k) => (k === "RAINFOREST_WEBHOOK_SECRET" ? SECRET : k === "CRON_SECRET" ? "cron-secret-value" : undefined),
     now: () => NOW,
+    sendEmail: (payload) => { emails.push(payload); return Promise.resolve({ ok: true }); },
     rainforestGet: (path) => {
       if (path.endsWith("/pyi_1")) return Promise.resolve(payin({ refundable_amount: 0 }));
       if (path.includes("/activity")) return Promise.resolve({ activities: path.includes("offset=0") ? activities : [] });
@@ -83,7 +85,7 @@ function setup({ qbConnected = true, qbPostFails = false, balance = 1643, deposi
       postDeposit: (_c, body) => { deposits.push(body); return Promise.resolve({ Deposit: { Id: "901" } }); },
     },
   };
-  return { db, deps, posted, deposits };
+  return { db, deps, posted, deposits, emails };
 }
 
 Deno.test("forged signature → 401, nothing written", async () => {
@@ -354,4 +356,23 @@ Deno.test("bank payment clearing days later is dated when the customer PAID", as
   await handle(await request({ event_type: "payin.succeeded", data: payin({ ...ach, updated_at: "2026-10-06T15:00:00Z" }) }, { msgId: "m2" }), deps);
   assertEquals(posted.length, 1);
   assertEquals((posted[0] as Record<string, unknown>).TxnDate, "2026-10-02");
+});
+
+Deno.test("alerts are emailed to the owner (dispute); routine notices aren't (refund)", async () => {
+  const { deps, emails } = setup();
+  await handle(await request({ event_type: "payin.succeeded", data: payin() }), deps);
+  await handle(await request({ event_type: "refund.succeeded", data: { refund_id: "rfd_1", payin_id: "pyi_1", amount: 164300 } }, { msgId: "r1" }), deps);
+  assertEquals(emails.length, 0); // refund = info → bell only
+  await handle(await request({ event_type: "chargeback.dispute_action_required", data: { chargeback_id: "chb_1", payin_id: "pyi_1", amount: 164300 } }, { msgId: "c1" }), deps);
+  assertEquals(emails.length, 1);
+  assertEquals(emails[0].to, [OWNER]);
+  assert(String(emails[0].subject).includes("disputed"));
+  assert(String(emails[0].html).includes("deadline"));
+});
+
+Deno.test("an email failure never breaks the webhook", async () => {
+  const { deps } = setup();
+  deps.sendEmail = () => Promise.reject(new Error("Resend down"));
+  const r = await handle(await request({ event_type: "chargeback.dispute_action_required", data: { chargeback_id: "chb_1", payin_id: "pyi_1", amount: 100 } }), deps);
+  assertEquals(r.status, 200);
 });
