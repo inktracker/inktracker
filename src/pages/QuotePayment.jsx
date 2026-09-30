@@ -1070,8 +1070,18 @@ export default function QuotePayment() {
             // launch, PR #201) — no state should claim otherwise.
             const securityLabel = onlinePay ? "Secure payment powered by Rainforest" : "Secure payment powered by QuickBooks";
 
+            // InkTracker payments charge what QuickBooks says is owed — the
+            // invoice's own sales tax and any credits — which can differ
+            // from the quote's estimate. The button makes no promise the form
+            // can't keep; the form shows the exact amount.
+            // (A deposit is a fixed, untaxed amount, so its label stays exact.)
+            if (onlinePay && !(depositRoute && !depositPaid)) {
+              buttonLabel = hasDeposit && depositPaid ? "Pay Remaining Balance" : "Approve & Continue to Payment";
+              subLabel = "You'll see the exact amount due, including sales tax, before you pay.";
+            }
+
             if (paySession) {
-              return <OnlinePaymentPanel session={paySession} />;
+              return <OnlinePaymentPanel session={paySession} quotedCents={Math.round(chargeAmount * 100)} />;
             }
 
             return (

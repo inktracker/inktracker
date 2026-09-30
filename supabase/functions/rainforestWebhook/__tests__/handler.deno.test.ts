@@ -345,3 +345,13 @@ Deno.test("QuickBooks dates are the shop's calendar date, not UTC", async () => 
   await handle(await request({ event_type: "deposit.succeeded", data: { deposit_id: "dep_1" } }, { msgId: "d1" }), deps);
   assertEquals((deposits[0] as Record<string, unknown>).TxnDate, "2026-10-03");
 });
+
+Deno.test("bank payment clearing days later is dated when the customer PAID", async () => {
+  const { db, deps, posted } = setup();
+  db.tables.shops = [{ owner_email: OWNER, timezone: "America/Los_Angeles" }];
+  const ach = { method_type: "ACH", created_at: "2026-10-02T17:00:00Z" };
+  await handle(await request({ event_type: "payin.processing", data: payin({ ...ach, updated_at: "2026-10-02T17:00:00Z" }) }), deps);
+  await handle(await request({ event_type: "payin.succeeded", data: payin({ ...ach, updated_at: "2026-10-06T15:00:00Z" }) }, { msgId: "m2" }), deps);
+  assertEquals(posted.length, 1);
+  assertEquals((posted[0] as Record<string, unknown>).TxnDate, "2026-10-02");
+});

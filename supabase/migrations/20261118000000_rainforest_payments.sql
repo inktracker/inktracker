@@ -67,6 +67,9 @@ create table if not exists public.processor_payments (
   pay_kind              text check (pay_kind in ('full', 'balance', 'deposit')),
   method                text check (method in ('card', 'ach')),
   amount_cents          integer not null check (amount_cents > 0),
+  -- When the customer paid (Rainforest payin created_at): the QuickBooks
+  -- payment date, even when a bank payment is booked days later on clearing.
+  paid_at               timestamptz,
   platform_fee_cents    integer check (platform_fee_cents >= 0),
   status                text not null default 'pending' check (status in (
                           'pending', 'processing', 'succeeded', 'failed', 'canceled',

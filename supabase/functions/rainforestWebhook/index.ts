@@ -124,7 +124,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     .eq("processor_payin_id", payinId)
     .is("qb_payment_id", null)
     .or(`qb_posting_at.is.null,qb_posting_at.lt."${staleBefore}"`)
-    .select("processor_payin_id, shop_owner, qb_invoice_id, amount_cents, platform_fee_cents, method, pay_kind, last_event_at, quote_id, invoice_id, qb_post_notified_at");
+    .select("processor_payin_id, shop_owner, qb_invoice_id, amount_cents, platform_fee_cents, method, pay_kind, last_event_at, paid_at, quote_id, invoice_id, qb_post_notified_at");
   if (claimErr) throw new Error(`ledger claim failed: ${claimErr.message}`);
   const row = rows?.[0];
   if (!row) return "not_claimed";
@@ -196,7 +196,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
       applyCents: app.applyCents,
       payinId,
       // The shop's calendar date — a 6pm payment isn't "tomorrow" in its books.
-      txnDate: localDate(row.last_event_at ?? now.toISOString(), await loadShopTz(admin, row.shop_owner)),
+      txnDate: localDate(row.paid_at ?? row.last_event_at ?? now.toISOString(), await loadShopTz(admin, row.shop_owner)),
       paymentMethodRef: method,
       platformFeeCents: row.platform_fee_cents ?? 0,
     });

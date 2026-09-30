@@ -218,7 +218,16 @@ describe("buildLevel23", () => {
     const dep = buildLevel23({ docNumber: "Q-2026-HKSO", target: { kind: "deposit", amountCents: 50000 }, liveInvoice: live });
     expect(dep).toMatchObject({ order_number: "Q-2026-HKSO-DEP", tax_amount: 0 });
     expect(dep.line_items).toBeUndefined();
-    expect(buildLevel23({ docNumber: "Q-2026-HKSO", target: { kind: "balance", amountCents: 60000 }, liveInvoice: live }).order_number).toBe("Q-2026-HKSO-BAL");
+    const bal = buildLevel23({ docNumber: "Q-2026-HKSO", target: { kind: "balance", amountCents: 60000 }, liveInvoice: live });
+    expect(bal.order_number).toBe("Q-2026-HKSO-BAL");
+    expect(bal.line_items).toBeUndefined();
+  });
+
+  it("a balance payment on the final invoice reports the invoice's tax (not 0)", () => {
+    // $1,100 invoice with $100 tax, $500 deposit already applied → $600 balance carries all $100 tax.
+    expect(buildLevel23({ docNumber: "Q-1", target: { kind: "balance", amountCents: 60000 }, liveInvoice: live }).tax_amount).toBe(10000);
+    // Tiny remaining balance: tax reported can't exceed the charge.
+    expect(buildLevel23({ docNumber: "Q-1", target: { kind: "balance", amountCents: 4000 }, liveInvoice: live }).tax_amount).toBe(4000);
   });
 
   it("discounted or non-reconciling invoices send Level 2 only", () => {
