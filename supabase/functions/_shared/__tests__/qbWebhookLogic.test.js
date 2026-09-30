@@ -4,6 +4,7 @@ import {
   buildPaidInvoiceQueryFromInvoices,
   cascadeMarkLinkedPaid,
   cascadeMarkInvoicePaid,
+  decideBrokerPaidFlips,
   decidePaidInvoiceAction,
   buildOrderInsertFromQuote,
   extractInvoiceIdsFromPayment,
@@ -744,5 +745,24 @@ describe("cascadeMarkInvoicePaid — invoice → order walk (no quote)", () => {
     const db = mockDb({});
     await expect(cascadeMarkInvoicePaid(null, {}, "2026-06-01")).rejects.toThrow(/supabase required/);
     await expect(cascadeMarkInvoicePaid(db, null, "2026-06-01")).rejects.toThrow(/invoice.id \+ shop_owner required/);
+  });
+});
+
+describe("decideBrokerPaidFlips — realm gating (cross-realm collision safety)", () => {
+  it("SHOP realm flips ONLY the Phase A order, never the client quote", () => {
+    for (const role of ["shop", "admin", "manager", undefined, null, ""]) {
+      expect(decideBrokerPaidFlips(role)).toEqual({ flipOrder: true, flipQuote: false });
+    }
+  });
+
+  it("BROKER realm flips ONLY the Phase B client quote, never a shop order", () => {
+    expect(decideBrokerPaidFlips("broker")).toEqual({ flipOrder: false, flipQuote: true });
+  });
+
+  it("the two flips are mutually exclusive for every role (no id can flip both realms)", () => {
+    for (const role of ["broker", "shop", "admin", undefined]) {
+      const { flipOrder, flipQuote } = decideBrokerPaidFlips(role);
+      expect(flipOrder && flipQuote).toBe(false);
+    }
   });
 });

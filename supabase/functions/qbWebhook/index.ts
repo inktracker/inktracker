@@ -26,6 +26,7 @@ import {
   buildPaidInvoiceQueryFromInvoices,
   cascadeMarkLinkedPaid,
   cascadeMarkInvoicePaid,
+  decideBrokerPaidFlips,
   decidePaidInvoiceAction,
   extractInvoiceIdsFromPayment,
   isInvoiceFullyPaid,
@@ -358,33 +359,34 @@ async function handleDepositInvoicePaid(supabase: any, qbInvoiceId: string, shop
   return handled;
 }
 
-async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: string, resolvedEmail?: string) {
-  // Broker billing (Phase A): if this paid invoice is a shop→broker WHOLESALE
-  // bill, it's tracked on orders.qb_broker_invoice_id (never quotes/invoices),
-  // so the normal client-invoice lookup below won't find it. Flip the order's
-  // broker paid flag here, best-effort and in parallel. A non-broker invoice
-  // matches zero rows (no-op); a broker invoice matches its order and never a
-  // quote, so the path below SKIPs it cleanly. Scoped by shop_owner — this
-  // invoice lives in the SHOP's realm.
-  try {
-    const { error: brokErr } = await supabase.from("orders")
-      .update({ broker_invoice_paid: true, broker_invoice_paid_at: new Date().toISOString() })
-      .eq("qb_broker_invoice_id", qbInvoiceId)
-      .eq("shop_owner", shopOwner)
-      .eq("broker_invoice_paid", false);
-    if (brokErr) console.error(`[qbWebhook] broker-invoice paid flip failed for ${qbInvoiceId}:`, brokErr.message);
-  } catch (e) {
-    console.error("[qbWebhook] broker-invoice paid flip threw (non-fatal):", (e as Error)?.message);
+async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: string, resolvedEmail?: string, callerRole?: string) {
+  // The two broker paid-flips are mutually exclusive BY REALM, and that gating
+  // is load-bearing: QB invoice ids are NOT unique across realms, so a broker's
+  // client invoice #42 (broker realm) and a shop's wholesale order invoice #42
+  // (shop realm) can coexist. Without the role gate, paying the broker's #42
+  // would also flip the shop's order #42 as paid (a false cross-realm match).
+  const { flipOrder, flipQuote } = decideBrokerPaidFlips(callerRole);
+
+  // Phase A — shop→broker WHOLESALE bill, in the SHOP's realm, on
+  // orders.qb_broker_invoice_id. Only when this webhook is for a SHOP realm.
+  if (flipOrder) {
+    try {
+      const { error: brokErr } = await supabase.from("orders")
+        .update({ broker_invoice_paid: true, broker_invoice_paid_at: new Date().toISOString() })
+        .eq("qb_broker_invoice_id", qbInvoiceId)
+        .eq("shop_owner", shopOwner)
+        .eq("broker_invoice_paid", false);
+      if (brokErr) console.error(`[qbWebhook] broker-invoice paid flip failed for ${qbInvoiceId}:`, brokErr.message);
+    } catch (e) {
+      console.error("[qbWebhook] broker-invoice paid flip threw (non-fatal):", (e as Error)?.message);
+    }
   }
 
-  // Broker billing (Phase B): if this paid invoice is a broker→CLIENT bill, it
-  // was created in the BROKER's OWN realm and is tracked on
-  // quotes.qb_broker_client_invoice_id. The webhook resolved realmId → the
-  // BROKER's profile, so resolvedEmail is the broker's own email — scope the
-  // flip by broker_id = resolvedEmail (NOT shopOwner, which is the shop for a
-  // broker profile). QB ids aren't globally unique, so the broker-email scope
-  // is what keeps this from matching another realm's invoice of the same id.
-  if (resolvedEmail) {
+  // Phase B — broker→CLIENT bill, in the BROKER's OWN realm, on
+  // quotes.qb_broker_client_invoice_id. Only when this webhook is for a BROKER
+  // realm, and scoped by broker_id = the resolved broker email (NOT shopOwner,
+  // which is the shop for a broker profile).
+  if (flipQuote && resolvedEmail) {
     try {
       const { error: bcErr } = await supabase.from("quotes")
         .update({ broker_client_invoice_paid: true, broker_client_invoice_paid_at: new Date().toISOString() })
@@ -671,7 +673,7 @@ async function processNotification(supabase: any, notification: any) {
             // a paid deposit flips deposit_paid + converts; it must NOT
             // run the full-payment cascade.
             const wasDeposit = await handleDepositInvoicePaid(supabase, invId, shopOwner, invData?.Invoice);
-            if (!wasDeposit) await handlePaidInvoice(supabase, invId, shopOwner, profile.email);
+            if (!wasDeposit) await handlePaidInvoice(supabase, invId, shopOwner, profile.email, profile.role);
           } else {
             console.error(`[qbWebhook] Payment ${entity.id} left invoice ${invId} with an open balance — not marking paid locally`);
           }
@@ -683,7 +685,7 @@ async function processNotification(supabase: any, notification: any) {
         const data = await qbGet(accessToken, realmId, `invoice/${entity.id}`);
         if (isInvoiceFullyPaid(data?.Invoice)) {
           const wasDeposit = await handleDepositInvoicePaid(supabase, entity.id, shopOwner, data?.Invoice);
-          if (!wasDeposit) await handlePaidInvoice(supabase, entity.id, shopOwner, profile.email);
+          if (!wasDeposit) await handlePaidInvoice(supabase, entity.id, shopOwner, profile.email, profile.role);
         }
         // QB-side EDIT propagation. We used to fetch the fresh invoice
         // and discard everything but paid state — edited amounts then

@@ -5,6 +5,32 @@
 // Imported by ../qbWebhook/index.ts. Keep this file dependency-free
 // so it loads from both Deno (.ts edge function) and Node (vitest).
 
+// ── Broker paid-flip realm gating ────────────────────────────────────────────
+
+/**
+ * Decide which broker paid-flip a paid-invoice webhook may perform, from the
+ * role of the profile that owns the realm the webhook fired for.
+ *
+ * The two broker flips are mutually exclusive BY REALM, and that is
+ * load-bearing: QB invoice ids are NOT unique across realms, so a broker's
+ * client invoice #42 (in the BROKER's realm) and a shop's wholesale order
+ * invoice #42 (in the SHOP's realm) can coexist. Without this gate, paying the
+ * broker's #42 would also flip the shop's order #42 paid — a false cross-realm
+ * match on a money flag.
+ *
+ *  - SHOP realm (role !== "broker"): only the Phase A order flip
+ *    (orders.qb_broker_invoice_id — the shop→broker WHOLESALE bill).
+ *  - BROKER realm (role === "broker"): only the Phase B quote flip
+ *    (quotes.qb_broker_client_invoice_id — the broker→CLIENT bill).
+ *
+ * @param {string} [callerRole]  role of the realm-owning profile
+ * @returns {{ flipOrder: boolean, flipQuote: boolean }}
+ */
+export function decideBrokerPaidFlips(callerRole) {
+  const isBrokerRealm = callerRole === "broker";
+  return { flipOrder: !isBrokerRealm, flipQuote: isBrokerRealm };
+}
+
 // ── Quote lookup ─────────────────────────────────────────────────────────────
 
 /**
