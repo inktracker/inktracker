@@ -4,6 +4,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { captureError } from "../_shared/observability.ts";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
+import { shouldUseOwnerQbFallback } from "../_shared/qbProfileResolve.js";
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { fetchAllRows } from "../_shared/paginate.js";
 import { mintPaymentLink } from "../_shared/qbPaymentLink.js";
@@ -220,10 +221,15 @@ async function findUserProfile(supabase: any, authId: string, email: string | nu
   // owner so a team member's checkConnection / dashboard metrics / invoicing use
   // the SHOP's connection (a manager-partner is a full operator, minus billing).
   // ADDITIVE + safe: an owner has their own qb_access_token and never reaches
-  // this branch, so owner behavior is byte-for-byte unchanged. Only a profile
-  // WITHOUT its own token AND with a shop_owner (i.e. a team member) falls back.
-  if (!profile.qb_access_token && profile.shop_owner) {
-    const owner = await loadProfileWithSecrets(admin, { email: profile.shop_owner });
+  // this branch, so owner behavior is byte-for-byte unchanged.
+  //
+  // BROKERS ARE EXCLUDED (shouldUseOwnerQbFallback). A broker is an external
+  // reseller; borrowing the shop's QB session would expose the shop's financials
+  // — the P1 hole (2026-08-13). A broker uses ONLY their own QuickBooks: if they
+  // have one it's on their own profile_secrets (returned above), if they don't
+  // they're simply "not connected". They never fall through to the shop's tokens.
+  if (shouldUseOwnerQbFallback(profile)) {
+    const owner = await loadProfileWithSecrets(admin, { email: profile.shop_owner ?? undefined });
     if (owner?.qb_access_token) return owner;
   }
 
@@ -3541,13 +3547,20 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Invalid access token" }, { status: 401, headers: CORS });
     }
 
-    // Broker deny (security audit 2026-08-13, P1) — BEFORE every action,
-    // including checkConnection: the shop_owner token fallback inside
-    // findUserProfile was built for MANAGERS, and a broker riding it got
-    // the shop's full QB session (read all financials, record payments,
-    // deactivate customers, create invoices). Brokers have no QuickBooks
-    // surface, period. checkConnection answers false so broker UIs simply
-    // hide QB affordances instead of erroring.
+    // Broker QB access (security audit 2026-08-13, P1; narrowed 2026-09-30).
+    //
+    // The original hole: findUserProfile's shop_owner token fallback (built for
+    // MANAGERS) let a broker inherit the SHOP's full QB session — read all
+    // financials, record payments, deactivate customers, create invoices in
+    // the shop's books. So brokers were denied every QB action.
+    //
+    // That fallback is now closed for brokers at the source
+    // (shouldUseOwnerQbFallback in findUserProfile): a broker resolves to THEIR
+    // OWN connection or to nothing — never the shop's tokens. With that
+    // guarantee, a broker may use their OWN QuickBooks. We still expose only a
+    // curated set of actions to broker accounts; everything else stays denied,
+    // keeping the surface minimal. Every allowed action runs through
+    // findUserProfile, so it can only ever touch the broker's own realm.
     {
       const { data: roleRow } = await supabase
         .from("profiles")
@@ -3555,13 +3568,15 @@ Deno.serve(async (req) => {
         .eq("auth_id", user.id)
         .maybeSingle();
       if (roleRow?.role === "broker") {
-        if (action === "checkConnection") {
-          return Response.json({ connected: false }, { headers: CORS });
+        const BROKER_ALLOWED_ACTIONS = new Set(["checkConnection"]);
+        if (!BROKER_ALLOWED_ACTIONS.has(action)) {
+          return Response.json(
+            { success: false, error: "This QuickBooks action isn't available on broker accounts." },
+            { status: 200, headers: CORS },
+          );
         }
-        return Response.json(
-          { success: false, error: "QuickBooks operations aren't available on broker accounts." },
-          { status: 200, headers: CORS },
-        );
+        // Allowed broker actions fall through to the normal handlers below;
+        // findUserProfile resolves the BROKER's own tokens (or none).
       }
     }
 
