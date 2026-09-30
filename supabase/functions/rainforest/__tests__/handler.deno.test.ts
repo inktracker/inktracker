@@ -12,7 +12,7 @@ const OWNER = "owner@shop.com";
 function db(account: Record<string, unknown> | null = null) {
   return fakeSupabase({
     profiles: [
-      { id: "own-id", auth_id: "own-auth", email: OWNER, role: "shop", shop_owner: null },
+      { id: "own-id", auth_id: "own-auth", email: OWNER, role: "shop", shop_owner: null, shop_name: "Biota Mfg", subscription_tier: "shop", subscription_status: "active", zip: "89502" },
       { id: "mgr-id", auth_id: "mgr-auth", email: "mgr@shop.com", role: "manager", shop_owner: OWNER },
       { id: "emp-id", auth_id: "emp-auth", email: "emp@shop.com", role: "employee", shop_owner: OWNER },
       { id: "brk-id", auth_id: "brk-auth", email: "broker@x.com", role: "broker", shop_owner: null, assigned_shops: [OWNER] },
@@ -23,17 +23,50 @@ function db(account: Record<string, unknown> | null = null) {
 }
 
 const ACTIVE = { merchant_id: "mid_1", merchant_status: "active", enabled: false, qb_bank_account_id: "35", qb_fee_account_id: "88" };
+const QUOTE_ID = "11111111-2222-4333-8444-555555555555";
 
-function call(fake: unknown, authId: string, body: Record<string, unknown>, env: Record<string, string> = { RAINFOREST_ENABLED: "true" }) {
+function withQuote(account: Record<string, unknown> | null, quote: Record<string, unknown> = {}, payments: Record<string, unknown>[] = []) {
+  const fake = db(account);
+  fake.tables.quotes = [{ id: QUOTE_ID, quote_id: "Q-2026-HKSO", shop_owner: OWNER, status: "Sent", total: 1643, tax: 0, qb_invoice_id: "3815", public_token: "tok", customer_name: "Tahoe Gift Co", ...quote }];
+  fake.tables.processor_payments = payments;
+  return fake;
+}
+
+type RfCall = { method: string; path: string; body?: unknown };
+
+function fakeRf(calls: RfCall[] = []) {
+  return {
+    base: "https://api.sandbox.rainforestpay.com",
+    get: (path: string) => { calls.push({ method: "GET", path }); return Promise.resolve({ merchant_id: "mid_1", merchant_status: "ACTIVE", merchant_application_status: "COMPLETED" }); },
+    post: (path: string, body?: unknown) => {
+      calls.push({ method: "POST", path, body });
+      if (path === "/v1/merchants") return Promise.resolve({ merchant_id: "mid_new", merchant_application_id: "app_new", merchant_status: "PENDING", merchant_application_status: "CREATED" });
+      if (path === "/v1/sessions") return Promise.resolve({ session_key: "session_abc" });
+      if (path === "/v1/payin_configs") return Promise.resolve({ payin_config_id: "cfg_1" });
+      return Promise.resolve({});
+    },
+  };
+}
+
+let liveInvoice: Record<string, unknown> | null = null;
+let qbConnected = true;
+
+function call(fake: unknown, authId: string, body: Record<string, unknown>, env: Record<string, string> = { RAINFOREST_ENABLED: "true" }, rfCalls: RfCall[] = []) {
   const req = new Request("http://x/rainforest", {
     method: "POST",
-    headers: { Authorization: "Bearer t" },
+    headers: authId ? { Authorization: "Bearer t" } : {},
     body: JSON.stringify(body),
   });
   return handle(req, {
     admin: fake,
     getUser: () => Promise.resolve(authId ? { id: authId } : null),
     env: (k) => env[k],
+    rf: fakeRf(rfCalls),
+    qb: {
+      connect: () => Promise.resolve(qbConnected ? { token: "t", realmId: "r" } : null),
+      listAccounts: () => Promise.resolve([]),
+      getInvoice: () => Promise.resolve(liveInvoice),
+    },
   });
 }
 
@@ -100,11 +133,107 @@ Deno.test("setEnabled false: always allowed for the owner (back to QuickBooks)",
 
 Deno.test("saveQbAccounts: employee refused; no QuickBooks connection → 400", async () => {
   assertEquals((await call(db(), "emp-auth", { action: "saveQbAccounts", bankAccountId: "35", feeAccountId: "88" })).status, 403);
-  const r = await call(db(), "mgr-auth", { action: "saveQbAccounts", bankAccountId: "35", feeAccountId: "88" });
-  assertEquals(r.status, 400);
-  assert((await r.json()).error.includes("Connect QuickBooks"));
+  qbConnected = false;
+  try {
+    const r = await call(db(), "mgr-auth", { action: "saveQbAccounts", bankAccountId: "35", feeAccountId: "88" });
+    assertEquals(r.status, 400);
+    assert((await r.json()).error.includes("Connect QuickBooks"));
+  } finally {
+    qbConnected = true;
+  }
 });
 
 Deno.test("unknown action → 400", async () => {
   assertEquals((await call(db(), "own-auth", { action: "wireMoney" })).status, 400);
+});
+
+// ── startOnboarding ─────────────────────────────────────────────────────
+Deno.test("startOnboarding: owner on a paid plan → merchant created ONCE (prefilled), then resumed", async () => {
+  const fake = db(null);
+  const calls: RfCall[] = [];
+  const r = await call(fake, "own-auth", { action: "startOnboarding" }, undefined, calls);
+  assertEquals(r.status, 200);
+  const j = await r.json();
+  assertEquals(j.sessionKey, "session_abc");
+  assertEquals(j.merchantId, "mid_new");
+  assertEquals(j.scriptUrl, "https://static.rainforestpay.com/sandbox.merchant.js");
+  const created = calls.find((c) => c.path === "/v1/merchants")!.body as Record<string, unknown>;
+  assertEquals(created.name, "Biota Mfg");
+  assertEquals(created.email, OWNER);
+  assert(!("tax_id" in created) && !("owner_1" in created)); // never sensitive data
+  const sess = calls.find((c) => c.path === "/v1/sessions")!.body as Record<string, unknown>;
+  assertEquals(JSON.stringify(sess), JSON.stringify({ ttl: 3600, statements: [{ permissions: ["group#merchant_onboarding_component"], constraints: { merchant: { merchant_id: "mid_new" } } }] }));
+  assertEquals(fake.tables.processor_accounts[0].merchant_id, "mid_new");
+
+  const again: RfCall[] = [];
+  await call(fake, "own-auth", { action: "startOnboarding" }, undefined, again);
+  assertEquals(again.filter((c) => c.path === "/v1/merchants").length, 0); // resumed, not duplicated
+});
+
+Deno.test("startOnboarding: manager, trial shop, or kill switch off → refused", async () => {
+  assertEquals((await call(db(null), "mgr-auth", { action: "startOnboarding" })).status, 403);
+  const trial = db(null);
+  trial.tables.profiles[0].subscription_tier = "trial";
+  trial.tables.profiles[0].subscription_status = "trialing";
+  const r = await call(trial, "own-auth", { action: "startOnboarding" });
+  assertEquals(r.status, 403);
+  assert((await r.json()).error.includes("paid plan"));
+  assertEquals((await call(db(null), "own-auth", { action: "startOnboarding" }, {})).status, 400);
+});
+
+// ── payinSession (public) ───────────────────────────────────────────────
+Deno.test("payinSession: wrong token or unknown id → the same 404", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 1643, Balance: 1643, TxnTaxDetail: { TotalTax: 0 }, CustomerRef: { value: "61" }, Line: [] };
+  const fake = withQuote({ ...ACTIVE, enabled: true });
+  assertEquals((await call(fake, "", { action: "payinSession", id: QUOTE_ID, token: "nope" })).status, 404);
+  assertEquals((await call(fake, "", { action: "payinSession", id: "not-a-uuid", token: "tok" })).status, 404);
+  assertEquals((await call(fake, "", { action: "payinSession", id: QUOTE_ID })).status, 404);
+});
+
+Deno.test("payinSession: shop not switched on (or kill switch off) → keep using QuickBooks", async () => {
+  const fake = withQuote(ACTIVE); // enabled: false
+  assertEquals(await (await call(fake, "", { action: "payinSession", id: QUOTE_ID, token: "tok" })).json(), { rail: "qb" });
+  const on = withQuote({ ...ACTIVE, enabled: true });
+  assertEquals(await (await call(on, "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, {})).json(), { rail: "qb" });
+});
+
+Deno.test("payinSession: charges the LIVE QuickBooks balance with a merchant-scoped session", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 1643, Balance: 1499.01, TxnTaxDetail: { TotalTax: 0 }, CustomerRef: { value: "61" }, Line: [] };
+  const calls: RfCall[] = [];
+  const r = await call(withQuote({ ...ACTIVE, enabled: true }), "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls);
+  const j = await r.json();
+  assertEquals(j.payable, true);
+  assertEquals(j.amountCents, 149901);
+  assertEquals(j.kind, "balance");
+  assertEquals(j.payinConfigId, "cfg_1");
+  assertEquals(j.scriptUrl, "https://static.rainforestpay.com/sandbox.payment.js");
+  const cfg = calls.find((c) => c.path === "/v1/payin_configs")!.body as Record<string, any>;
+  assertEquals(cfg.amount, 149901);
+  assertEquals(cfg.merchant_id, "mid_1");
+  assertEquals(cfg.metadata.qb_invoice_id, "3815");
+  assertEquals(cfg.level_2_3.order_number, "Q-2026-HKSO-BAL");
+  assertEquals(cfg.idempotency_key, `it-payin:${QUOTE_ID}:3815:149901`);
+  const sess = calls.find((c) => c.path === "/v1/sessions")!.body as Record<string, any>;
+  assertEquals(sess.statements[0].constraints, { merchant: { merchant_id: "mid_1" } });
+});
+
+Deno.test("payinSession: already paid / payment in flight / quote changed → a plain message, no session", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 1643, Balance: 0, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  let j = await (await call(withQuote({ ...ACTIVE, enabled: true }), "", { action: "payinSession", id: QUOTE_ID, token: "tok" })).json();
+  assertEquals(j.payable, false);
+  assert(j.message.includes("already paid"));
+
+  liveInvoice = { Id: "3815", TotalAmt: 1643, Balance: 1643, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  const calls: RfCall[] = [];
+  j = await (await call(withQuote({ ...ACTIVE, enabled: true }, {}, [{ shop_owner: OWNER, qb_invoice_id: "3815", status: "processing", qb_payment_id: null }]), "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls)).json();
+  assertEquals(j.reason, "in_flight");
+  assertEquals(calls.length, 0);
+
+  j = await (await call(withQuote({ ...ACTIVE, enabled: true }, { total: 1700 }), "", { action: "payinSession", id: QUOTE_ID, token: "tok" })).json();
+  assertEquals(j.reason, "invoice_out_of_date");
+});
+
+Deno.test("payinSession: broker quotes never take payment here", async () => {
+  const j = await (await call(withQuote({ ...ACTIVE, enabled: true }, { broker_email: "b@x.com" }), "", { action: "payinSession", id: QUOTE_ID, token: "tok" })).json();
+  assertEquals(j, { rail: "qb" });
 });
