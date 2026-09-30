@@ -555,7 +555,7 @@ function QbBrokerBillingEditor({ user }) {
             <input type="checkbox" checked={on === true} onChange={(e) => toggle(e.target.checked)} disabled={saving} className="mt-0.5" />
             <span className="text-xs text-slate-600">
               <span className="font-semibold text-slate-700">Auto-invoice brokers when their order completes</span><br />
-              When a broker&rsquo;s order is marked complete, InkTracker creates a wholesale invoice to the broker in your QuickBooks &mdash; no sales tax (it&rsquo;s a business-to-business sale), with ACH enabled so they can pay with about no fee. It shows the broker as a wholesale customer in your QuickBooks. This only affects broker orders; your regular invoices are untouched. Turn it on, complete one broker order, and check the invoice looks right in QuickBooks before you rely on it.
+              When a broker&rsquo;s order is marked complete, InkTracker creates a wholesale invoice to the broker in your QuickBooks &mdash; no sales tax (it&rsquo;s a business-to-business sale). It uses whatever payment methods you have enabled in QuickBooks, so if you want brokers paying by ACH (about no fee), turn ACH on in your QuickBooks Payments settings. It shows the broker as a wholesale customer in your QuickBooks. This only affects broker orders; your regular invoices are untouched. Turn it on, complete one broker order, and check the invoice looks right in QuickBooks before you rely on it.
             </span>
           </label>
           {saved && <div className="text-xs text-emerald-700 font-semibold">Saved ✓</div>}
