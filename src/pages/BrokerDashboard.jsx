@@ -1469,6 +1469,37 @@ export default function BrokerDashboard({ initialTab } = {}) {
                         <Eye className="w-3.5 h-3.5" /> Preview PDF
                       </button>
 
+                      {/* Wholesale invoice from the shop — appears on an active
+                          order when the shop bills up front (before completion).
+                          The broker pays the shop here without waiting for the
+                          job to finish. */}
+                      {order.qb_broker_invoice_id && (
+                        <div className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                          <div>
+                            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Wholesale invoice from shop</div>
+                            <div className="text-sm font-semibold mt-0.5">
+                              {order.broker_invoice_paid ? (
+                                <span className="text-emerald-600">Paid</span>
+                              ) : (
+                                <span className="text-amber-600">
+                                  Due{Number(order.qb_broker_invoice_total) > 0 ? ` — ${fmtMoney(order.qb_broker_invoice_total)}` : ""}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {!order.broker_invoice_paid && order.qb_broker_payment_link && (
+                            <a
+                              href={order.qb_broker_payment_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center text-xs font-semibold bg-teal-600 text-white px-4 py-2 rounded-xl hover:bg-teal-700 transition shrink-0"
+                            >
+                              Pay the shop
+                            </a>
+                          )}
+                        </div>
+                      )}
+
                       <div className="flex flex-wrap gap-1.5">
                         {ORDER_STEPS.map((step, i) => {
                           const done = i < stepIdx;
