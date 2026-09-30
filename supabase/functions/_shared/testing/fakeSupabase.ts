@@ -15,7 +15,7 @@
 type Row = Record<string, unknown>;
 type Rows = Row[];
 type Filter = { op: string; col: string; val: unknown };
-export type RecordedWrite = { op: "insert" | "update" | "upsert" | "delete"; table: string; patch?: Row; rows?: Rows; filters: Filter[] };
+export type RecordedWrite = { op: "insert" | "update" | "upsert" | "delete"; table: string; patch?: Row; rows?: Rows; filters: Filter[]; onConflict?: string };
 
 export function fakeSupabase(tables: Record<string, Rows>, opts: { rpcs?: Record<string, (args: unknown) => unknown> } = {}) {
   const store: Record<string, Rows> = {};
@@ -85,8 +85,13 @@ function builder(table: string, store: Record<string, Rows>, writes: RecordedWri
       store[table].push(...affected);
     } else if (pending.op === "upsert") {
       affected = pending.rows ?? [];
+      // Conflict target: the onConflict columns when given (like PostgREST),
+      // else the primary key `id`.
+      const keys = pending.onConflict ? pending.onConflict.split(",").map((k) => k.trim()) : ["id"];
       for (const row of affected) {
-        const idx = row.id != null ? store[table].findIndex((r) => r.id === row.id) : -1;
+        const idx = keys.every((k) => row[k] != null)
+          ? store[table].findIndex((r) => keys.every((k) => r[k] === row[k]))
+          : -1;
         if (idx >= 0) Object.assign(store[table][idx], row); else store[table].push(row);
       }
     }
@@ -117,7 +122,7 @@ function builder(table: string, store: Record<string, Rows>, writes: RecordedWri
     contains() { return api; },
     limit(n: number) { limitN = n; return api; },
     insert(rows: Row | Rows) { pending = { op: "insert", table, rows: Array.isArray(rows) ? rows.map((r) => ({ ...r })) : [{ ...rows }], filters: [] }; return api; },
-    upsert(rows: Row | Rows, _o?: unknown) { pending = { op: "upsert", table, rows: Array.isArray(rows) ? rows.map((r) => ({ ...r })) : [{ ...rows }], filters: [] }; return api; },
+    upsert(rows: Row | Rows, o?: { onConflict?: string }) { pending = { op: "upsert", table, rows: Array.isArray(rows) ? rows.map((r) => ({ ...r })) : [{ ...rows }], filters: [], onConflict: o?.onConflict }; return api; },
     update(patch: Row) { pending = { op: "update", table, patch: { ...patch }, filters: [] }; return api; },
     delete() { pending = { op: "delete", table, filters: [] }; return api; },
     single() {
