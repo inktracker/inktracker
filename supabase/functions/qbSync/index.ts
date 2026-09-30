@@ -100,7 +100,8 @@ import {
   PROCESSOR_LINK_REASON,
   applyRailToInvoiceBody,
   flagOn,
-  loadPaymentRail,
+  loadPaymentRailState,
+  restoreQbOnlinePayFields,
 } from "../_shared/paymentRail.js";
 import {
   chooseQuotePaymentRecipient,
@@ -921,7 +922,7 @@ const extractPaymentLink = (invoiceData: any, _realmId?: string) => sharedExtrac
 // paymentRailArg: resolved by the router from the AUTHENTICATED shop (never
 // from the request body). "processor" = the shop collects through InkTracker
 // (Rainforest), so no QuickBooks pay link and online payment off in QB.
-async function handleCreateInvoice(token: string, realmId: string, params: any, supabase: any, paymentRailArg: string = RAIL.QB) {
+async function handleCreateInvoice(token: string, realmId: string, params: any, supabase: any, paymentRailArg: string = RAIL.QB, restoreQbPay = false) {
   const { quote, invoicePayload } = params;
   // When true, suppress QBO's /send fallback so creating the invoice never
   // emails the customer (invoice/order flow — the shop sends via InkTracker).
@@ -1465,6 +1466,11 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         // Processor-rail shops: explicitly turn QB online payment OFF (a
         // sparse update would otherwise keep whatever the invoice had).
         Object.assign(updateBody, applyRailToInvoiceBody({}, paymentRail));
+        // Back on QuickBooks after InkTracker payments: turn QB online
+        // payment back ON for an invoice InkTracker had turned off.
+        if (paymentRail === RAIL.QB && !billBroker && !brokerClientInvoice) {
+          Object.assign(updateBody, restoreQbOnlinePayFields(existingInv, restoreQbPay));
+        }
         if (billEmail) {
           updateBody.BillEmail = { Address: billEmail };
         }
@@ -3842,10 +3848,11 @@ Deno.serve(async (req) => {
         const quoteShop    = quote?.shop_owner || shopOwnerEmail;
         // Payment rail from the AUTHENTICATED shop, never the request body.
         // Brokers invoice in their own QuickBooks — always the QB rail.
-        const invoiceRail = await loadPaymentRail(adminClient, shopOwnerEmail, {
+        const railState = await loadPaymentRailState(adminClient, shopOwnerEmail, {
           envEnabled: flagOn(Deno.env.get("RAINFOREST_ENABLED")),
           broker: Boolean(params?.billBroker || params?.brokerClientInvoice),
         });
+        const invoiceRail = railState.rail;
         const auditCtx = {
           shop_owner:      quoteShop,
           action:          "create_invoice",
@@ -3880,7 +3887,7 @@ Deno.serve(async (req) => {
               rowLockKey,
               { shop_owner: quoteShop, action: "create_invoice_lock" },
               () => withQbAudit(adminClient, auditCtx, () =>
-                handleCreateInvoice(qbToken, realmId, params, supabase, invoiceRail),
+                handleCreateInvoice(qbToken, realmId, params, supabase, invoiceRail, railState.restore),
               ),
             );
             if (!serialized.acquired) {
@@ -3916,9 +3923,9 @@ Deno.serve(async (req) => {
         );
         const depQuote = params?.quote ?? {};
         const depShop = depQuote?.shop_owner || shopOwnerEmail;
-        const depRail = await loadPaymentRail(depAdmin, shopOwnerEmail, {
+        const depRail = (await loadPaymentRailState(depAdmin, shopOwnerEmail, {
           envEnabled: flagOn(Deno.env.get("RAINFOREST_ENABLED")),
-        });
+        })).rail;
         const depIdempKey = params?.idempotencyKey ?? (depQuote?.id ? `createDepositInvoice:${depQuote.id}` : null);
         const depAuditCtx = {
           shop_owner: depShop,

@@ -35,7 +35,7 @@ import {
   payinToEvent,
   refundKind,
 } from "../_shared/rainforestWebhookAdapter.js";
-import { planPayinEffect, planQbApplication } from "../_shared/rainforestPayinEffect.js";
+import { planPayinEffect, planQbApplication, statusesBelow } from "../_shared/rainforestPayinEffect.js";
 import { platformFeeCents } from "../_shared/rainforestPricing.js";
 import { buildQbPaymentBody, pickQbPaymentMethod } from "../_shared/rainforestQbBooks.js";
 import {
@@ -89,7 +89,7 @@ async function loadDoc(admin: Any, md: Any) {
   const id = String(md?.inktracker_quote_id ?? "");
   if (!UUID_RE.test(id)) return null;
   if (md?.inktracker_doc_type === "invoice") {
-    const { data } = await admin.from("invoices").select("id, invoice_id, shop_owner, qb_invoice_id").eq("id", id).maybeSingle();
+    const { data } = await admin.from("invoices").select("id, invoice_id, shop_owner, qb_invoice_id, qb_deposit_invoice_id").eq("id", id).maybeSingle();
     return data ?? null;
   }
   const { data } = await admin.from("quotes")
@@ -114,7 +114,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     .eq("processor_payin_id", payinId)
     .is("qb_payment_id", null)
     .or(`qb_posting_at.is.null,qb_posting_at.lt."${staleBefore}"`)
-    .select("processor_payin_id, shop_owner, qb_invoice_id, amount_cents, platform_fee_cents, method, pay_kind, last_event_at, quote_id, invoice_id");
+    .select("processor_payin_id, shop_owner, qb_invoice_id, amount_cents, platform_fee_cents, method, pay_kind, last_event_at, quote_id, invoice_id, qb_post_notified_at");
   if (claimErr) throw new Error(`ledger claim failed: ${claimErr.message}`);
   const row = rows?.[0];
   if (!row) return "not_claimed";
@@ -129,11 +129,19 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     }
   };
 
+  // Tell the shop about a booking problem ONCE per payment (the nightly
+  // sweep retries silently after that).
+  const notifyOnce = async (n: Any) => {
+    if (row.qb_post_notified_at) return;
+    await insertShopNotification(admin, n);
+    await admin.from("processor_payments").update({ qb_post_notified_at: now.toISOString() }).eq("processor_payin_id", payinId);
+  };
+
   try {
     const conn = await deps.qb.connect(row.shop_owner);
     if (!conn) {
       await release({ qb_post_error: "QuickBooks not connected" });
-      await insertShopNotification(admin, {
+      await notifyOnce({
         shopOwner: row.shop_owner,
         eventType: "payment_not_booked",
         severity: "alert",
@@ -146,8 +154,10 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
 
     // Already in QuickBooks (e.g. a crash after posting, before our write)?
     const ref = String(payinId).slice(-21);
-    let existing = null;
-    try { existing = await deps.qb.findPaymentByRef(conn, ref); } catch { /* not queryable → rely on the ledger claim */ }
+    // This lookup is the guard against posting twice after a crash or a
+    // timed-out POST that actually landed. If it can't run, don't post —
+    // throw so the event (or the sweep) retries later.
+    const existing = await deps.qb.findPaymentByRef(conn, ref);
     if (existing?.Id) {
       await release({ qb_payment_id: String(existing.Id), qb_payment_posted_at: now.toISOString(), qb_post_error: null });
       return "already_in_qb";
@@ -156,7 +166,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     const inv = await deps.qb.getInvoice(conn, String(row.qb_invoice_id));
     if (!inv) {
       await release({ qb_post_error: `QuickBooks invoice ${row.qb_invoice_id} not found` });
-      await insertShopNotification(admin, {
+      await notifyOnce({
         shopOwner: row.shop_owner,
         eventType: "payment_not_booked",
         severity: "alert",
@@ -282,16 +292,20 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
     return "manual";
   }
 
-  // POST — claim first so two workers can't both create the Deposit.
-  const staleBefore = new Date(now.getTime() - STALE_POST_CLAIM_MS).toISOString();
+  // POST — claim first so two workers can't both create the Deposit. Unlike
+  // payments there is no reliable way to look a Deposit up afterwards, so a
+  // claim is NEVER retaken automatically: a payout stuck mid-post is flagged
+  // for a person (sweep) instead of risking a second Deposit.
   const { data: claimed, error: claimErr } = await admin.from("processor_payouts")
     .update({ qb_posting_at: now.toISOString() })
     .eq("processor_payout_id", depositId)
     .is("qb_deposit_id", null)
-    .or(`qb_posting_at.is.null,qb_posting_at.lt."${staleBefore}"`)
+    .is("qb_posting_at", null)
     .select("processor_payout_id");
   if (claimErr) throw new Error(`payout claim failed: ${claimErr.message}`);
   if (!claimed?.length) return "not_claimed";
+
+  let qbDepositId = "";
   try {
     const conn = await deps.qb.connect(account.shop_owner);
     if (!conn) {
@@ -299,27 +313,48 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
       return "no_qb_connection";
     }
     const res = await deps.qb.postDeposit(conn, plan.body);
-    const qbDepositId = String(res?.Deposit?.Id ?? res?.Id ?? "");
+    qbDepositId = String(res?.Deposit?.Id ?? res?.Id ?? "");
     if (!qbDepositId) throw new Error("QuickBooks returned no Deposit id");
-    await admin.from("processor_payouts").update({
-      qb_deposit_id: qbDepositId,
-      qb_deposit_posted_at: now.toISOString(),
-      qb_posting_at: null,
-      qb_post_error: null,
-      fee_cents: plan.feeCents,
-      net_cents: plan.netCents,
-      status: "succeeded",
-      updated_at: now.toISOString(),
-    }).eq("processor_payout_id", depositId);
-    await admin.from("processor_payments").update({ processor_payout_id: depositId })
-      .eq("shop_owner", account.shop_owner).in("processor_payin_id", plan.payinIds);
-    return "booked";
   } catch (err) {
+    // Not posted (or QuickBooks said no): safe to release for a retry. A
+    // timeout here is the one ambiguous case — release anyway would risk a
+    // double; keep the claim and flag it.
+    const msg = String((err as Error)?.message ?? err).slice(0, 500);
+    const ambiguous = /timed? ?out|network|ECONNRESET|fetch failed/i.test(msg);
     try {
-      await admin.from("processor_payouts").update({ qb_posting_at: null, qb_post_error: String((err as Error)?.message ?? err).slice(0, 500) }).eq("processor_payout_id", depositId);
+      await admin.from("processor_payouts").update(ambiguous
+        ? { qb_post_error: `check_quickbooks: ${msg}` }
+        : { qb_posting_at: null, qb_post_error: msg }).eq("processor_payout_id", depositId);
     } catch { /* surfaced below */ }
     throw err;
   }
+
+  // Posted. Record it — retried, and NEVER released on failure (a released
+  // claim could post the Deposit twice).
+  const patch = {
+    qb_deposit_id: qbDepositId,
+    qb_deposit_posted_at: now.toISOString(),
+    qb_posting_at: null,
+    qb_post_error: null,
+    fee_cents: plan.feeCents,
+    net_cents: plan.netCents,
+    status: "succeeded",
+    updated_at: now.toISOString(),
+  };
+  let recorded = false;
+  for (let i = 0; i < 3 && !recorded; i++) {
+    try {
+      const { error } = await admin.from("processor_payouts").update(patch).eq("processor_payout_id", depositId);
+      recorded = !error;
+    } catch { /* retry */ }
+  }
+  if (!recorded) {
+    opsAlert(`payout ${depositId} POSTED as QuickBooks deposit ${qbDepositId} but not recorded — set processor_payouts.qb_deposit_id by hand`, { depositId, qbDepositId });
+    return "booked_unrecorded";
+  }
+  await admin.from("processor_payments").update({ processor_payout_id: depositId })
+    .eq("shop_owner", account.shop_owner).in("processor_payin_id", plan.payinIds);
+  return "booked";
 }
 
 /** Nightly: retry what couldn't be booked at the time. */
@@ -335,6 +370,7 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
     .not("qb_invoice_id", "is", null)
     .in("status", ["succeeded", "processing"])
     .lt("updated_at", olderThan)
+    .order("updated_at", { ascending: true })
     .limit(100);
   for (const r of pending ?? []) {
     if (r.status === "processing" && r.method !== "card") continue; // bank not cleared yet
@@ -347,12 +383,25 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
     }
   }
 
+  // Payouts still to book: not sent to the shop for review, not mid-post.
   const { data: payouts } = await admin.from("processor_payouts")
     .select("processor_payout_id, qb_post_error")
     .is("qb_deposit_id", null)
+    .is("review_notified_at", null)
+    .is("qb_posting_at", null)
+    .order("created_at", { ascending: true })
     .limit(100);
+  // Payouts whose post was interrupted: never retried automatically.
+  const { data: stuck } = await admin.from("processor_payouts")
+    .select("processor_payout_id, qb_posting_at, qb_post_error")
+    .is("qb_deposit_id", null)
+    .not("qb_posting_at", "is", null)
+    .lt("qb_posting_at", new Date(now.getTime() - STALE_POST_CLAIM_MS).toISOString())
+    .limit(50);
+  for (const p of stuck ?? []) {
+    opsAlert(`payout ${p.processor_payout_id} stuck mid-post since ${p.qb_posting_at}: check QuickBooks for a deposit, then set qb_deposit_id or clear qb_posting_at`, { error: p.qb_post_error });
+  }
   for (const p of payouts ?? []) {
-    if (String(p.qb_post_error ?? "").startsWith("needs_review")) continue; // the shop handles those
     out.payouts++;
     try {
       if ((await processPayout(deps, String(p.processor_payout_id))) === "booked") out.payoutsBooked++;
@@ -411,7 +460,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     return ok({ ok: true, ignored: `deposit.${route.status}` });
   }
 
-  const key = webhookDedupeKey(body) ?? "";
+  // One Svix message id per event (stable across Rainforest's retries), so a
+  // merchant that goes active → suspended → active → suspended isn't
+  // mistaken for a duplicate. Resource key only as a fallback.
+  const msgId = req.headers.get("svix-id") ?? req.headers.get("webhook-id");
+  const key = (msgId ? `msg:${msgId}` : webhookDedupeKey(body)) ?? "";
   const claim = await claimWebhookEventDetailed(admin, SOURCE, key, { event_type: body?.event_type });
   if (claim.status === CLAIM_OUTCOMES.DUPLICATE) return ok({ ok: true, duplicate: true });
   if (claim.status === CLAIM_OUTCOMES.ERROR) return ok({ error: "try again" }, 503);
@@ -429,8 +482,22 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       if (route.merchantStatus === "active") patch.onboarded_at = new Date().toISOString();
       // Suspended/deactivated/canceled merchants can't take payments: the rail
       // falls back to QuickBooks automatically (resolvePaymentRail).
+      const { data: before } = await admin.from("processor_accounts")
+        .select("shop_owner, merchant_status, enabled").eq("merchant_id", route.merchantId).maybeSingle();
       const { error } = await admin.from("processor_accounts").update(patch).eq("merchant_id", route.merchantId);
       if (error) throw new Error(`merchant update failed: ${error.message}`);
+      // A switched-on shop just lost the ability to take payments here.
+      const lost = ["suspended", "deactivated", "canceled"].includes(String(route.merchantStatus ?? ""));
+      if (lost && before?.enabled && before.merchant_status === "active") {
+        await insertShopNotification(admin, <Any>{
+          shopOwner: before.shop_owner,
+          eventType: "payments_account_on_hold",
+          severity: "alert",
+          title: route.merchantStatus === "suspended" ? "Your payments account is on hold" : "Your payments account was closed",
+          body: "Customers pay through QuickBooks again. Quotes and invoices you already sent with an InkTracker pay link can't be paid online until you re-send them from InkTracker, which adds a QuickBooks pay link. Check your email from Rainforest for details.",
+          metadata: { processor: SOURCE, merchant_status: route.merchantStatus },
+        });
+      }
       return ok();
     }
 
@@ -448,16 +515,30 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       .select("shop_owner, merchant_id").eq("merchant_id", event.merchantId).maybeSingle();
     const doc = await loadDoc(admin, event.metadata);
     const { data: ledger } = await admin.from("processor_payments")
-      .select("status, method, qb_payment_id").eq("processor_payin_id", event.payinId).maybeSingle();
+      .select("status, method, qb_payment_id, quote_id, invoice_id, qb_invoice_id").eq("processor_payin_id", event.payinId).maybeSingle();
 
     const fee = event.method ? platformFeeCents(event.method, event.amountCents) : 0;
     const plan: Any = planPayinEffect({ event, account, quote: doc, ledger, platformFeeCents: fee });
 
     if (plan.alertOps) opsAlert(plan.alertOps, { payinId: event.payinId, reject: plan.reject });
     if (plan.ledger) {
-      const { error } = await admin.from("processor_payments")
-        .upsert({ ...plan.ledger, updated_at: new Date().toISOString() }, { onConflict: "processor_payin_id" });
-      if (error) throw new Error(`ledger write failed: ${error.message}`);
+      const row = { ...plan.ledger, updated_at: new Date().toISOString() };
+      // Forward-only, atomically: a guarded update never moves a status
+      // backwards even when two events race (card processing + succeeded).
+      const guardedUpdate = async () => {
+        const { quote_id: _q, invoice_id: _i, qb_invoice_id: _b, pay_kind: _k, ...keepLinks } = row as Any;
+        const { error } = await admin.from("processor_payments").update(keepLinks)
+          .eq("processor_payin_id", event.payinId)
+          .in("status", statusesBelow(event.kind));
+        if (error) throw new Error(`ledger write failed: ${error.message}`);
+      };
+      if (!ledger) {
+        const { error } = await admin.from("processor_payments").insert(row);
+        if (error?.code === "23505") await guardedUpdate(); // a racing event created it
+        else if (error) throw new Error(`ledger write failed: ${error.message}`);
+      } else {
+        await guardedUpdate();
+      }
     }
     if (plan.notify && account?.shop_owner) {
       await insertShopNotification(admin, <Any>{
