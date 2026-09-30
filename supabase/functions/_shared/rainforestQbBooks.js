@@ -51,12 +51,17 @@ const refNum = (id) => String(id ?? "").slice(-21);
  * @param {string} a.txnDate          YYYY-MM-DD the payment succeeded
  * @param {{value:string}|null} [a.paymentMethodRef]
  * @param {number} [a.platformFeeCents] shown in the memo only
+ * @param {number} [a.applyCents] portion applied to the invoice (default: all).
+ *        Less than amountCents only when the customer overpaid (two payments
+ *        raced); QuickBooks keeps the rest as a customer credit.
  */
 export function buildQbPaymentBody(a) {
   const amt = Number(a?.amountCents);
   if (!a?.qbInvoiceId || !a?.customerRefValue) return { ok: false, reason: "missing_invoice_or_customer" };
   if (!Number.isInteger(amt) || amt <= 0) return { ok: false, reason: "invalid_amount" };
   if (!a?.payinId) return { ok: false, reason: "missing_payin_id" };
+  const apply = a?.applyCents === undefined ? amt : Number(a.applyCents);
+  if (!Number.isInteger(apply) || apply < 0 || apply > amt) return { ok: false, reason: "invalid_apply_amount" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a?.txnDate ?? ""))) return { ok: false, reason: "invalid_date" };
 
   const fee = Number(a?.platformFeeCents);
@@ -66,11 +71,12 @@ export function buildQbPaymentBody(a) {
     TotalAmt: dollars(amt),
     TxnDate: a.txnDate,
     PaymentRefNum: refNum(a.payinId),
-    PrivateNote: `Paid online via InkTracker (Rainforest payment ${a.payinId})${feeNote}`,
-    Line: [{
-      Amount: dollars(amt),
+    PrivateNote: `Paid online via InkTracker (Rainforest payment ${a.payinId})${feeNote}` +
+      (apply < amt ? ` · OVERPAID $${dollars(amt - apply).toFixed(2)} left as customer credit — refund it` : ""),
+    Line: apply > 0 ? [{
+      Amount: dollars(apply),
       LinkedTxn: [{ TxnId: String(a.qbInvoiceId), TxnType: "Invoice" }],
-    }],
+    }] : [],
     // No DepositToAccountRef → QuickBooks files it in Undeposited Funds,
     // which is where the payout Deposit below collects it from.
   };
