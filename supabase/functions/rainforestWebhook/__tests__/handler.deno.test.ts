@@ -223,7 +223,7 @@ Deno.test("payout: booked as ONE QuickBooks deposit that matches the bank; repla
   assertEquals(db.tables.processor_payouts[0].qb_deposit_id, "901");
   assertEquals(db.tables.processor_payments[0].processor_payout_id, "dep_1");
   // A later retry of the same payout (e.g. the sweep) books nothing new.
-  assertEquals(await sweep(deps), { payments: 0, paymentsBooked: 0, payouts: 0, payoutsBooked: 0, errors: 0 });
+  assertEquals(await sweep(deps), { payments: 0, paymentsBooked: 0, payouts: 0, payoutsBooked: 0, errors: 0, backstopChecked: 0, backstopReplayed: 0 });
   assertEquals(deposits.length, 1);
 });
 
@@ -375,4 +375,27 @@ Deno.test("an email failure never breaks the webhook", async () => {
   deps.sendEmail = () => Promise.reject(new Error("Resend down"));
   const r = await handle(await request({ event_type: "chargeback.dispute_action_required", data: { chargeback_id: "chb_1", payin_id: "pyi_1", amount: 100 } }), deps);
   assertEquals(r.status, 200);
+});
+
+Deno.test("backstop: a payment the webhook never recorded (crash after claim) is recorded AND booked overnight", async () => {
+  const { db, deps, posted } = setup();
+  // The webhook claimed the event, then the function died: claim exists, no ledger row.
+  db.tables.processed_webhook_events.push({ source: "rainforest", event_id: "msg:msg_1" });
+  const dropped = await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  assertEquals((await dropped.json()).duplicate, true); // Rainforest's retry is dropped
+  assertEquals(db.tables.processor_payments.length, 0);
+
+  const base = deps.rainforestGet;
+  deps.rainforestGet = (path) => path.startsWith("/v1/payins?")
+    ? Promise.resolve({ results: [{ ...payin(), status: "SUCCEEDED" }, { ...payin({ payin_id: "pyi_other", merchant_id: "mid_someone_else" }), status: "SUCCEEDED" }] })
+    : base(path);
+  const out = await sweep(deps);
+  assertEquals(out.backstopReplayed, 1);
+  assertEquals(db.tables.processor_payments.length, 1); // only OUR merchant's payin
+  assertEquals(db.tables.processor_payments[0].status, "succeeded");
+  assertEquals(posted.length, 1);
+
+  const again = await sweep(deps); // idempotent
+  assertEquals(again.backstopReplayed, 0);
+  assertEquals(posted.length, 1);
 });

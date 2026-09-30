@@ -37,7 +37,11 @@ type RfCall = { method: string; path: string; body?: unknown };
 function fakeRf(calls: RfCall[] = []) {
   return {
     base: "https://api.sandbox.rainforestpay.com",
-    get: (path: string) => { calls.push({ method: "GET", path }); return Promise.resolve({ merchant_id: "mid_1", merchant_status: "ACTIVE", merchant_application_status: "COMPLETED" }); },
+    get: (path: string) => {
+      calls.push({ method: "GET", path });
+      if (path.startsWith("/v1/merchants?")) return Promise.resolve({ results: existingMerchants });
+      return Promise.resolve({ merchant_id: "mid_1", merchant_status: "ACTIVE", merchant_application_status: "COMPLETED" });
+    },
     post: (path: string, body?: unknown) => {
       calls.push({ method: "POST", path, body });
       if (path === "/v1/merchants") return Promise.resolve({ merchant_id: "mid_new", merchant_application_id: "app_new", merchant_status: "PENDING", merchant_application_status: "CREATED" });
@@ -49,6 +53,7 @@ function fakeRf(calls: RfCall[] = []) {
 }
 
 let liveInvoice: Record<string, unknown> | null = null;
+let existingMerchants: Record<string, unknown>[] = [];
 let qbConnected = true;
 
 function call(fake: unknown, authId: string, body: Record<string, unknown>, env: Record<string, string> = { RAINFOREST_ENABLED: "true" }, rfCalls: RfCall[] = []) {
@@ -297,4 +302,38 @@ Deno.test("startOnboarding: a second click while the first is creating → 409, 
   const r = await call(fake, "own-auth", { action: "startOnboarding" }, undefined, calls);
   assertEquals(r.status, 409);
   assertEquals(calls.filter((c) => c.path === "/v1/merchants").length, 0);
+});
+
+Deno.test("startOnboarding: a merchant created by a failed earlier attempt is ADOPTED, not duplicated", async () => {
+  existingMerchants = [
+    { merchant_id: "mid_orphan", merchant_application_id: "app_orphan", status: "PENDING", metadata: { inktracker_shop_owner: OWNER } },
+    { merchant_id: "mid_other", merchant_application_id: "app_x", status: "PENDING", metadata: { inktracker_shop_owner: "someone@else.com" } },
+  ];
+  try {
+    const fake = db(null);
+    const calls: RfCall[] = [];
+    const j = await (await call(fake, "own-auth", { action: "startOnboarding" }, undefined, calls)).json();
+    assertEquals(j.merchantId, "mid_orphan");
+    assertEquals(calls.filter((c) => c.method === "POST" && c.path === "/v1/merchants").length, 0);
+    assertEquals(fake.tables.processor_accounts[0].merchant_id, "mid_orphan");
+  } finally {
+    existingMerchants = [];
+  }
+});
+
+Deno.test("startOnboarding: Rainforest rejecting the create releases the claim (retry right away)", async () => {
+  const fake = db(null);
+  const req = new Request("http://x/rainforest", { method: "POST", headers: { Authorization: "Bearer t" }, body: JSON.stringify({ action: "startOnboarding" }) });
+  let threw = false;
+  try {
+    await handle(req, {
+      admin: fake, getUser: () => Promise.resolve({ id: "own-auth" }), env: (k) => ({ RAINFOREST_ENABLED: "true" } as Record<string, string>)[k],
+      rf: { base: "https://api.sandbox.rainforestpay.com", get: () => Promise.resolve({ results: [] }), post: () => Promise.reject(Object.assign(new Error("422"), { status: 422 })) },
+      qb: { connect: () => Promise.resolve(null), listAccounts: () => Promise.resolve([]), getInvoice: () => Promise.resolve(null) },
+    });
+  } catch {
+    threw = true;
+  }
+  assert(threw);
+  assertEquals(fake.tables.processor_accounts[0].merchant_creating_at, null);
 });

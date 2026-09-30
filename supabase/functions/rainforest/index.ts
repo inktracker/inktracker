@@ -149,6 +149,32 @@ async function payRail(body: Any, deps: Deps) {
   return json({ rail: "processor", display, paid: Boolean(doc.paid) });
 }
 
+/**
+ * An existing Rainforest merchant for this shop (from an attempt whose save
+ * failed). Rainforest can't filter merchants by metadata, so search by name
+ * and match our own tag. Canceled/deactivated merchants don't count.
+ */
+async function findOurMerchant(deps: Deps, name: string, shopOwner: string) {
+  const list = await deps.rf.get(`/v1/merchants?name=${encodeURIComponent(name)}`);
+  const items = Array.isArray(list) ? list : (list?.results ?? list?.merchants ?? []);
+  const hit = items.find((m: Any) =>
+    m?.metadata?.inktracker_shop_owner === shopOwner &&
+    !["CANCELED", "DEACTIVATED"].includes(String(m?.merchant_status ?? m?.status ?? "").toUpperCase()));
+  if (!hit?.merchant_id) return null;
+  let applicationId = hit.merchant_application_id ?? hit.latest_merchant_application?.merchant_application_id ?? null;
+  if (!applicationId) {
+    const apps = await deps.rf.get(`/v1/merchants/${encodeURIComponent(hit.merchant_id)}/applications`);
+    const appList = Array.isArray(apps) ? apps : (apps?.results ?? apps?.applications ?? []);
+    applicationId = appList.at(-1)?.merchant_application_id ?? null;
+  }
+  return {
+    merchant_id: hit.merchant_id,
+    merchant_application_id: applicationId,
+    merchant_status: hit.merchant_status ?? hit.status,
+    merchant_application_status: hit.merchant_application_status ?? hit.latest_merchant_application?.status,
+  };
+}
+
 /** Public: build a payment session for a quote or invoice. */
 async function payinSession(body: Any, deps: Deps) {
   const { admin } = deps;
@@ -293,11 +319,23 @@ export async function handle(req: Request, deps: Deps) {
         .or(`merchant_creating_at.is.null,merchant_creating_at.lt."${new Date(Date.now() - 2 * 60 * 1000).toISOString()}"`)
         .select("shop_owner");
       if (!claimed?.length) return json({ error: "Sign-up is already opening. Try again in a moment." }, 409);
-      const m = await deps.rf.post("/v1/merchants", buildMerchantCreate(shop));
+      const createBody = buildMerchantCreate(shop);
+      // A merchant from an earlier attempt whose save failed? Adopt it —
+      // never create a second merchant for the same shop.
+      let m = await findOurMerchant(deps, createBody.name, shopOwner);
+      if (!m) {
+        try {
+          m = await deps.rf.post("/v1/merchants", createBody);
+        } catch (err) {
+          // Nothing was created: release the claim so the owner can retry now.
+          await admin.from("processor_accounts").update({ merchant_creating_at: null }).eq("shop_owner", shopOwner);
+          throw err;
+        }
+      }
       merchantId = m?.merchant_id;
       applicationId = m?.merchant_application_id;
       if (!merchantId || !applicationId) throw new Error("Rainforest returned no merchant id");
-      const { error } = await admin.from("processor_accounts").upsert({
+      const patch = {
         shop_owner: shopOwner,
         merchant_id: merchantId,
         merchant_application_id: applicationId,
@@ -305,8 +343,15 @@ export async function handle(req: Request, deps: Deps) {
         merchant_application_status: String(m?.merchant_application_status ?? "created").toLowerCase(),
         merchant_creating_at: null,
         updated_at: new Date().toISOString(),
-      }, { onConflict: "shop_owner" });
-      if (error) throw new Error(`Couldn't save the new merchant ${merchantId}: ${error.message}`);
+      };
+      let saved = false;
+      for (let i = 0; i < 3 && !saved; i++) {
+        const { error } = await admin.from("processor_accounts").upsert(patch, { onConflict: "shop_owner" });
+        saved = !error;
+      }
+      // Claim stays set; the next attempt (after it goes stale) adopts this
+      // merchant via findOurMerchant instead of creating another.
+      if (!saved) throw new Error(`Couldn't save the new merchant ${merchantId}; the next sign-up attempt will pick it up`);
     }
     const session = await deps.rf.post("/v1/sessions", buildOnboardingSession(merchantId));
     return json({

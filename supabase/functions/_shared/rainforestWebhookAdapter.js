@@ -178,3 +178,33 @@ export function routeWebhook(body) {
 export function refundKind(payin) {
   return Number(payin?.refundable_amount) === 0 ? PAYIN_EVENT.REFUNDED : PAYIN_EVENT.PARTIALLY_REFUNDED;
 }
+
+// Payin STATUS (from GET /v1/payins) → neutral kind, for the nightly
+// backstop that replays payments we may have missed. Pre-capture and
+// risk-hold states are skipped, same as the webhook.
+const PAYIN_STATUS_UPPER = {
+  PROCESSING: PAYIN_EVENT.PROCESSING,
+  SUCCEEDED: PAYIN_EVENT.SUCCEEDED,
+  FAILED: PAYIN_EVENT.FAILED,
+  CANCELED: PAYIN_EVENT.CANCELED,
+  RETURNED: PAYIN_EVENT.RETURNED,
+};
+export function kindForPayinStatus(status) {
+  return PAYIN_STATUS_UPPER[String(status ?? "").toUpperCase()] ?? null;
+}
+
+/**
+ * One page of a Rainforest list response (already unwrapped from `data`).
+ * The list shape isn't shown in the docs' examples, so accept the usual
+ * forms. Paging uses start_key → last_key.
+ * @returns {{ items: Array, nextKey: string|null }}
+ */
+export function readListPage(data) {
+  const items = Array.isArray(data) ? data
+    : Array.isArray(data?.results) ? data.results
+    : Array.isArray(data?.payins) ? data.payins
+    : Array.isArray(data?.items) ? data.items
+    : [];
+  const nextKey = !Array.isArray(data) && data?.last_key ? String(data.last_key) : null;
+  return { items, nextKey };
+}

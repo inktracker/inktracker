@@ -34,8 +34,10 @@ import {
   webhookDedupeKey,
   payinToEvent,
   refundKind,
+  kindForPayinStatus,
+  readListPage,
 } from "../_shared/rainforestWebhookAdapter.js";
-import { planPayinEffect, planQbApplication, statusesBelow } from "../_shared/rainforestPayinEffect.js";
+import { planPayinEffect, planQbApplication, statusesBelow, statusAdvances } from "../_shared/rainforestPayinEffect.js";
 import { platformFeeCents } from "../_shared/rainforestPricing.js";
 import { buildQbPaymentBody, pickQbPaymentMethod, findBookedPayment } from "../_shared/rainforestQbBooks.js";
 import {
@@ -404,12 +406,110 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
   return "booked";
 }
 
+/**
+ * Apply one neutral payment event: ledger (forward-only), shop notice, QB
+ * booking. Shared by the webhook and the nightly Rainforest backstop, so a
+ * payment is handled identically however we learn about it. Idempotent.
+ */
+export async function applyPayinEvent(deps: Deps, event: Any): Promise<{ kind: string; reject: string | null; posted: string | null }> {
+  const { admin } = deps;
+  const { data: account } = await admin.from("processor_accounts")
+    .select("shop_owner, merchant_id").eq("merchant_id", event.merchantId).maybeSingle();
+  const doc = await loadDoc(admin, event.metadata);
+  const { data: ledger } = await admin.from("processor_payments")
+    .select("status, method, qb_payment_id, quote_id, invoice_id, qb_invoice_id").eq("processor_payin_id", event.payinId).maybeSingle();
+
+  const fee = event.method ? platformFeeCents(event.method, event.amountCents) : 0;
+  const plan: Any = planPayinEffect({ event, account, quote: doc, ledger, platformFeeCents: fee });
+
+  if (plan.alertOps) opsAlert(plan.alertOps, { payinId: event.payinId, reject: plan.reject });
+  if (plan.ledger) {
+    const row = { ...plan.ledger, updated_at: new Date().toISOString() };
+    // Forward-only, atomically: a guarded update never moves a status
+    // backwards even when two events race (card processing + succeeded).
+    const guardedUpdate = async () => {
+      const { quote_id: _q, invoice_id: _i, qb_invoice_id: _b, pay_kind: _k, ...keepLinks } = row as Any;
+      const { error } = await admin.from("processor_payments").update(keepLinks)
+        .eq("processor_payin_id", event.payinId)
+        .in("status", statusesBelow(event.kind));
+      if (error) throw new Error(`ledger write failed: ${error.message}`);
+    };
+    if (!ledger) {
+      const { error } = await admin.from("processor_payments").insert(row);
+      if (error?.code === "23505") await guardedUpdate(); // a racing event created it
+      else if (error) throw new Error(`ledger write failed: ${error.message}`);
+    } else {
+      await guardedUpdate();
+    }
+  }
+  if (plan.notify && account?.shop_owner) {
+    await notifyShop(deps, <Any>{
+      shopOwner: account.shop_owner,
+      eventType: `payment_${event.kind}`,
+      severity: plan.notify.severity,
+      title: plan.notify.title,
+      body: plan.notify.body,
+      relatedEntity: doc ? (event.metadata?.inktracker_doc_type === "invoice" ? "invoice" : "quote") : null,
+      relatedId: doc?.id ?? null,
+      metadata: plan.notify.metadata,
+    });
+  }
+  let posted: string | null = null;
+  if (plan.postQbPayment) posted = await postQbPaymentOnce(deps, event.payinId);
+  return { kind: event.kind, reject: plan.reject ?? null, posted };
+}
+
+/**
+ * Backstop against Rainforest itself. The webhook claims an event before
+ * processing it; if the function is killed mid-way (timeout, deploy) the
+ * claim stays and Rainforest's retries are dropped as duplicates, so a
+ * payment could exist at Rainforest with no ledger row — never recorded,
+ * never booked. Each night, list the last few days of payins and replay any
+ * we're missing or behind on through the same code path. Idempotent.
+ */
+export async function reconcileRecentPayins(deps: Deps, sinceIso: string): Promise<{ checked: number; replayed: number }> {
+  const { admin } = deps;
+  const { data: accounts } = await admin.from("processor_accounts").select("merchant_id").not("merchant_id", "is", null);
+  const ours = new Set((accounts ?? []).map((a: Any) => String(a.merchant_id)));
+  const out = { checked: 0, replayed: 0 };
+  if (!ours.size) return out;
+  let key: string | null = null;
+  for (let page = 0; page < 20; page++) {
+    const qs = `created_at.start=${encodeURIComponent(sinceIso)}&limit=200&sort_by=created_at&sort_order=asc${key ? `&start_key=${encodeURIComponent(key)}` : ""}`;
+    const { items, nextKey } = readListPage(await deps.rainforestGet(`/v1/payins?${qs}`));
+    for (const p of items) {
+      if (!ours.has(String(p?.merchant_id ?? ""))) continue;
+      const kind = kindForPayinStatus(p?.status);
+      if (!kind || !p?.payin_id) continue;
+      out.checked++;
+      const { data: row } = await admin.from("processor_payments").select("status").eq("processor_payin_id", String(p.payin_id)).maybeSingle();
+      if (row && !statusAdvances(row.status, kind)) continue;
+      await applyPayinEvent(deps, payinToEvent(kind, p));
+      out.replayed++;
+      if (!row) opsAlert(`backstop recorded payin ${p.payin_id} that the webhook never did`, { kind });
+    }
+    if (!nextKey || items.length === 0) break;
+    key = nextKey;
+  }
+  return out;
+}
+
 /** Nightly: retry what couldn't be booked at the time. */
 export async function sweep(deps: Deps): Promise<Record<string, number>> {
   const { admin } = deps;
   const now = (deps.now ?? (() => new Date()))();
   const olderThan = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
-  const out = { payments: 0, paymentsBooked: 0, payouts: 0, payoutsBooked: 0, errors: 0 };
+  const out = { payments: 0, paymentsBooked: 0, payouts: 0, payoutsBooked: 0, errors: 0, backstopChecked: 0, backstopReplayed: 0 };
+
+  // 1. Anything Rainforest has that we don't (runs first, so step 2 books it).
+  try {
+    const r = await reconcileRecentPayins(deps, new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString());
+    out.backstopChecked = r.checked;
+    out.backstopReplayed = r.replayed;
+  } catch (err) {
+    out.errors++;
+    opsAlert(`sweep: Rainforest backstop failed: ${(err as Error)?.message ?? err}`);
+  }
 
   const { data: pending } = await admin.from("processor_payments")
     .select("processor_payin_id, status, method")
@@ -558,50 +658,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       event = route.event;
     }
 
-    const { data: account } = await admin.from("processor_accounts")
-      .select("shop_owner, merchant_id").eq("merchant_id", event.merchantId).maybeSingle();
-    const doc = await loadDoc(admin, event.metadata);
-    const { data: ledger } = await admin.from("processor_payments")
-      .select("status, method, qb_payment_id, quote_id, invoice_id, qb_invoice_id").eq("processor_payin_id", event.payinId).maybeSingle();
-
-    const fee = event.method ? platformFeeCents(event.method, event.amountCents) : 0;
-    const plan: Any = planPayinEffect({ event, account, quote: doc, ledger, platformFeeCents: fee });
-
-    if (plan.alertOps) opsAlert(plan.alertOps, { payinId: event.payinId, reject: plan.reject });
-    if (plan.ledger) {
-      const row = { ...plan.ledger, updated_at: new Date().toISOString() };
-      // Forward-only, atomically: a guarded update never moves a status
-      // backwards even when two events race (card processing + succeeded).
-      const guardedUpdate = async () => {
-        const { quote_id: _q, invoice_id: _i, qb_invoice_id: _b, pay_kind: _k, ...keepLinks } = row as Any;
-        const { error } = await admin.from("processor_payments").update(keepLinks)
-          .eq("processor_payin_id", event.payinId)
-          .in("status", statusesBelow(event.kind));
-        if (error) throw new Error(`ledger write failed: ${error.message}`);
-      };
-      if (!ledger) {
-        const { error } = await admin.from("processor_payments").insert(row);
-        if (error?.code === "23505") await guardedUpdate(); // a racing event created it
-        else if (error) throw new Error(`ledger write failed: ${error.message}`);
-      } else {
-        await guardedUpdate();
-      }
-    }
-    if (plan.notify && account?.shop_owner) {
-      await notifyShop(deps, <Any>{
-        shopOwner: account.shop_owner,
-        eventType: `payment_${event.kind}`,
-        severity: plan.notify.severity,
-        title: plan.notify.title,
-        body: plan.notify.body,
-        relatedEntity: doc ? (event.metadata?.inktracker_doc_type === "invoice" ? "invoice" : "quote") : null,
-        relatedId: doc?.id ?? null,
-        metadata: plan.notify.metadata,
-      });
-    }
-    let posted: string | null = null;
-    if (plan.postQbPayment) posted = await postQbPaymentOnce(deps, event.payinId);
-    return ok({ ok: true, kind: event.kind, reject: plan.reject ?? null, posted });
+    const applied = await applyPayinEvent(deps, event);
+    return ok({ ok: true, ...applied });
   } catch (err) {
     await releaseWebhookEvent(admin, SOURCE, key);
     opsAlert(`processing failed: ${(err as Error)?.message ?? err}`, { event_type: body?.event_type });

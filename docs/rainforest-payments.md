@@ -154,6 +154,10 @@ Each item needs a pass in the Rainforest sandbox **and** the QuickBooks sandbox 
 - [ ] Invoice (order-then-invoice): `/invoicepayment` link from SendInvoiceModal + PDF; payment posts against the invoice
 - [ ] Payout: QB Deposit equals the sandbox payout amount to the cent; bank feed matches
 
+**Backstops**
+- [ ] Nightly sweep's Rainforest backstop: `GET /v1/payins?created_at.start=…` response shape (`results` + `last_key`?) — kill the webhook mid-payment in sandbox and confirm the sweep records and books it
+- [ ] Onboarding adopt: `GET /v1/merchants?name=…` returns our `metadata` and the application id (or `/applications` does)
+
 **Failure paths**
 - [ ] Replay the same success webhook ×3 → one ledger row, one QB Payment
 - [ ] QB down during webhook → ledger `succeeded`, `qb_payment_id` null → replay/retry posts it once

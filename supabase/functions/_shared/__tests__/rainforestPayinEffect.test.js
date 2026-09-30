@@ -100,10 +100,15 @@ describe("planPayinEffect — a matched successful payment", () => {
     expect(r.notify.body).toMatch(/payment #501/);
   });
 
-  it("bank payment processing → recorded, NOT posted to QuickBooks yet", () => {
+  it("bank payment processing → recorded, NOT posted to QuickBooks yet, shop told it's on the way", () => {
     const r = plan({ event: ev({ kind: "processing", method: "ach" }) });
     expect(r.ledger.status).toBe("processing");
     expect(r.postQbPayment).toBe(false);
+    expect(r.notify).toMatchObject({ severity: "info", title: "Bank payment started: $2284.82 for Q-2026-TGC4" });
+    // told once — a replayed processing event doesn't repeat it
+    expect(plan({ event: ev({ kind: "processing", method: "ach" }), ledger: { status: "processing", method: "ach" } }).notify).toBeNull();
+    // card processing is immediate — no "started" notice
+    expect(plan({ event: ev({ kind: "processing", method: "card" }) }).notify).toBeNull();
   });
 
   it("deposit payments carry through as deposits", () => {
