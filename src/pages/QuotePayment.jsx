@@ -347,6 +347,15 @@ export default function QuotePayment() {
   // deposit has settled onto it).
   const canCollectPayment = depositAvailable || qbAvailable;
 
+  // Broker quotes stay approve-only above (the shop's QB/Stripe are gated off).
+  // But if the broker invoiced their client from their OWN QuickBooks, the
+  // client pays THAT link here — the broker's invoice, not the shop's. Shown
+  // until it's paid; the pay link rides the sanitized quote (it's the broker's
+  // own client-facing link, not a shop payable, so publicSafe lets it through).
+  const brokerClientPayLink = isBrokerQuote(quote) && !quote?.broker_client_invoice_paid
+    ? (quote?.qb_broker_client_payment_link || null)
+    : null;
+
   async function handleApprove() {
     if (!quote?.id) return false;
 
@@ -916,11 +925,25 @@ export default function QuotePayment() {
                       ? `Deposit of ${fmtMoney(depositAmountFor(quote))} received`
                       : "Quote approved"}
                   </div>
-                  <div className="text-sm text-emerald-700">
-                    {DEPOSITS_ENABLED && quote?.deposit_paid && depositAmountFor(quote) > 0
-                      ? `Your job is in production. ${customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will send the final invoice for the remaining balance.`
-                      : `${customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment.`}
-                  </div>
+                  {/* Broker quote with the broker's own QuickBooks pay link:
+                      let the client pay right here (opens the broker's invoice).
+                      Otherwise the generic "will be in touch" message. */}
+                  {brokerClientPayLink ? (
+                    <a
+                      href={brokerClientPayLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-bold px-6 py-3 rounded-xl transition text-base"
+                    >
+                      Pay Invoice
+                    </a>
+                  ) : (
+                    <div className="text-sm text-emerald-700">
+                      {DEPOSITS_ENABLED && quote?.deposit_paid && depositAmountFor(quote) > 0
+                        ? `Your job is in production. ${customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will send the final invoice for the remaining balance.`
+                        : `${customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment.`}
+                    </div>
+                  )}
                 </div>
               )
             ) : (
@@ -931,20 +954,39 @@ export default function QuotePayment() {
                   <span className="text-sm text-red-700">{approveError}</span>
                 </div>
               )}
+              {/* Broker quote with a live pay link: the client can pay now
+                  (paying is acceptance). The Approve button stays as a
+                  no-payment alternative. */}
+              {brokerClientPayLink && (
+                <a
+                  href={brokerClientPayLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full mb-3 bg-teal-600 hover:bg-teal-700 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base"
+                >
+                  <CheckCircle2 className="w-5 h-5" /> Pay Invoice
+                </a>
+              )}
               <button
                 onClick={handleApprove}
                 disabled={approveLoading}
-                className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base"
+                className={`w-full font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base ${
+                  brokerClientPayLink
+                    ? "bg-white border-2 border-teal-600 text-teal-700 hover:bg-teal-50"
+                    : "bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white"
+                }`}
               >
                 {approveLoading ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> Approving…</>
                 ) : (
-                  <><CheckCircle2 className="w-5 h-5" /> Approve Quote</>
+                  <><CheckCircle2 className="w-5 h-5" /> {brokerClientPayLink ? "Approve without paying" : "Approve Quote"}</>
                 )}
               </button>
-              <p className="mt-3 text-center text-xs text-slate-500">
-                {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment after you approve.
-              </p>
+              {!brokerClientPayLink && (
+                <p className="mt-3 text-center text-xs text-slate-500">
+                  {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment after you approve.
+                </p>
+              )}
             </>
             )
           ) : (() => {

@@ -3,7 +3,8 @@ import SignInRequired from "@/components/shared/SignInRequired";
 import AttachmentGallery from "@/components/shared/AttachmentGallery";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
+import { createBrokerClientInvoice } from "@/lib/broker/createBrokerClientInvoice";
 import { uploadFile } from "@/lib/uploadFile";
 import CollapsibleSection from "@/components/shared/CollapsibleSection";
 import { DashboardSkeleton } from "@/components/shared/Skeletons";
@@ -220,6 +221,22 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
       sent_to_client_at: new Date().toISOString(),
     });
     onUpdate(updated);
+
+    // Broker billing (Phase B): if the broker has connected their own
+    // QuickBooks, create the client invoice in THEIR realm at the client price
+    // and stamp the pay link on the quote — the white-label payment page then
+    // shows the client a "Pay" button. FAIL-OPEN: the send is already
+    // committed, so a broker who hasn't connected QB (or a QB hiccup) just
+    // means the client approves as before; it must never surface an error here.
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const res = await createBrokerClientInvoice({ base44, quote: updated, session });
+        if (res?.ok && res.quote) onUpdate(res.quote);
+      }
+    } catch (err) {
+      console.error("[BrokerDashboard] client invoice on send failed (non-fatal):", err?.message || err);
+    }
     // Leave the send modal open on its confirmation screen; the broker
     // closes it with Close (same behavior as the shop's Send Quote).
   }
