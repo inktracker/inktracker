@@ -190,6 +190,16 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
       body: `Your customer disputed a $${(amt / 100).toFixed(2)} card payment. Respond with proof of the order (approval, proof, delivery) before the deadline in your payments portal.`,
       metadata: { processor: "rainforest", payin_id: event.payinId },
     };
+  } else if (!mismatch && advances && kind === PAYIN_EVENT.PROCESSING && event.method === "ach") {
+    // A bank payment isn't booked in QuickBooks until it clears (about 4
+    // business days). Without this the shop sees an unpaid invoice all week
+    // and may chase a customer who already paid, or hold a paid job.
+    notify = {
+      severity: "info",
+      title: `Bank payment started: $${(amt / 100).toFixed(2)}${label ? ` for ${label}` : ""}`,
+      body: "Your customer paid by bank transfer. It usually clears in about 4 business days, then InkTracker records it in QuickBooks and marks the invoice paid. If it doesn't clear, you'll get an alert.",
+      metadata: { processor: "rainforest", payin_id: event.payinId },
+    };
   } else if (mismatch && moneyIn && ledgerRow) {
     notify = {
       severity: "alert",

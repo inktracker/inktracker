@@ -5,6 +5,8 @@ import {
   webhookDedupeKey,
   payinToEvent,
   refundKind,
+  kindForPayinStatus,
+  readListPage,
 } from "../rainforestWebhookAdapter.js";
 
 // Svix's published verification example (docs.svix.com "Verifying manually").
@@ -87,5 +89,19 @@ describe("dedupe + refund size", () => {
   it("full vs partial refund from what's left refundable", () => {
     expect(refundKind(payin({ refundable_amount: 0 }))).toBe("refunded");
     expect(refundKind(payin({ refundable_amount: 1000 }))).toBe("partially_refunded");
+  });
+});
+
+describe("backstop helpers", () => {
+  it("maps payin statuses; skips pre-capture and risk holds", () => {
+    expect(kindForPayinStatus("SUCCEEDED")).toBe("succeeded");
+    expect(kindForPayinStatus("processing")).toBe("processing");
+    expect(kindForPayinStatus("RETURNED")).toBe("returned");
+    for (const s of ["CREATED", "AUTHORIZED", "IN_REVIEW", "PRESENTING", null]) expect(kindForPayinStatus(s)).toBeNull();
+  });
+  it("reads list pages in the likely shapes", () => {
+    expect(readListPage({ results: [1, 2], last_key: "k" })).toEqual({ items: [1, 2], nextKey: "k" });
+    expect(readListPage([1])).toEqual({ items: [1], nextKey: null });
+    expect(readListPage(null)).toEqual({ items: [], nextKey: null });
   });
 });
