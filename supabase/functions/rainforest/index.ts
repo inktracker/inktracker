@@ -1,33 +1,52 @@
-// InkTracker payments (Rainforest) — shop-side actions. Supabase Edge Function.
+// InkTracker payments (Rainforest). Supabase Edge Function.
 //
-//   status          → which way this shop's customers pay + setup progress
-//   qbAccounts      → the shop's QuickBooks bank / expense accounts to pick from
-//   saveQbAccounts  → map payout bank account + fee expense account (owner/manager)
-//   setEnabled      → switch InkTracker payments on/off (OWNER only)
+// Signed-in shop actions (acts on the SHOP OWNER's row; brokers refused):
+//   status           → which way this shop's customers pay + setup progress
+//   startOnboarding  → OWNER, paying plan only: create the Rainforest merchant
+//                      (prefilled) once, then a short-lived onboarding session
+//                      for the sign-up component
+//   refreshStatus    → re-read merchant/application status from Rainforest
+//   qbAccounts       → the shop's QuickBooks bank / expense accounts to pick from
+//   saveQbAccounts   → map payout bank account + fee expense account (owner/manager)
+//   setEnabled       → switch InkTracker payments on/off (OWNER only)
 //
-// Onboarding (merchant sign-up session) and the customer payment session are
-// added once the sandbox is available — see docs/rainforest-payments.md.
+// Public (customer) action, no sign-in, token-gated like the quote page:
+//   payinSession     → { docType: "quote"|"invoice", id, token } → a payment
+//                      session for the LIVE QuickBooks balance, or a reason
+//                      it can't be paid here
 //
-// Dormant by default: with the RAINFOREST_ENABLED secret unset, status reports
-// the QuickBooks rail and setEnabled refuses. Writes go through the service
-// role (processor_accounts is SELECT-only for the browser).
-//
-// Auth: signed-in shop team member; acts on the SHOP OWNER's row
-// (loadShopProfileForUser). Brokers are refused.
+// Dormant by default: with RAINFOREST_ENABLED unset, status reports the
+// QuickBooks rail, startOnboarding/setEnabled refuse, and payinSession
+// answers { rail: "qb" } so the page keeps using QuickBooks.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadProfileWithSecrets, loadShopProfileForUser } from "../_shared/profileSecrets.ts";
-import { flagOn } from "../_shared/paymentRail.js";
+import { flagOn, loadPaymentRail, RAIL } from "../_shared/paymentRail.js";
 import {
   buildStatusPayload,
   canViewPayments,
   canMapQbAccounts,
+  canTogglePayments,
   checkCanEnable,
   checkCanDisable,
   validateQbAccountMapping,
   qbAccountChoices,
+  onboardingStage,
 } from "../_shared/rainforestAccount.js";
-import { getShopQb, qbListAccounts } from "../_shared/qbShopClient.ts";
+import {
+  isPayingShop,
+  buildMerchantCreate,
+  buildOnboardingSession,
+  buildPaymentSession,
+  buildPayinConfig,
+} from "../_shared/rainforestRequests.js";
+import { choosePayTarget, NOT_PAYABLE } from "../_shared/rainforestPayinPlan.js";
+import { formatRatePct } from "../_shared/rainforestPricing.js";
+import { getShopQb, qbListAccounts, qbGetInvoice, type QbConn } from "../_shared/qbShopClient.ts";
+import { rainforestApi, componentScripts, type RainforestApi } from "../_shared/rainforestApi.ts";
+
+// deno-lint-ignore no-explicit-any
+type Any = any;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -38,21 +57,130 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: CORS });
 }
 
-// deno-lint-ignore no-explicit-any
-async function loadAccount(admin: any, shopOwner: string) {
+function safeEquals(a: unknown, b: unknown): boolean {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length || a.length === 0) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type Deps = {
+  admin: Any;
+  getUser: (token: string) => Promise<Any>;
+  env: (k: string) => string | undefined;
+  rf: RainforestApi;
+  qb: {
+    connect: (shopOwner: string) => Promise<QbConn | null>;
+    listAccounts: (c: QbConn) => Promise<Any[]>;
+    getInvoice: (c: QbConn, id: string) => Promise<Any | null>;
+  };
+};
+
+async function loadAccount(admin: Any, shopOwner: string) {
   const { data, error } = await admin
     .from("processor_accounts")
-    .select("shop_owner, merchant_id, merchant_status, merchant_application_status, enabled, qb_bank_account_id, qb_fee_account_id")
+    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, qb_bank_account_id, qb_fee_account_id")
     .eq("shop_owner", shopOwner)
     .maybeSingle();
   if (error) throw new Error(`Couldn't read payment settings: ${error.message}`);
   return data ?? null;
 }
 
-// deno-lint-ignore no-explicit-any
-export async function handle(req: Request, deps: { admin: any; getUser: (token: string) => Promise<any>; env: (k: string) => string | undefined }) {
+// Customer-facing reasons, in plain words. Never a raw error.
+const CUSTOMER_REASON: Record<string, string> = {
+  [NOT_PAYABLE.PAID]: "This invoice is already paid. Thank you!",
+  [NOT_PAYABLE.DEPOSIT_PAID_AWAITING_FINAL]: "Your deposit is paid. The shop will send the final invoice when your order is ready.",
+  [NOT_PAYABLE.STALE]: "This quote changed after it was invoiced. The shop needs to update the invoice before you can pay online. Please contact the shop.",
+  [NOT_PAYABLE.NO_INVOICE]: "Online payment isn't set up for this yet. Please contact the shop.",
+  [NOT_PAYABLE.BROKER]: "Online payment isn't available here. Please contact the shop.",
+  [NOT_PAYABLE.BAD_AMOUNT]: "Online payment isn't available right now. Please contact the shop.",
+  in_flight: "A payment is already being processed for this invoice. Bank payments take a few business days to clear.",
+};
+
+/** Public: build a payment session for a quote or invoice. */
+async function payinSession(body: Any, deps: Deps) {
+  const { admin } = deps;
+  const docType = body.docType === "invoice" ? "invoice" : "quote";
+  const id = String(body.id ?? "");
+  if (!UUID_RE.test(id)) return json({ error: "Not found" }, 404);
+
+  const table = docType === "invoice" ? "invoices" : "quotes";
+  const cols = docType === "invoice"
+    ? "id, invoice_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, public_token, customer_name, paid"
+    : "id, quote_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, broker_email, public_token, customer_name, customer_email, paid";
+  const { data: doc } = await admin.from(table).select(cols).eq("id", id).maybeSingle();
+  // Same answer for "no such doc" and "wrong token" — don't confirm ids exist.
+  if (!doc || !safeEquals(String(body.token ?? ""), String(doc.public_token ?? ""))) return json({ error: "Not found" }, 404);
+
+  const envEnabled = flagOn(deps.env("RAINFOREST_ENABLED"));
+  const broker = Boolean(doc.broker_id || doc.broker_email);
+  const rail = await loadPaymentRail(admin, doc.shop_owner, { envEnabled, broker });
+  if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
+  if (docType === "quote" && ["Draft", "Declined"].includes(String(doc.status))) {
+    return json({ rail: "processor", payable: false, message: "This quote isn't ready to pay yet. Please contact the shop." });
+  }
+
+  const account = await loadAccount(admin, doc.shop_owner);
+  if (!account?.merchant_id) return json({ rail: "qb" });
+
+  // A payment already in flight for this document (bank payment clearing, or
+  // a card payment not yet in QuickBooks) → don't open a second one.
+  const invoiceIds = [doc.qb_invoice_id, doc.qb_deposit_invoice_id].filter(Boolean).map(String);
+  if (invoiceIds.length) {
+    const { data: inflight } = await admin.from("processor_payments")
+      .select("processor_payin_id, status, qb_payment_id")
+      .eq("shop_owner", doc.shop_owner)
+      .in("qb_invoice_id", invoiceIds)
+      .in("status", ["processing", "succeeded"])
+      .is("qb_payment_id", null);
+    if (inflight?.length) return json({ rail: "processor", payable: false, reason: "in_flight", message: CUSTOMER_REASON.in_flight });
+  }
+
+  const conn = await deps.qb.connect(doc.shop_owner);
+  if (!conn) return json({ rail: "processor", payable: false, reason: "qb_unavailable", message: CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT] });
+  const [liveFinal, liveDeposit] = await Promise.all([
+    doc.qb_invoice_id ? deps.qb.getInvoice(conn, String(doc.qb_invoice_id)) : Promise.resolve(null),
+    doc.qb_deposit_invoice_id && !doc.qb_invoice_id ? deps.qb.getInvoice(conn, String(doc.qb_deposit_invoice_id)) : Promise.resolve(null),
+  ]);
+  // Deposit invoices only exist when the deposit path minted one, so the
+  // server can always route to them (the frontend kill switch hides the UI).
+  const target = choosePayTarget({ quote: doc, depositsEnabled: true, liveFinal, liveDeposit });
+  if (!target.ok) return json({ rail: "processor", payable: false, reason: target.reason, message: CUSTOMER_REASON[target.reason] ?? CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT] });
+
+  const liveInvoice = target.kind === "deposit" ? liveDeposit : liveFinal;
+  const { data: shopProfile } = await admin.from("profiles").select("zip").eq("email", doc.shop_owner).maybeSingle();
+  const config = await deps.rf.post("/v1/payin_configs", buildPayinConfig({
+    merchantId: account.merchant_id,
+    doc,
+    docType,
+    target,
+    liveInvoice,
+    customer: { name: doc.customer_name, email: doc.customer_email },
+    shopPostalCode: shopProfile?.zip ?? null,
+  }));
+  const session = await deps.rf.post("/v1/sessions", buildPaymentSession(account.merchant_id));
+  return json({
+    rail: "processor",
+    payable: true,
+    kind: target.kind,
+    amountCents: target.amountCents,
+    payinConfigId: config?.payin_config_id,
+    sessionKey: session?.session_key,
+    allowedMethods: "CARD,ACH",
+    scriptUrl: componentScripts(deps.rf.base).payment,
+    pricing: { card: formatRatePct("card"), ach: formatRatePct("ach") },
+  });
+}
+
+export async function handle(req: Request, deps: Deps) {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const body = await req.json().catch(() => ({}));
+  const action = String(body.action || "status");
+
+  if (action === "payinSession") return payinSession(body, deps);
+
   const token = body.accessToken || req.headers.get("Authorization")?.replace("Bearer ", "") || "";
   if (!token) return json({ error: "Unauthorized" }, 401);
   const user = await deps.getUser(token);
@@ -65,31 +193,76 @@ export async function handle(req: Request, deps: { admin: any; getUser: (token: 
   if (!shop?.email) return json({ error: "Shop not found" }, 404);
   const shopOwner = String(shop.email);
   const envEnabled = flagOn(deps.env("RAINFOREST_ENABLED"));
-
-  const action = String(body.action || "status");
   const account = await loadAccount(admin, shopOwner);
+  const status = async () => json({
+    ...buildStatusPayload({ envEnabled, account: await loadAccount(admin, shopOwner), viewer }),
+    payingPlan: isPayingShop(shop),
+  });
 
-  if (action === "status") {
-    return json(buildStatusPayload({ envEnabled, account, viewer }));
+  if (action === "status") return status();
+
+  if (action === "startOnboarding") {
+    if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can sign up for payments." }, 403);
+    if (!envEnabled) return json({ error: "InkTracker payments aren't available yet." }, 400);
+    if (!isPayingShop(shop)) return json({ error: "InkTracker payments are available on a paid plan." }, 403);
+    let merchantId = account?.merchant_id ?? null;
+    let applicationId = account?.merchant_application_id ?? null;
+    if (onboardingStage(account) === "active") return json({ error: "Your payments account is already approved." }, 400);
+    if (!merchantId) {
+      // One merchant per shop. Written straight away so a second click
+      // resumes this one instead of creating another.
+      const m = await deps.rf.post("/v1/merchants", buildMerchantCreate(shop));
+      merchantId = m?.merchant_id;
+      applicationId = m?.merchant_application_id;
+      if (!merchantId || !applicationId) throw new Error("Rainforest returned no merchant id");
+      const { error } = await admin.from("processor_accounts").upsert({
+        shop_owner: shopOwner,
+        merchant_id: merchantId,
+        merchant_application_id: applicationId,
+        merchant_status: String(m?.merchant_status ?? "pending").toLowerCase(),
+        merchant_application_status: String(m?.merchant_application_status ?? "created").toLowerCase(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "shop_owner" });
+      if (error) throw new Error(`Couldn't save the new merchant ${merchantId}: ${error.message}`);
+    }
+    const session = await deps.rf.post("/v1/sessions", buildOnboardingSession(merchantId));
+    return json({
+      sessionKey: session?.session_key,
+      merchantId,
+      merchantApplicationId: applicationId,
+      scriptUrl: componentScripts(deps.rf.base).merchant,
+      termsUrl: deps.env("RAINFOREST_TERMS_URL") ?? "https://www.inktracker.app/payment-processing-agreement",
+    });
+  }
+
+  if (action === "refreshStatus") {
+    if (!account?.merchant_id) return status();
+    const m = await deps.rf.get(`/v1/merchants/${encodeURIComponent(account.merchant_id)}`);
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const ms = m?.merchant_status ?? m?.status;
+    if (ms) patch.merchant_status = String(ms).toLowerCase();
+    if (m?.merchant_application_status) patch.merchant_application_status = String(m.merchant_application_status).toLowerCase();
+    await admin.from("processor_accounts").update(patch).eq("shop_owner", shopOwner);
+    return status();
   }
 
   if (action === "qbAccounts") {
     if (!canMapQbAccounts(viewer)) return json({ error: "Only the owner or a manager can set this up." }, 403);
-    const conn = await getShopQb(admin, shopOwner);
+    const conn = await deps.qb.connect(shopOwner);
     if (!conn) return json({ error: "Connect QuickBooks first." }, 400);
-    return json(qbAccountChoices(await qbListAccounts(conn)));
+    return json(qbAccountChoices(await deps.qb.listAccounts(conn)));
   }
 
   if (action === "saveQbAccounts") {
     if (!canMapQbAccounts(viewer)) return json({ error: "Only the owner or a manager can set this up." }, 403);
-    const conn = await getShopQb(admin, shopOwner);
+    const conn = await deps.qb.connect(shopOwner);
     if (!conn) return json({ error: "Connect QuickBooks first." }, 400);
     // Validate against the LIVE chart of accounts — never store an id the
     // browser made up.
     const v = validateQbAccountMapping({
       bankAccountId: body.bankAccountId,
       feeAccountId: body.feeAccountId,
-      qbAccounts: await qbListAccounts(conn),
+      qbAccounts: await deps.qb.listAccounts(conn),
     });
     if (!v.ok) return json({ error: v.error }, 400);
     const { error } = await admin.from("processor_accounts").upsert({
@@ -99,20 +272,20 @@ export async function handle(req: Request, deps: { admin: any; getUser: (token: 
       updated_at: new Date().toISOString(),
     }, { onConflict: "shop_owner" });
     if (error) return json({ error: `Couldn't save: ${error.message}` }, 500);
-    return json(buildStatusPayload({ envEnabled, account: await loadAccount(admin, shopOwner), viewer }));
+    return status();
   }
 
   if (action === "setEnabled") {
     const want = body.enabled === true;
     const gate = want ? checkCanEnable({ envEnabled, account, viewer }) : checkCanDisable({ viewer });
     if (!gate.ok) return json({ error: gate.error }, want ? 400 : 403);
-    if (!account && !want) return json(buildStatusPayload({ envEnabled, account, viewer }));
+    if (!account && !want) return status();
     const now = new Date().toISOString();
     const { error } = await admin.from("processor_accounts")
       .update({ enabled: want, enabled_at: want ? now : null, updated_at: now })
       .eq("shop_owner", shopOwner);
     if (error) return json({ error: `Couldn't save: ${error.message}` }, 500);
-    return json(buildStatusPayload({ envEnabled, account: await loadAccount(admin, shopOwner), viewer }));
+    return status();
   }
 
   return json({ error: `Unknown action: ${action}` }, 400);
@@ -120,6 +293,7 @@ export async function handle(req: Request, deps: { admin: any; getUser: (token: 
 
 if (import.meta.main) {
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const env = (k: string) => Deno.env.get(k);
   Deno.serve(async (req) => {
     try {
       return await handle(req, {
@@ -131,7 +305,13 @@ if (import.meta.main) {
           const { data: { user } } = await userClient.auth.getUser(token);
           return user ?? null;
         },
-        env: (k) => Deno.env.get(k),
+        env,
+        rf: rainforestApi(env),
+        qb: {
+          connect: (shop) => getShopQb(admin, shop),
+          listAccounts: qbListAccounts,
+          getInvoice: qbGetInvoice,
+        },
       });
     } catch (err) {
       console.error("[rainforest]", err);

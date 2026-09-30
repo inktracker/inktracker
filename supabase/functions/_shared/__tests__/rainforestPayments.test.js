@@ -11,7 +11,7 @@ import {
   liveInvoiceIsStale,
   payinIdempotencyKey,
   buildPayinMetadata,
-  buildInvoiceDetail,
+  buildLevel23,
   NOT_PAYABLE,
 } from "../rainforestPayinPlan.js";
 
@@ -174,41 +174,56 @@ describe("invoices (order-then-invoice flow) pay the same way", () => {
   });
 });
 
-// ── Invoice detail for business cards ──────────────────────────────────
-const salesLine = (desc, qty, amount) => ({ DetailType: "SalesItemLineDetail", Description: desc, Amount: amount, SalesItemLineDetail: { Qty: qty } });
+// ── Invoice detail for business cards (Rainforest level_2_3) ────────────
+const salesLine = (desc, qty, amount, tax = "TAX", itemId = "21") => ({
+  DetailType: "SalesItemLineDetail", Description: desc, Amount: amount,
+  SalesItemLineDetail: { Qty: qty, ItemRef: { value: itemId }, TaxCodeRef: { value: tax } },
+});
 
-describe("buildInvoiceDetail", () => {
+describe("buildLevel23", () => {
   const live = inv({
-    TotalAmt: 1100, Balance: 1100, TxnTaxDetail: { TotalTax: 100 },
+    TotalAmt: 1100, Balance: 1100, TxnTaxDetail: { TotalTax: 100 }, ShipAddr: { PostalCode: "89501" },
     Line: [salesLine("Comfort Colors 1717 White | S:100 | Front 1 color", 100, 1000), { DetailType: "SubTotalLineDetail", Amount: 1000 }],
   });
+  const sumCheck = (l) => l.line_items.reduce((a, li) => a + li.quantity * li.unit_amount, 0) + l.tax_amount + l.shipping_amount;
 
-  it("full payment whose lines + tax reconcile → line items sent", () => {
-    const d = buildInvoiceDetail({ quote: quote(), target: { kind: "full", amountCents: 110000 }, liveInvoice: live });
-    expect(d.taxCents).toBe(10000);
-    expect(d.customerCode).toBe("61");
-    expect(d.poNumber).toBe("Q-2026-HKSO");
-    expect(d.lineItems).toEqual([
-      { description: "Comfort Colors 1717 White | S:100 |", quantity: 100, unitCents: 1000, totalCents: 100000 },
-    ]);
+  it("full payment: Level 3 lines that add up exactly to the charge", () => {
+    const l = buildLevel23({ docNumber: "Q-2026-HKSO", target: { kind: "full", amountCents: 110000 }, liveInvoice: live, shopPostalCode: "89502" });
+    expect(l).toMatchObject({ tax_amount: 10000, shipping_amount: 0, order_number: "Q-2026-HKSO", commodity_code: "8212", shipping_postal_code: "89501", shipping_from_postal_code: "89502" });
+    expect(l.line_items).toEqual([{
+      product_code: "21", commodity_code: "8212", description: "Comfort Colors 1717 White | S:100 |",
+      quantity: 100, unit_amount: 1000, unit_of_measure: "EACH", total_amount: 100000, tax_amount: 10000, tax_rate: 10000,
+    }]);
+    expect(sumCheck(l)).toBe(110000);
   });
 
-  it("a deposit or balance payment carries summary only — never lines that don't add up", () => {
-    const d = buildInvoiceDetail({ quote: quote(), target: { kind: "balance", amountCents: 60000 }, liveInvoice: live });
-    expect(d.lineItems).toEqual([]);
-    expect(d.taxCents).toBeNull();
-    expect(d.customerCode).toBe("61");
+  it("tax is split across taxable lines to the exact cent; untaxed lines carry none", () => {
+    const three = inv({
+      TotalAmt: 111.01, TxnTaxDetail: { TotalTax: 11.01 },
+      Line: [salesLine("Tees", 3, 33.34), salesLine("Hoodies", 3, 33.33), salesLine("Screen setup", 1, 33.33, "NON")],
+    });
+    const l = buildLevel23({ docNumber: "Q-1", target: { kind: "full", amountCents: 11101 }, liveInvoice: three });
+    expect(l.line_items.map((li) => li.tax_amount).reduce((a, b) => a + b)).toBe(1101);
+    expect(l.line_items[2].tax_amount).toBe(0);
+    expect(sumCheck(l)).toBe(11101);
   });
 
-  it("a discounted invoice sends summary only (lines would overstate the charge)", () => {
-    const disc = inv({ TotalAmt: 900, Balance: 900, TxnTaxDetail: { TotalTax: 0 },
-      Line: [salesLine("Tee", 10, 1000), { DetailType: "DiscountLineDetail", Amount: 100 }] });
-    const d = buildInvoiceDetail({ quote: quote(), target: { kind: "full", amountCents: 90000 }, liveInvoice: disc });
-    expect(d.lineItems).toEqual([]);
+  it("a line that doesn't divide by its quantity goes as 1 × total, qty kept in the description", () => {
+    const odd = inv({ TotalAmt: 100, TxnTaxDetail: { TotalTax: 0 }, Line: [salesLine("Tees", 3, 100)] });
+    const l = buildLevel23({ docNumber: "Q-1", target: { kind: "full", amountCents: 10000 }, liveInvoice: odd });
+    expect(l.line_items[0]).toMatchObject({ quantity: 1, unit_amount: 10000, description: "3 x Tees" });
   });
 
-  it("lines that don't sum to the charge are dropped rather than sent wrong", () => {
-    const d = buildInvoiceDetail({ quote: quote(), target: { kind: "full", amountCents: 999999 }, liveInvoice: live });
-    expect(d.lineItems).toEqual([]);
+  it("deposit / balance: Level 2 only, with a unique order number per payment", () => {
+    const dep = buildLevel23({ docNumber: "Q-2026-HKSO", target: { kind: "deposit", amountCents: 50000 }, liveInvoice: live });
+    expect(dep).toMatchObject({ order_number: "Q-2026-HKSO-DEP", tax_amount: 0 });
+    expect(dep.line_items).toBeUndefined();
+    expect(buildLevel23({ docNumber: "Q-2026-HKSO", target: { kind: "balance", amountCents: 60000 }, liveInvoice: live }).order_number).toBe("Q-2026-HKSO-BAL");
+  });
+
+  it("discounted or non-reconciling invoices send Level 2 only", () => {
+    const disc = inv({ TotalAmt: 900, TxnTaxDetail: { TotalTax: 0 }, Line: [salesLine("Tee", 10, 1000), { DetailType: "DiscountLineDetail", Amount: 100 }] });
+    expect(buildLevel23({ docNumber: "Q-1", target: { kind: "full", amountCents: 90000 }, liveInvoice: disc }).line_items).toBeUndefined();
+    expect(buildLevel23({ docNumber: "Q-1", target: { kind: "full", amountCents: 999999 }, liveInvoice: live }).line_items).toBeUndefined();
   });
 });
