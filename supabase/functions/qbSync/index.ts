@@ -1499,15 +1499,15 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       DocNumber: docNumber,
       TxnDate: quote.date,
       DueDate: quote.date || undefined,
-      // Do NOT set AllowOnline*Payment here for normal invoices. Omitting
-      // them lets QuickBooks apply the shop's own Payments settings (card /
-      // ACH toggles) per invoice. Hard-coding them overrode the shop owner's
-      // QB config — e.g. an ACH-only shop still had card enabled, eating ~3%.
-      // EXCEPTION — broker (B2B) invoices: explicitly enable ACH + card so the
-      // broker can pay by ACH (~0 fee), which is the whole point of in-app
-      // broker billing. This is scoped to billBroker only; normal invoices are
-      // unaffected and keep deferring to the shop's QB Payments settings.
-      ...(billBroker ? { AllowOnlineACHPayment: true, AllowOnlineCreditCardPayment: true } : {}),
+      // Do NOT set AllowOnline*Payment here. Omitting them lets QuickBooks
+      // apply the shop's own Payments settings (card / ACH toggles) per
+      // invoice. Hard-coding them overrode the shop owner's QB config — e.g.
+      // an ACH-only shop still had card enabled, eating ~3%. This holds for
+      // broker (B2B) invoices too: InkTracker never turns payment methods on;
+      // whatever the shop has enabled in QuickBooks is what the broker sees.
+      // (If the shop wants the broker paying by ACH for ~0 fee, they enable
+      // ACH in their QB Payments settings — the same place it's set for
+      // everyone.)
       Line: lines,
       // Self tax, PROPER path: reference the shop's manual QB tax code so QB
       // records our rate. (Line-fallback shops carry the tax as a line instead.)
