@@ -56,7 +56,7 @@ function setup({ qbConnected = true, qbPostFails = false, balance = 1643, deposi
     processor_payments: [],
     processed_webhook_events: [],
     notifications: [],
-  }, { unique: { processed_webhook_events: ["source", "event_id"] } });
+  }, { unique: { processed_webhook_events: ["source", "event_id"], processor_payments: ["processor_payin_id"] } });
   const posted: unknown[] = [];
   const deposits: unknown[] = [];
   let failNext = qbPostFails;
@@ -114,8 +114,12 @@ Deno.test("card captured → ledger + ONE QuickBooks payment against the invoice
 Deno.test("replayed event and the later 'succeeded' → still ONE QuickBooks payment", async () => {
   const { db, deps, posted } = setup();
   await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
-  const dup = await handle(await request({ event_type: "payin.processing", data: payin() }, { msgId: "msg_2" }), deps);
+  // Rainforest retrying the SAME message → dropped as a duplicate.
+  const dup = await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
   assertEquals((await dup.json()).duplicate, true);
+  // A separate message with the same content → processed, but a no-op.
+  const again = await handle(await request({ event_type: "payin.processing", data: payin() }, { msgId: "msg_2" }), deps);
+  assertEquals((await again.json()).posted, null);
   await handle(await request({ event_type: "payin.succeeded", data: payin() }, { msgId: "msg_3" }), deps);
   assertEquals(posted.length, 1);
   assertEquals(db.tables.processor_payments[0].status, "succeeded");
@@ -262,4 +266,61 @@ Deno.test("sweep: bank payments still clearing are left alone", async () => {
   db.tables.processor_payments.push({ processor_payin_id: "pyi_9", shop_owner: OWNER, qb_invoice_id: "3815", amount_cents: 1000, method: "ach", status: "processing", updated_at: "2026-10-01T00:00:00Z" });
   await sweep(deps);
   assertEquals(posted.length, 0);
+});
+
+Deno.test("merchant suspended, reactivated, suspended again → each change applies (message-level dedupe)", async () => {
+  const { db, deps } = setup();
+  for (const [i, st] of ["SUSPENDED", "ACTIVE", "SUSPENDED"].entries()) {
+    await handle(await request({ event_type: `merchant.${st.toLowerCase()}`, data: { merchant_id: "mid_1", status: st } }, { msgId: `m${i}` }), deps);
+  }
+  assertEquals(db.tables.processor_accounts[0].merchant_status, "suspended");
+});
+
+Deno.test("QuickBooks lookup failing → nothing posted (no blind double-post), retried later", async () => {
+  const { db, deps, posted } = setup();
+  deps.qb.findPaymentByRef = () => Promise.reject(new Error("QuickBooks 500"));
+  const r = await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  assertEquals(r.status, 500);
+  assertEquals(posted.length, 0);
+  assertEquals(db.tables.processor_payments[0].qb_posting_at, null);
+});
+
+Deno.test("statuses never move backwards when events race", async () => {
+  const { db, deps } = setup();
+  await handle(await request({ event_type: "payin.succeeded", data: payin() }), deps);
+  // A late 'processing' whose read raced ahead of the succeeded write:
+  // simulate by sending it with a stale ledger view.
+  const row = db.tables.processor_payments[0];
+  assertEquals(row.status, "succeeded");
+  await handle(await request({ event_type: "payin.processing", data: payin() }, { msgId: "late" }), deps);
+  assertEquals(db.tables.processor_payments[0].status, "succeeded");
+});
+
+Deno.test("QB disconnected: shop told once, not every night", async () => {
+  const { db, deps } = setup({ qbConnected: false });
+  await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  db.tables.processor_payments[0].updated_at = "2026-10-01T00:00:00Z";
+  await sweep(deps);
+  await sweep(deps);
+  assertEquals(db.tables.notifications.filter((n) => n.event_type === "payment_not_booked").length, 1);
+});
+
+Deno.test("payout stuck mid-post is never re-posted by the sweep", async () => {
+  const { db, deps, deposits } = setup({ deposit: cleanDeposit, activities: [payinActivity] });
+  await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  db.tables.processor_payouts.push({ processor_payout_id: "dep_1", shop_owner: OWNER, merchant_id: "mid_1", qb_deposit_id: null, qb_posting_at: "2026-10-02T15:00:00Z", review_notified_at: null, created_at: "2026-10-02T15:00:00Z" });
+  await sweep(deps);
+  assertEquals(deposits.length, 0);
+});
+
+Deno.test("switched-on shop suspended → told to re-send open invoices; a pending shop isn't", async () => {
+  const { db, deps } = setup();
+  await handle(await request({ event_type: "merchant.suspended", data: { merchant_id: "mid_1", status: "SUSPENDED" } }), deps);
+  const n = db.tables.notifications.filter((x) => x.event_type === "payments_account_on_hold");
+  assertEquals(n.length, 1);
+  assert(String(n[0].body).includes("re-send"));
+  const other = setup();
+  other.db.tables.processor_accounts[0].enabled = false;
+  await handle(await request({ event_type: "merchant.suspended", data: { merchant_id: "mid_1", status: "SUSPENDED" } }), other.deps);
+  assertEquals(other.db.tables.notifications.length, 0);
 });

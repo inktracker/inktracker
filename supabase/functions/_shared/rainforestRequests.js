@@ -85,14 +85,14 @@ export function buildPaymentSession(merchantId) {
  * (see choosePayTarget), `target` its pay target, `liveInvoice` the QB
  * invoice being paid. The amount is the LIVE QuickBooks balance.
  */
-export function buildPayinConfig({ merchantId, doc, docType, target, liveInvoice, customer = {}, shopPostalCode = null }) {
+export function buildPayinConfig({ merchantId, doc, docType, target, liveInvoice, customer = {}, shopPostalCode = null, attempt = 0 }) {
   const docNumber = docType === "invoice" ? doc?.invoice_id : doc?.quote_id;
   const name = clean(customer.name, 100);
   const email = clean(customer.email, 254);
   const postal = clean(liveInvoice?.BillAddr?.PostalCode, 10);
   return JSON.parse(JSON.stringify({
     merchant_id: String(merchantId),
-    idempotency_key: payinIdempotencyKey({ quoteId: doc?.id, qbInvoiceId: target.qbInvoiceId, amountCents: target.amountCents }),
+    idempotency_key: payinIdempotencyKey({ quoteId: doc?.id, qbInvoiceId: target.qbInvoiceId, amountCents: target.amountCents, attempt }),
     amount: target.amountCents,
     currency_code: "USD",
     // Prefilled so the form doesn't ask again (card needs postal code, bank

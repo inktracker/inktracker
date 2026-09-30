@@ -82,7 +82,7 @@ export type Deps = {
 async function loadAccount(admin: Any, shopOwner: string) {
   const { data, error } = await admin
     .from("processor_accounts")
-    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, qb_bank_account_id, qb_fee_account_id")
+    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, processor_used_at, qb_bank_account_id, qb_fee_account_id")
     .eq("shop_owner", shopOwner)
     .maybeSingle();
   if (error) throw new Error(`Couldn't read payment settings: ${error.message}`);
@@ -98,6 +98,7 @@ const CUSTOMER_REASON: Record<string, string> = {
   [NOT_PAYABLE.BROKER]: "Online payment isn't available here. Please contact the shop.",
   [NOT_PAYABLE.BAD_AMOUNT]: "Online payment isn't available right now. Please contact the shop.",
   in_flight: "A payment is already being processed for this invoice. Bank payments take a few business days to clear.",
+  tax_hold: "The shop is updating the sales tax on this invoice. Please check back soon or contact the shop.",
 };
 
 /** Load a quote/invoice for the public pay page, token-checked. */
@@ -107,8 +108,8 @@ async function loadPublicDoc(admin: Any, body: Any) {
   if (!UUID_RE.test(id)) return null;
   const table = docType === "invoice" ? "invoices" : "quotes";
   const cols = docType === "invoice"
-    ? "id, invoice_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, public_token, customer_name, paid"
-    : "id, quote_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, broker_email, public_token, customer_name, customer_email, paid";
+    ? "id, invoice_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, public_token, customer_name, paid, qb_tax_hold"
+    : "id, quote_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, broker_email, public_token, customer_name, customer_email, paid, qb_tax_hold";
   const { data: doc } = await admin.from(table).select(cols).eq("id", id).maybeSingle();
   // Same answer for "no such doc" and "wrong token" — don't confirm ids exist.
   if (!doc || !safeEquals(String(body.token ?? ""), String(doc.public_token ?? ""))) return null;
@@ -138,6 +139,11 @@ async function payinSession(body: Any, deps: Deps) {
   const broker = Boolean(doc.broker_id || doc.broker_email);
   const rail = await loadPaymentRail(admin, doc.shop_owner, { envEnabled, broker });
   if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
+  // Tax-mismatch hold: QuickBooks computed a different tax than the shop
+  // billed. The QB rail mints no link in this state; neither do we.
+  if (doc.qb_tax_hold) {
+    return json({ rail: "processor", payable: false, reason: "tax_hold", message: CUSTOMER_REASON.tax_hold });
+  }
   if (docType === "quote" && ["Draft", "Declined"].includes(String(doc.status))) {
     return json({ rail: "processor", payable: false, message: "This quote isn't ready to pay yet. Please contact the shop." });
   }
@@ -179,7 +185,16 @@ async function payinSession(body: Any, deps: Deps) {
   if (!target.ok) return json({ rail: "processor", payable: false, reason: target.reason, message: CUSTOMER_REASON[target.reason] ?? CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT], display });
 
   const liveInvoice = target.kind === "deposit" ? liveDeposit : liveFinal;
-  const config = await deps.rf.post("/v1/payin_configs", buildPayinConfig({
+
+  // One Rainforest payin config allows one successful payment and caches
+  // its first answer forever. Key it by the attempts already made against
+  // this QB invoice, so a refunded-and-reopened balance gets a fresh config.
+  const { data: prior } = await admin.from("processor_payments")
+    .select("processor_payin_id")
+    .eq("shop_owner", doc.shop_owner)
+    .eq("qb_invoice_id", String(target.qbInvoiceId));
+  const attempt = prior?.length ?? 0;
+  const configBody = buildPayinConfig({
     merchantId: account.merchant_id,
     doc,
     docType,
@@ -187,7 +202,19 @@ async function payinSession(body: Any, deps: Deps) {
     liveInvoice,
     customer: { name: doc.customer_name, email: doc.customer_email },
     shopPostalCode: shopProfile?.zip ?? null,
-  }));
+    attempt,
+  });
+  let config;
+  try {
+    config = await deps.rf.post("/v1/payin_configs", configBody);
+  } catch (err) {
+    // A rejected first request would be replayed forever under the same
+    // key; retry once under a fresh one (e.g. after fixing invoice data).
+    const status = (err as Any)?.status;
+    if (!(status >= 400 && status < 500)) throw err;
+    console.error(`[rainforest] payin config rejected (${status}); retrying with a fresh key: ${(err as Error).message}`);
+    config = await deps.rf.post("/v1/payin_configs", { ...configBody, idempotency_key: `${configBody.idempotency_key}:r${Date.now()}` });
+  }
   const session = await deps.rf.post("/v1/sessions", buildPaymentSession(account.merchant_id));
   return json({
     rail: "processor",
@@ -239,8 +266,19 @@ export async function handle(req: Request, deps: Deps) {
     let applicationId = account?.merchant_application_id ?? null;
     if (onboardingStage(account) === "active") return json({ error: "Your payments account is already approved." }, 400);
     if (!merchantId) {
-      // One merchant per shop. Written straight away so a second click
-      // resumes this one instead of creating another.
+      // One merchant per shop: claim creation first so two clicks (or two
+      // tabs) can't create two merchants.
+      const nowIso = new Date().toISOString();
+      if (!account) {
+        await admin.from("processor_accounts").upsert({ shop_owner: shopOwner }, { onConflict: "shop_owner", ignoreDuplicates: true });
+      }
+      const { data: claimed } = await admin.from("processor_accounts")
+        .update({ merchant_creating_at: nowIso })
+        .eq("shop_owner", shopOwner)
+        .is("merchant_id", null)
+        .or(`merchant_creating_at.is.null,merchant_creating_at.lt."${new Date(Date.now() - 2 * 60 * 1000).toISOString()}"`)
+        .select("shop_owner");
+      if (!claimed?.length) return json({ error: "Sign-up is already opening. Try again in a moment." }, 409);
       const m = await deps.rf.post("/v1/merchants", buildMerchantCreate(shop));
       merchantId = m?.merchant_id;
       applicationId = m?.merchant_application_id;
@@ -251,6 +289,7 @@ export async function handle(req: Request, deps: Deps) {
         merchant_application_id: applicationId,
         merchant_status: String(m?.merchant_status ?? "pending").toLowerCase(),
         merchant_application_status: String(m?.merchant_application_status ?? "created").toLowerCase(),
+        merchant_creating_at: null,
         updated_at: new Date().toISOString(),
       }, { onConflict: "shop_owner" });
       if (error) throw new Error(`Couldn't save the new merchant ${merchantId}: ${error.message}`);
@@ -312,7 +351,12 @@ export async function handle(req: Request, deps: Deps) {
     if (!account && !want) return status();
     const now = new Date().toISOString();
     const { error } = await admin.from("processor_accounts")
-      .update({ enabled: want, enabled_at: want ? now : null, updated_at: now })
+      .update({
+        enabled: want,
+        enabled_at: want ? now : null,
+        ...(want && !account?.processor_used_at ? { processor_used_at: now } : {}),
+        updated_at: now,
+      })
       .eq("shop_owner", shopOwner);
     if (error) return json({ error: `Couldn't save: ${error.message}` }, 500);
     return status();

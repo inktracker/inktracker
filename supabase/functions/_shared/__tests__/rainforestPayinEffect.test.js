@@ -3,6 +3,7 @@ import {
   planPayinEffect,
   planQbApplication,
   statusAdvances,
+  statusesBelow,
   PAYIN_EVENT,
   REJECT,
 } from "../rainforestPayinEffect.js";
@@ -212,5 +213,57 @@ describe("overpayment (two payments raced)", () => {
     expect(r.body.Line).toEqual([]);
     expect(r.body.PrivateNote).toMatch(/OVERPAID \$2284\.82/);
     expect(buildQbPaymentBody({ qbInvoiceId: "1", customerRefValue: "1", amountCents: 100, applyCents: 101, payinId: "p", txnDate: "2026-10-02" }).ok).toBe(false);
+  });
+});
+
+describe("review fixes: a linked ledger row is the authority", () => {
+  const linked = { status: "succeeded", method: "card", qb_payment_id: "501", quote_id: "q-uuid", qb_invoice_id: "3900" };
+  const settledQuote = { ...quote, qb_invoice_id: "4100", qb_deposit_invoice_id: null }; // deposit invoice voided at settlement
+
+  it("refund after deposit settlement → still matched, shop told, links untouched", () => {
+    const r = plan({ quote: settledQuote, ledger: linked, event: ev({ kind: "partially_refunded", reversalCents: 5000, metadata: { ...ev().metadata, qb_invoice_id: "3900" } }) });
+    expect(r.ok).toBe(true);
+    expect(r.notify.title).toMatch(/Refund issued: \$50\.00/);
+    expect(r.ledger).not.toHaveProperty("quote_id");
+    expect(r.ledger).not.toHaveProperty("qb_invoice_id");
+  });
+
+  it("dispute on a payment whose document moved → shop is ALWAYS told (deadline)", () => {
+    const r = plan({ quote: settledQuote, ledger: linked, event: ev({ kind: "disputed", metadata: { ...ev().metadata, qb_invoice_id: "3900" } }) });
+    expect(r.notify.title).toMatch(/disputed/);
+  });
+
+  it("card succeeded after settlement (booked at processing) → no false 'NOT recorded' alert", () => {
+    const r = plan({ quote: settledQuote, ledger: { ...linked, status: "processing" }, event: ev({ metadata: { ...ev().metadata, qb_invoice_id: "3900" } }) });
+    expect(r.ok).toBe(true);
+    expect(r.notify).toBeNull();
+    expect(r.postQbPayment).toBe(false);
+  });
+
+  it("a dispute on an UNMATCHED payment still notifies", () => {
+    const r = plan({ quote: null, event: ev({ kind: "disputed" }) });
+    expect(r.reject).toBe(REJECT.QUOTE_NOT_FOUND);
+    expect(r.notify.title).toMatch(/disputed/);
+  });
+
+  it("a second partial refund notifies even though the status doesn't move", () => {
+    const r = plan({ ledger: { ...linked, status: "partially_refunded" }, event: ev({ kind: "partially_refunded", reversalCents: 2500 }) });
+    expect(r.ledger).toBeNull();
+    expect(r.notify.title).toMatch(/\$25\.00/);
+  });
+
+  it("a trusted row recorded unmatched (no QB invoice) is never posted", () => {
+    const r = plan({ ledger: { status: "processing", method: "card", quote_id: null, invoice_id: null, qb_payment_id: null, qb_invoice_id: null }, event: ev() });
+    expect(r.postQbPayment).toBe(true); // not trusted (no links) → re-matched against the document
+    const t = plan({ ledger: { status: "processing", method: "card", quote_id: "q-uuid", qb_invoice_id: null }, event: ev() });
+    expect(t.postQbPayment).toBe(false);
+  });
+});
+
+describe("statusesBelow (guarded forward-only update)", () => {
+  it("lists only lower-ranked statuses", () => {
+    expect(statusesBelow("succeeded").sort()).toEqual(["pending", "processing"]);
+    expect(statusesBelow("processing")).toEqual(["pending"]);
+    expect(statusesBelow("bogus")).toEqual([]);
   });
 });

@@ -244,3 +244,53 @@ Deno.test("payRail: token-gated, answers the rail only", async () => {
   assertEquals((await call(on, "", { action: "payRail", id: QUOTE_ID, token: "x" })).status, 404);
   assertEquals(await (await call(withQuote(ACTIVE), "", { action: "payRail", id: QUOTE_ID, token: "tok" })).json(), { rail: "qb" });
 });
+
+Deno.test("payinSession: tax-held invoice is never charged", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 1778.79, Balance: 1778.79, TxnTaxDetail: { TotalTax: 135.79 }, Line: [] };
+  const calls: RfCall[] = [];
+  const j = await (await call(withQuote({ ...ACTIVE, enabled: true }, { qb_tax_hold: { quotedTax: 0, qbTax: 135.79 } }), "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls)).json();
+  assertEquals(j.reason, "tax_hold");
+  assertEquals(calls.length, 0);
+});
+
+Deno.test("payinSession: after a refund the same balance gets a NEW config key", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 1643, Balance: 1643, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  const calls: RfCall[] = [];
+  await call(withQuote({ ...ACTIVE, enabled: true }, {}, [{ processor_payin_id: "pyi_old", shop_owner: OWNER, qb_invoice_id: "3815", status: "refunded", qb_payment_id: "501" }]), "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls);
+  const cfg = calls.find((c) => c.path === "/v1/payin_configs")!.body as Record<string, unknown>;
+  assertEquals(cfg.idempotency_key, `it-payin:${QUOTE_ID}:3815:164300:a1`);
+});
+
+Deno.test("payinSession: a rejected first config is retried once under a fresh key", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 1643, Balance: 1643, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  const fake = withQuote({ ...ACTIVE, enabled: true });
+  const keys: string[] = [];
+  const req = new Request("http://x/rainforest", { method: "POST", body: JSON.stringify({ action: "payinSession", id: QUOTE_ID, token: "tok" }) });
+  const r = await handle(req, {
+    admin: fake, getUser: () => Promise.resolve(null), env: (k) => ({ RAINFOREST_ENABLED: "true" } as Record<string, string>)[k],
+    rf: {
+      base: "https://api.sandbox.rainforestpay.com",
+      get: () => Promise.resolve({}),
+      post: (path, body) => {
+        if (path === "/v1/payin_configs") {
+          keys.push((body as Record<string, string>).idempotency_key);
+          if (keys.length === 1) return Promise.reject(Object.assign(new Error("400 level_2_3 invalid"), { status: 400 }));
+          return Promise.resolve({ payin_config_id: "cfg_2" });
+        }
+        return Promise.resolve({ session_key: "s" });
+      },
+    },
+    qb: { connect: () => Promise.resolve({ token: "t", realmId: "r" }), listAccounts: () => Promise.resolve([]), getInvoice: () => Promise.resolve(liveInvoice) },
+  });
+  assertEquals((await r.json()).payinConfigId, "cfg_2");
+  assertEquals(keys.length, 2);
+  assert(keys[1].startsWith(`${keys[0]}:r`));
+});
+
+Deno.test("startOnboarding: a second click while the first is creating → 409, one merchant", async () => {
+  const fake = db({ merchant_id: null, merchant_creating_at: new Date().toISOString() });
+  const calls: RfCall[] = [];
+  const r = await call(fake, "own-auth", { action: "startOnboarding" }, undefined, calls);
+  assertEquals(r.status, 409);
+  assertEquals(calls.filter((c) => c.path === "/v1/merchants").length, 0);
+});

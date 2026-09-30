@@ -43,6 +43,13 @@ create table if not exists public.processor_accounts (
   qb_fee_account_id   text,
   onboarded_at        timestamptz,
   enabled_at          timestamptz,
+  -- First time the shop ever switched InkTracker payments on; never
+  -- cleared. qbSync uses it to turn QuickBooks online payment back ON for
+  -- invoices InkTracker turned off, once the shop is back on QuickBooks.
+  processor_used_at   timestamptz,
+  -- Claim while the Rainforest merchant is being created, so two clicks
+  -- can't create two merchants.
+  merchant_creating_at timestamptz,
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
 );
@@ -72,6 +79,8 @@ create table if not exists public.processor_payments (
   -- A stale claim (> 10 min, e.g. the function died mid-post) may be retaken.
   qb_posting_at         timestamptz,
   qb_post_error         text,
+  -- When the shop was told this payment couldn't be booked (once).
+  qb_post_notified_at   timestamptz,
   -- Payout that settled it to the shop's bank.
   processor_payout_id   text,
   last_event_type       text,

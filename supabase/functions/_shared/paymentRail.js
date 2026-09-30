@@ -53,6 +53,46 @@ export function applyRailToInvoiceBody(body, rail) {
 }
 
 /**
+ * Back on QuickBooks after using InkTracker payments: InkTracker turned QB
+ * online payment OFF on the shop's invoices, and a sparse update keeps that.
+ * For those invoices only — both flags false AND the shop once used the
+ * processor rail — turn them back ON so customers can pay the QuickBooks way
+ * again. Shops that never opted in are never touched (Joe's 18 Sept rule).
+ * @param {object} liveInvoice the invoice as QuickBooks has it now
+ * @param {boolean} restore    from loadPaymentRailState
+ * @returns {object} fields to merge into the sparse update ({} = none)
+ */
+export function restoreQbOnlinePayFields(liveInvoice, restore) {
+  if (!restore || !liveInvoice) return {};
+  const offByUs = liveInvoice.AllowOnlineCreditCardPayment === false && liveInvoice.AllowOnlineACHPayment === false;
+  return offByUs ? { AllowOnlineCreditCardPayment: true, AllowOnlineACHPayment: true } : {};
+}
+
+/**
+ * Rail plus whether QuickBooks online payment needs restoring (see
+ * restoreQbOnlinePayFields). Fails to { rail: qb, restore: false }.
+ */
+export async function loadPaymentRailState(supabase, shopOwner, { envEnabled, broker = false }) {
+  if (broker || !shopOwner) return { rail: RAIL.QB, restore: false };
+  try {
+    const { data, error } = await supabase
+      .from("processor_accounts")
+      .select("shop_owner, merchant_id, merchant_status, enabled, processor_used_at")
+      .eq("shop_owner", shopOwner)
+      .maybeSingle();
+    if (error) {
+      console.error(`[paymentRail] read failed for ${shopOwner}: ${error.message ?? error} — using QuickBooks rail`);
+      return { rail: RAIL.QB, restore: false };
+    }
+    const rail = resolvePaymentRail({ envEnabled, account: data ?? null, broker });
+    return { rail, restore: rail === RAIL.QB && Boolean(data?.processor_used_at) };
+  } catch (err) {
+    console.error(`[paymentRail] read threw for ${shopOwner}: ${err} — using QuickBooks rail`);
+    return { rail: RAIL.QB, restore: false };
+  }
+}
+
+/**
  * Read the shop's rail. Fails to the QuickBooks rail on any error.
  * @param {object} supabase service-role client
  * @param {string} shopOwner

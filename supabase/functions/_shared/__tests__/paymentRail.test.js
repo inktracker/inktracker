@@ -6,6 +6,8 @@ import {
   resolvePaymentRail,
   applyRailToInvoiceBody,
   loadPaymentRail,
+  loadPaymentRailState,
+  restoreQbOnlinePayFields,
   flagOn,
 } from "../paymentRail.js";
 
@@ -93,9 +95,9 @@ describe("qbSync payment-rail contract", () => {
   const src = readFileSync(path.resolve(__dirname, "../../qbSync/index.ts"), "utf8");
 
   it("the rail comes from the authenticated shop, never params", () => {
-    const calls = src.match(/loadPaymentRail\([^)]*\)/g) ?? [];
+    const calls = src.match(/loadPaymentRailState\([^)]*\)/g) ?? [];
     expect(calls.length).toBe(2);
-    for (const c of calls) expect(c).toMatch(/loadPaymentRail\((adminClient|depAdmin), shopOwnerEmail,/);
+    for (const c of calls) expect(c).toMatch(/loadPaymentRailState\((adminClient|depAdmin), shopOwnerEmail,/);
     expect(src).not.toMatch(/params\??\.\w*[Rr]ail/);
   });
 
@@ -108,5 +110,27 @@ describe("qbSync payment-rail contract", () => {
     const mints = src.split("\n").filter((l) => /await mintInvoicePaymentLink\(/.test(l)).length;
     expect(mints).toBe(3); // createInvoice, deposit adopt, deposit fresh
     expect((src.match(/PROCESSOR_LINK_REASON/g) ?? []).length).toBeGreaterThanOrEqual(4); // import + 3 skips
+  });
+});
+
+describe("back on QuickBooks after InkTracker payments", () => {
+  it("turns QB online pay back on ONLY for invoices InkTracker turned off, only for shops that used it", () => {
+    const offByUs = { AllowOnlineCreditCardPayment: false, AllowOnlineACHPayment: false };
+    expect(restoreQbOnlinePayFields(offByUs, true)).toEqual({ AllowOnlineCreditCardPayment: true, AllowOnlineACHPayment: true });
+    expect(restoreQbOnlinePayFields(offByUs, false)).toEqual({}); // never-opted-in shop: untouched
+    expect(restoreQbOnlinePayFields({ AllowOnlineCreditCardPayment: false, AllowOnlineACHPayment: true }, true)).toEqual({}); // shop's own ACH-only choice
+    expect(restoreQbOnlinePayFields({}, true)).toEqual({});
+    expect(restoreQbOnlinePayFields(null, true)).toEqual({});
+  });
+
+  it("restore = QB rail AND the shop once used InkTracker payments", async () => {
+    const client = (row) => ({ from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }) }) });
+    const used = { merchant_id: "m", merchant_status: "suspended", enabled: true, processor_used_at: "2026-10-05" };
+    expect(await loadPaymentRailState(client(used), "a@b.co", { envEnabled: true })).toEqual({ rail: RAIL.QB, restore: true });
+    expect(await loadPaymentRailState(client({ ...used, merchant_status: "active" }), "a@b.co", { envEnabled: true })).toEqual({ rail: RAIL.PROCESSOR, restore: false });
+    expect(await loadPaymentRailState(client({ ...used, processor_used_at: null }), "a@b.co", { envEnabled: false })).toEqual({ rail: RAIL.QB, restore: false });
+    // kill switch off after use → still restores
+    expect(await loadPaymentRailState(client(used), "a@b.co", { envEnabled: false })).toEqual({ rail: RAIL.QB, restore: true });
+    expect(await loadPaymentRailState(client(used), "a@b.co", { envEnabled: true, broker: true })).toEqual({ rail: RAIL.QB, restore: false });
   });
 });

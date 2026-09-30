@@ -76,7 +76,9 @@ function builder(table: string, store: Record<string, Rows>, writes: RecordedWri
   // Apply the pending write once the chain settles (filters come AFTER
   // .update()/.delete() in supabase-js, so we can't apply eagerly).
   const settle = (): Rows => {
-    if (!pending) return current();
+    // Reads return COPIES, like PostgREST — never live references a later
+    // write would mutate under the caller.
+    if (!pending) return current().map((r) => ({ ...r }));
     pending.filters = [...filters];
     writes.push(pending);
     let affected: Rows = [];

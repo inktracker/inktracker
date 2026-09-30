@@ -105,8 +105,12 @@ export function choosePayTarget({ quote, depositsEnabled, liveFinal = null, live
  * invoice + same amount → same key, so a double-click or a refresh reuses one
  * session; once a payment lands the balance changes and a new key is minted.
  */
-export function payinIdempotencyKey({ quoteId, qbInvoiceId, amountCents }) {
-  return `it-payin:${quoteId}:${qbInvoiceId}:${amountCents}`;
+export function payinIdempotencyKey({ quoteId, qbInvoiceId, amountCents, attempt = 0 }) {
+  const base = `it-payin:${quoteId}:${qbInvoiceId}:${amountCents}`;
+  // attempt = payments already recorded against this QB invoice. A new one
+  // after a refund/return (same balance again) must get a NEW config — a
+  // Rainforest config allows only one successful payment.
+  return attempt > 0 ? `${base}:a${attempt}` : base;
 }
 
 /**

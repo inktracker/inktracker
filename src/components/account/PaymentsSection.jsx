@@ -128,7 +128,7 @@ export default function PaymentsSection() {
     const want = !state.enabled;
     const msg = want
       ? "Turn on InkTracker payments?\n\nCustomers will pay on InkTracker instead of QuickBooks. QuickBooks pay links are turned off on new and updated invoices. Payments are still recorded in QuickBooks for you."
-      : "Turn off InkTracker payments?\n\nNew and updated invoices go back to using QuickBooks pay links.";
+      : "Turn off InkTracker payments?\n\nNew and updated invoices go back to using QuickBooks pay links. Quotes and invoices you already sent with an InkTracker pay link need to be re-sent so customers get a QuickBooks pay link.";
     if (!window.confirm(msg)) return;
     run("setEnabled", { enabled: want }, (d) => { apply(d); notify.success(want ? "Customers now pay on InkTracker" : "Back to QuickBooks payments"); });
   };

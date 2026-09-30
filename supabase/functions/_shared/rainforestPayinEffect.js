@@ -113,55 +113,44 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     last_event_at: event.occurredAt ?? null,
   };
 
-  // 2. Does the quote check out against OUR rows?
-  const mismatch =
-    (md.shop_owner && md.shop_owner !== shop) ? REJECT.SHOP_MISMATCH
+  const label = docNumber(quote) ?? (md.quote_number || null);
+  const advances = statusAdvances(ledger?.status, kind);
+
+  // 2. Which document is this for? Once a ledger row is linked (or already
+  //    booked in QuickBooks) it is the authority: later events — refunds,
+  //    disputes, the card's "succeeded" after "processing" — must not be
+  //    re-matched against the document, whose invoice pointers can move
+  //    (deposit settlement voids the deposit invoice and clears its id).
+  const trusted = Boolean(ledger && (ledger.quote_id || ledger.invoice_id || ledger.qb_payment_id));
+  const mismatch = trusted ? null
+    : (md.shop_owner && md.shop_owner !== shop) ? REJECT.SHOP_MISMATCH
     : !quote ? REJECT.QUOTE_NOT_FOUND
     : quote.shop_owner !== shop ? REJECT.SHOP_MISMATCH
     : !md.qb_invoice_id || ![quote.qb_invoice_id, quote.qb_deposit_invoice_id].filter(Boolean).map(String).includes(String(md.qb_invoice_id))
       ? REJECT.INVOICE_MISMATCH
       : null;
 
-  if (mismatch) {
-    // Never drop money on the floor: record it against the shop (whose
-    // merchant it landed in) with no quote link, and tell them.
-    const ledgerRow = statusAdvances(ledger?.status, kind)
-      ? { ...baseLedger, status: kind, quote_id: null, invoice_id: null, qb_invoice_id: null, pay_kind: null }
-      : null;
-    return {
-      ok: false,
-      reject: mismatch,
-      ledger: ledgerRow,
-      postQbPayment: false,
-      notify: moneyIn && ledgerRow ? {
-        severity: "alert",
-        title: `Payment received that needs matching: $${(amt / 100).toFixed(2)}`,
-        body: `A customer paid $${(amt / 100).toFixed(2)} online${md.quote_number ? ` for ${md.quote_number}` : ""}, but it no longer matches an open invoice, so it was NOT recorded in QuickBooks. Record it on the right invoice in QuickBooks, or refund it.`,
-        metadata: { processor: "rainforest", payin_id: event.payinId, reason: mismatch },
-      } : null,
-      alertOps: `Unmatched payin ${event.payinId} (${mismatch}) shop=${shop}`,
-    };
+  // Ledger write. Link columns are written ONCE, on the row's first write,
+  // and never overwritten (an existing row keeps its links).
+  const isInvoiceDoc = md.inktracker_doc_type === "invoice";
+  let ledgerRow = null;
+  if (advances) {
+    ledgerRow = { ...baseLedger, status: kind };
+    if (!ledger) {
+      Object.assign(ledgerRow, mismatch
+        ? { quote_id: null, invoice_id: null, qb_invoice_id: null, pay_kind: null }
+        : {
+          quote_id: isInvoiceDoc ? null : quote.id,
+          invoice_id: isInvoiceDoc ? quote.id : null,
+          qb_invoice_id: String(md.qb_invoice_id),
+          pay_kind: ["full", "balance", "deposit"].includes(md.pay_kind) ? md.pay_kind : null,
+        });
+    }
   }
 
-  // 3. Matched. Forward-only status; replays are no-ops except for
-  //    re-trying a QB post that hadn't landed yet.
-  const advances = statusAdvances(ledger?.status, kind);
-  const qbPending = moneyIn && !ledger?.qb_payment_id;
-  const moneyInRecorded = ledger?.status === PAYIN_EVENT.SUCCEEDED ||
-    (ledger?.status === PAYIN_EVENT.PROCESSING && ledger?.method === "card");
-  const succeededNow = moneyIn && (advances || moneyInRecorded);
-
-  const isInvoiceDoc = md.inktracker_doc_type === "invoice";
-  const ledgerRow = advances ? {
-    ...baseLedger,
-    status: kind,
-    quote_id: isInvoiceDoc ? null : quote.id,
-    invoice_id: isInvoiceDoc ? quote.id : null,
-    qb_invoice_id: String(md.qb_invoice_id),
-    pay_kind: ["full", "balance", "deposit"].includes(md.pay_kind) ? md.pay_kind : null,
-  } : null;
-
+  // Notifications — bad news always reaches the shop, matched or not.
   let notify = null;
+  const isReversal = [PAYIN_EVENT.REFUNDED, PAYIN_EVENT.PARTIALLY_REFUNDED, PAYIN_EVENT.RETURNED, PAYIN_EVENT.CHARGED_BACK].includes(kind);
   const voidedAfterBooked = advances && ledger?.qb_payment_id &&
     (kind === PAYIN_EVENT.CANCELED || kind === PAYIN_EVENT.FAILED);
   if (voidedAfterBooked) {
@@ -169,41 +158,71 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     // Never delete a QB payment on our own; tell the shop exactly what to do.
     notify = {
       severity: "alert",
-      title: `Payment canceled after it was recorded: ${docNumber(quote) ?? "a payment"}`,
+      title: `Payment canceled after it was recorded: ${label ?? "a payment"}`,
       body: `A $${(amt / 100).toFixed(2)} payment was canceled before it settled, but it was already recorded in QuickBooks (payment #${ledger.qb_payment_id}). Delete that payment in QuickBooks so the invoice shows as open again.`,
       metadata: { processor: "rainforest", payin_id: event.payinId, qb_payment_id: ledger.qb_payment_id },
     };
   } else if (advances && kind === PAYIN_EVENT.FAILED && event.method === "ach") {
     notify = {
       severity: "alert",
-      title: `Bank payment didn't go through: ${docNumber(quote) ?? "a payment"}`,
+      title: `Bank payment didn't go through: ${label ?? "a payment"}`,
       body: `Your customer's bank payment of $${(amt / 100).toFixed(2)} failed. The invoice is still open; nothing was recorded in QuickBooks.`,
       metadata: { processor: "rainforest", payin_id: event.payinId },
     };
-  } else if (advances && [PAYIN_EVENT.REFUNDED, PAYIN_EVENT.PARTIALLY_REFUNDED, PAYIN_EVENT.RETURNED, PAYIN_EVENT.CHARGED_BACK].includes(kind)) {
+  } else if (isReversal) {
+    // Every reversal event is news (a second partial refund, a chargeback
+    // after a refund) even when the ledger status doesn't move. Replays of
+    // the SAME event are dropped upstream by the webhook's message dedupe.
     const r = planReversal({
       kind: kind === PAYIN_EVENT.RETURNED ? "ach_return" : kind === PAYIN_EVENT.CHARGED_BACK ? "chargeback_lost" : "refund",
       amountCents: Number.isInteger(Number(event.reversalCents)) && Number(event.reversalCents) > 0 ? Number(event.reversalCents) : amt,
       payinId: event.payinId,
-      quoteNumber: docNumber(quote),
+      quoteNumber: label,
     });
     notify = r.ok ? r.notify : null;
-  } else if (advances && kind === PAYIN_EVENT.DISPUTED) {
+  } else if (kind === PAYIN_EVENT.DISPUTED) {
     notify = {
       severity: "alert",
-      title: `Card payment disputed: ${docNumber(quote) ?? "a payment"}`,
-      body: `Your customer disputed a $${(amt / 100).toFixed(2)} card payment. Respond with proof of the order (approval, proof, delivery) before the deadline.`,
+      title: `Card payment disputed: ${label ?? "a payment"}`,
+      body: `Your customer disputed a $${(amt / 100).toFixed(2)} card payment. Respond with proof of the order (approval, proof, delivery) before the deadline in your payments portal.`,
       metadata: { processor: "rainforest", payin_id: event.payinId },
     };
+  } else if (mismatch && moneyIn && ledgerRow) {
+    notify = {
+      severity: "alert",
+      title: `Payment received that needs matching: $${(amt / 100).toFixed(2)}`,
+      body: `A customer paid $${(amt / 100).toFixed(2)} online${md.quote_number ? ` for ${md.quote_number}` : ""}, but it no longer matches an open invoice, so it was NOT recorded in QuickBooks. Record it on the right invoice in QuickBooks, or refund it.`,
+      metadata: { processor: "rainforest", payin_id: event.payinId, reason: mismatch },
+    };
   }
+
+  if (mismatch) {
+    return { ok: false, reject: mismatch, ledger: ledgerRow, postQbPayment: false, notify,
+      alertOps: `Unmatched payin ${event.payinId} (${mismatch}) shop=${shop}` };
+  }
+
+  // 3. Matched (or trusted). Replays are no-ops except for re-trying a QB
+  //    post that hadn't landed yet.
+  const qbPending = moneyIn && !ledger?.qb_payment_id;
+  const moneyInRecorded = ledger?.status === PAYIN_EVENT.SUCCEEDED ||
+    (ledger?.status === PAYIN_EVENT.PROCESSING && ledger?.method === "card");
+  const succeededNow = moneyIn && (advances || moneyInRecorded);
+  // A trusted row without a QB invoice (recorded unmatched) is never posted.
+  const postable = trusted ? Boolean(ledger.qb_invoice_id) : true;
 
   return {
     ok: true,
     ledger: ledgerRow,
-    postQbPayment: succeededNow && qbPending,
+    postQbPayment: succeededNow && qbPending && postable,
     notify,
     alertOps: null,
   };
+}
+
+/** Statuses a row may be moved FROM to reach `to` (forward-only, for a guarded update). */
+export function statusesBelow(to) {
+  if (!(to in RANK)) return [];
+  return Object.keys(RANK).filter((k) => RANK[k] < RANK[to]);
 }
 
 /**
