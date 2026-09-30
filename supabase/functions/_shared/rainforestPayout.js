@@ -21,6 +21,9 @@ const money = (c) => `$${(Math.abs(c) / 100).toFixed(2)}`;
 
 export const PAYOUT_PLAN = Object.freeze({ POST: "post", WAIT: "wait", MANUAL: "manual", SKIP: "skip" });
 
+// A payout still waiting on its payments after this long needs a person.
+export const PAYOUT_WAIT_LIMIT_DAYS = 5;
+
 /**
  * @param {object} a
  * @param {object} a.deposit      Rainforest deposit object
@@ -28,8 +31,9 @@ export const PAYOUT_PLAN = Object.freeze({ POST: "post", WAIT: "wait", MANUAL: "
  * @param {Map<string, {qb_payment_id:string|null, amount_cents:number}>} a.ledgerByPayin
  * @param {{qb_bank_account_id:string|null, qb_fee_account_id:string|null}} a.account
  * @param {string|null} [a.txnDate] payout date in the shop's timezone (YYYY-MM-DD)
+ * @param {Date} [a.now]
  */
-export function planPayoutDeposit({ deposit, activities, ledgerByPayin, account, txnDate = null }) {
+export function planPayoutDeposit({ deposit, activities, ledgerByPayin, account, txnDate = null, now = new Date() }) {
   if (!deposit?.deposit_id) return { plan: PAYOUT_PLAN.SKIP, reason: "no_deposit" };
   if (String(deposit.status ?? "").toUpperCase() !== "SUCCEEDED") return { plan: PAYOUT_PLAN.SKIP, reason: "not_succeeded" };
   if (String(deposit.deposit_type ?? "FUNDING").toUpperCase() !== "FUNDING") {
@@ -42,7 +46,8 @@ export function planPayoutDeposit({ deposit, activities, ledgerByPayin, account,
   const payments = [];
   let feeCents = cents(deposit.deposit_fee_amount) || 0;
   const problems = [];
-  let waiting = false;
+  const waitingFor = []; // reasons we're waiting, for the shop if it drags on
+  const ageDays = (now.getTime() - new Date(deposit.created_at ?? now).getTime()) / (24 * 60 * 60 * 1000);
 
   for (const a of list) {
     const type = String(a?.type ?? "").toUpperCase();
@@ -50,8 +55,16 @@ export function planPayoutDeposit({ deposit, activities, ledgerByPayin, account,
     const fee = cents(a?.billing_fees_amount) || 0;
     if (type === "PAYIN") {
       const led = ledgerByPayin?.get(String(a?.id ?? a?.payin_id ?? ""));
-      if (!led) { problems.push(`A ${money(gross)} payment wasn't taken through InkTracker.`); continue; }
-      if (!led.qb_payment_id) { waiting = true; continue; }
+      // Not in our ledger yet: usually a lost event the nightly backstop is
+      // about to recover — wait, don't declare it foreign.
+      if (!led) { waitingFor.push(`A ${money(gross)} payment InkTracker hasn't recorded.`); continue; }
+      if (!led.qb_payment_id) {
+        // Recorded but not booked. An unmatched payment is never booked
+        // automatically, so waiting would be forever.
+        if (led.qb_invoice_id === null) { problems.push(`A ${money(gross)} payment that didn't match an invoice.`); continue; }
+        waitingFor.push(`A ${money(gross)} payment not yet recorded in QuickBooks.`);
+        continue;
+      }
       if (gross !== led.amount_cents) { problems.push(`A payment shows ${money(gross)} here but ${money(led.amount_cents)} in QuickBooks.`); continue; }
       payments.push({ qbPaymentId: led.qb_payment_id, grossCents: gross });
       feeCents += -fee;
@@ -63,14 +76,18 @@ export function planPayoutDeposit({ deposit, activities, ledgerByPayin, account,
     } else if (type === "ACH_RETURN") {
       problems.push(`A returned bank payment of ${money(gross)}.`);
     } else if (type === "CHARGEBACK") {
-      problems.push(`A chargeback of ${money(gross)}.`);
+      problems.push(gross > 0 ? `A chargeback reversed in your favour (${money(gross)} back).` : `A chargeback of ${money(gross)}.`);
     } else {
       problems.push(`An item Rainforest labels ${type || "unknown"} (${money(gross)}).`);
     }
   }
 
-  if (problems.length) return manual(deposit, problems);
-  if (waiting) return { plan: PAYOUT_PLAN.WAIT, reason: "payment_not_yet_in_quickbooks" };
+  if (problems.length) return manual(deposit, [...problems, ...waitingFor]);
+  if (waitingFor.length) {
+    return ageDays > PAYOUT_WAIT_LIMIT_DAYS
+      ? manual(deposit, waitingFor)
+      : { plan: PAYOUT_PLAN.WAIT, reason: "payment_not_yet_in_quickbooks" };
+  }
   if (payments.length === 0) return manual(deposit, ["No customer payments in this payout."]);
 
   const built = buildQbDepositBody({

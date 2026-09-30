@@ -48,6 +48,9 @@ const payin = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+// Rainforest's CURRENT merchant state, served by the fake GET /v1/merchants/{id}.
+let merchantNow: Record<string, unknown> = { merchant_id: "mid_1", status: "ACTIVE" };
+
 function setup({ qbConnected = true, qbPostFails = false, balance = 1643, deposit = null as Record<string, unknown> | null, activities = [] as unknown[] } = {}) {
   const db = fakeSupabase({
     processor_accounts: [{ shop_owner: OWNER, merchant_id: "mid_1", merchant_status: "active", enabled: true, qb_bank_account_id: "35", qb_fee_account_id: "88" }],
@@ -70,6 +73,7 @@ function setup({ qbConnected = true, qbPostFails = false, balance = 1643, deposi
       if (path.endsWith("/pyi_1")) return Promise.resolve(payin({ refundable_amount: 0 }));
       if (path.includes("/activity")) return Promise.resolve({ activities: path.includes("offset=0") ? activities : [] });
       if (path.startsWith("/v1/deposits/")) return Promise.resolve(deposit);
+      if (path === "/v1/merchants/mid_1") return Promise.resolve(merchantNow);
       return Promise.resolve(null);
     },
     qb: {
@@ -184,11 +188,15 @@ Deno.test("full refund → fetches the payin, marks refunded, info notice", asyn
   assert(db.tables.notifications.some((n) => String(n.title).startsWith("Refund issued: $1643.00")));
 });
 
-Deno.test("merchant approved → account goes active (rail can flip)", async () => {
+Deno.test("merchant approved → account goes active; owner told the next step", async () => {
   const { db, deps } = setup();
   db.tables.processor_accounts[0].merchant_status = "onboarding";
+  db.tables.processor_accounts[0].enabled = false;
+  merchantNow = { merchant_id: "mid_1", status: "ACTIVE", latest_merchant_application: { merchant_application_id: "app_1", status: "COMPLETED" } };
   await handle(await request({ event_type: "merchant.active", data: { merchant_id: "mid_1", status: "ACTIVE" } }), deps);
   assertEquals(db.tables.processor_accounts[0].merchant_status, "active");
+  assertEquals(db.tables.processor_accounts[0].merchant_application_status, "completed");
+  assert(db.tables.notifications.some((n) => n.event_type === "payments_approved"));
 });
 
 Deno.test("events we don't act on → 200, not claimed", async () => {
@@ -270,12 +278,15 @@ Deno.test("sweep: bank payments still clearing are left alone", async () => {
   assertEquals(posted.length, 0);
 });
 
-Deno.test("merchant suspended, reactivated, suspended again → each change applies (message-level dedupe)", async () => {
+Deno.test("a stale merchant event can't overwrite the current status (late retry of 'active' after suspension)", async () => {
   const { db, deps } = setup();
-  for (const [i, st] of ["SUSPENDED", "ACTIVE", "SUSPENDED"].entries()) {
-    await handle(await request({ event_type: `merchant.${st.toLowerCase()}`, data: { merchant_id: "mid_1", status: st } }, { msgId: `m${i}` }), deps);
-  }
+  merchantNow = { merchant_id: "mid_1", status: "SUSPENDED" };
+  await handle(await request({ event_type: "merchant.suspended", data: { merchant_id: "mid_1", status: "SUSPENDED" } }), deps);
   assertEquals(db.tables.processor_accounts[0].merchant_status, "suspended");
+  // Rainforest's retry of an OLD "active" event lands later — its body says ACTIVE, reality says SUSPENDED.
+  await handle(await request({ event_type: "merchant.active", data: { merchant_id: "mid_1", status: "ACTIVE" } }, { msgId: "old_active_retry" }), deps);
+  assertEquals(db.tables.processor_accounts[0].merchant_status, "suspended");
+  merchantNow = { merchant_id: "mid_1", status: "ACTIVE" };
 });
 
 Deno.test("QuickBooks lookup failing → nothing posted (no blind double-post), retried later", async () => {
@@ -316,15 +327,20 @@ Deno.test("payout stuck mid-post is never re-posted by the sweep", async () => {
 });
 
 Deno.test("switched-on shop suspended → told to re-send open invoices; a pending shop isn't", async () => {
-  const { db, deps } = setup();
-  await handle(await request({ event_type: "merchant.suspended", data: { merchant_id: "mid_1", status: "SUSPENDED" } }), deps);
-  const n = db.tables.notifications.filter((x) => x.event_type === "payments_account_on_hold");
-  assertEquals(n.length, 1);
-  assert(String(n[0].body).includes("re-send"));
-  const other = setup();
-  other.db.tables.processor_accounts[0].enabled = false;
-  await handle(await request({ event_type: "merchant.suspended", data: { merchant_id: "mid_1", status: "SUSPENDED" } }), other.deps);
-  assertEquals(other.db.tables.notifications.length, 0);
+  merchantNow = { merchant_id: "mid_1", status: "SUSPENDED" };
+  try {
+    const { db, deps } = setup();
+    await handle(await request({ event_type: "merchant.suspended", data: { merchant_id: "mid_1", status: "SUSPENDED" } }), deps);
+    const n = db.tables.notifications.filter((x) => x.event_type === "payments_account_on_hold");
+    assertEquals(n.length, 1);
+    assert(String(n[0].body).includes("re-send"));
+    const other = setup();
+    other.db.tables.processor_accounts[0].enabled = false;
+    await handle(await request({ event_type: "merchant.suspended", data: { merchant_id: "mid_1", status: "SUSPENDED" } }), other.deps);
+    assertEquals(other.db.tables.notifications.length, 0);
+  } finally {
+    merchantNow = { merchant_id: "mid_1", status: "ACTIVE" };
+  }
 });
 
 Deno.test("payment already in QuickBooks (crash after posting) → recorded, not posted again", async () => {
@@ -398,4 +414,73 @@ Deno.test("backstop: a payment the webhook never recorded (crash after claim) is
   const again = await sweep(deps); // idempotent
   assertEquals(again.backstopReplayed, 0);
   assertEquals(posted.length, 1);
+});
+
+Deno.test("needs-information → owner alerted (and emailed) once", async () => {
+  const { db, deps, emails } = setup();
+  db.tables.processor_accounts[0].merchant_status = "onboarding";
+  merchantNow = { merchant_id: "mid_1", status: "ONBOARDING", latest_merchant_application: { status: "NEEDS_INFORMATION" } };
+  try {
+    await handle(await request({ event_type: "merchant_application.needs_information", data: { merchant_id: "mid_1" } }), deps);
+    await handle(await request({ event_type: "merchant_application.needs_information", data: { merchant_id: "mid_1" } }, { msgId: "dup2" }), deps);
+    assertEquals(db.tables.notifications.filter((n) => n.event_type === "payments_needs_information").length, 1);
+    assertEquals(emails.length, 1);
+  } finally {
+    merchantNow = { merchant_id: "mid_1", status: "ACTIVE" };
+  }
+});
+
+Deno.test("sweep: a bank payment stuck 'processing' 4+ days is fetched directly and booked", async () => {
+  const { db, deps, posted } = setup();
+  db.tables.processor_payments.push({ processor_payin_id: "pyi_1", shop_owner: OWNER, merchant_id: "mid_1", qb_invoice_id: "3815", quote_id: QUOTE_ID, amount_cents: 164300, method: "ach", status: "processing", created_at: "2026-09-26T17:00:00Z", updated_at: "2026-09-26T17:00:00Z" });
+  const base = deps.rainforestGet;
+  deps.rainforestGet = (path) => path === "/v1/payins/pyi_1" ? Promise.resolve(payin({ method_type: "ACH", status: "SUCCEEDED" })) : base(path);
+  await sweep(deps);
+  assertEquals(db.tables.processor_payments[0].status, "succeeded");
+  assertEquals(posted.length, 1);
+});
+
+Deno.test("QuickBooks 5xx on a Deposit post → claim KEPT, flagged, never retried blind", async () => {
+  const { db, deps, deposits } = setup({ deposit: cleanDeposit, activities: [payinActivity] });
+  await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  deps.qb.postDeposit = () => Promise.reject(Object.assign(new Error("QuickBooks deposit create failed (504): Gateway Time-out"), { status: 504 }));
+  const r = await handle(await request({ event_type: "deposit.succeeded", data: { deposit_id: "dep_1" } }, { msgId: "d1" }), deps);
+  assertEquals((await r.json()).payout, "check_quickbooks");
+  assert(db.tables.processor_payouts[0].qb_posting_at);
+  deps.qb.postDeposit = (_c, b) => { deposits.push(b); return Promise.resolve({ Deposit: { Id: "999" } }); };
+  await sweep(deps);
+  assertEquals(deposits.length, 0); // not re-posted
+});
+
+Deno.test("QuickBooks 400 on a Deposit post → released, a later retry can book it", async () => {
+  const { db, deps } = setup({ deposit: cleanDeposit, activities: [payinActivity] });
+  await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  deps.qb.postDeposit = () => Promise.reject(Object.assign(new Error("QuickBooks deposit create failed (400): ValidationFault"), { status: 400 }));
+  const r = await handle(await request({ event_type: "deposit.succeeded", data: { deposit_id: "dep_1" } }, { msgId: "d1" }), deps);
+  assertEquals(r.status, 500);
+  assertEquals(db.tables.processor_payouts[0].qb_posting_at, null);
+});
+
+Deno.test("payout returned by the bank after booking → shop told which QB deposit to void", async () => {
+  const { db, deps, emails } = setup({ deposit: cleanDeposit, activities: [payinActivity] });
+  await handle(await request({ event_type: "payin.processing", data: payin() }), deps);
+  await handle(await request({ event_type: "deposit.succeeded", data: { deposit_id: "dep_1" } }, { msgId: "d1" }), deps);
+  await handle(await request({ event_type: "deposit.failed", data: { deposit_id: "dep_1" } }, { msgId: "d2" }), deps);
+  const n = db.tables.notifications.find((x) => x.event_type === "payout_failed");
+  assert(n && String(n.body).includes("deposit #901"));
+  assert(emails.some((e) => String(e.subject).includes("was returned")));
+});
+
+Deno.test("dispute won → shop told (info)", async () => {
+  const { db, deps } = setup();
+  await handle(await request({ event_type: "chargeback.won", data: { chargeback_id: "chb_1", payin_id: "pyi_1", amount: 100 } }), deps);
+  assert(db.tables.notifications.some((n) => n.event_type === "payment_dispute_won"));
+});
+
+Deno.test("bank payment returned before it cleared → says it was never recorded (no 're-open' advice)", async () => {
+  const { db, deps } = setup();
+  await handle(await request({ event_type: "payin.processing", data: payin({ method_type: "ACH" }) }), deps);
+  await handle(await request({ event_type: "payin.returned", data: payin({ method_type: "ACH" }) }, { msgId: "r1" }), deps);
+  const n = db.tables.notifications.find((x) => String(x.event_type) === "payment_returned");
+  assert(n && String(n.body).includes("never recorded in QuickBooks"));
 });

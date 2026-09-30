@@ -31,8 +31,36 @@ export function onboardingStage(account) {
   if (s === "suspended") return "suspended";
   if (["deactivated", "canceled"].includes(s) || app === "declined") return "declined";
   if (app === "needs_information") return "needs_information";
+  // Merchant "onboarding" = the form was submitted, whatever the (possibly
+  // lagging) application status says.
+  if (s === "onboarding") return "in_review";
   if (s === "pending" || ["created", "in_progress"].includes(app)) return "in_progress"; // form not submitted yet
   return "in_review";
+}
+
+/**
+ * A closed application (declined, or auto-canceled after 120 days unfinished)
+ * can be replaced with a new one — otherwise the shop is locked out forever.
+ */
+export function canStartOver(account) {
+  return Boolean(account?.merchant_id) && onboardingStage(account) === "declined";
+}
+
+/**
+ * Status columns from a Rainforest merchant object. GET /v1/merchants/{id}
+ * returns `status` + `latest_merchant_application{merchant_application_id,
+ * status}`; the create response uses merchant_status /
+ * merchant_application_status. Accept both.
+ */
+export function merchantStatusFields(m) {
+  const out = {};
+  const ms = m?.status ?? m?.merchant_status;
+  const app = m?.latest_merchant_application?.status ?? m?.merchant_application_status;
+  const appId = m?.latest_merchant_application?.merchant_application_id ?? m?.merchant_application_id;
+  if (ms) out.merchant_status = String(ms).toLowerCase();
+  if (app) out.merchant_application_status = String(app).toLowerCase();
+  if (appId) out.merchant_application_id = String(appId);
+  return out;
 }
 
 /**
@@ -56,6 +84,7 @@ export function buildStatusPayload({ envEnabled, account, viewer }) {
       achFixedCents: PLATFORM_PRICING.ach.fixedCents,
     },
     canToggle: canTogglePayments(viewer),
+    canStartOver: canStartOver(account) && canTogglePayments(viewer),
     canMapAccounts: canMapQbAccounts(viewer),
   };
 }

@@ -33,6 +33,8 @@ import {
   validateQbAccountMapping,
   qbAccountChoices,
   onboardingStage,
+  canStartOver,
+  merchantStatusFields,
 } from "../_shared/rainforestAccount.js";
 import {
   isPayingShop,
@@ -65,6 +67,7 @@ function safeEquals(a: unknown, b: unknown): boolean {
   return diff === 0;
 }
 
+const PAY_SESSION_REUSE_MS = 90 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type Deps = {
@@ -151,14 +154,15 @@ async function payRail(body: Any, deps: Deps) {
 
 /**
  * An existing Rainforest merchant for this shop (from an attempt whose save
- * failed). Rainforest can't filter merchants by metadata, so search by name
- * and match our own tag. Canceled/deactivated merchants don't count.
+ * failed). Merchants have no metadata and can't be filtered by it, so search
+ * by name and match the email we created it with. Closed ones don't count.
  */
 async function findOurMerchant(deps: Deps, name: string, shopOwner: string) {
   const list = await deps.rf.get(`/v1/merchants?name=${encodeURIComponent(name)}`);
   const items = Array.isArray(list) ? list : (list?.results ?? list?.merchants ?? []);
   const hit = items.find((m: Any) =>
-    m?.metadata?.inktracker_shop_owner === shopOwner &&
+    String(m?.email ?? "").toLowerCase() === shopOwner.toLowerCase() &&
+    String(m?.name ?? "") === name &&
     !["CANCELED", "DEACTIVATED"].includes(String(m?.merchant_status ?? m?.status ?? "").toUpperCase()));
   if (!hit?.merchant_id) return null;
   let applicationId = hit.merchant_application_id ?? hit.latest_merchant_application?.merchant_application_id ?? null;
@@ -213,6 +217,14 @@ async function payinSession(body: Any, deps: Deps) {
     if (inflight?.length) return json({ rail: "processor", payable: false, reason: "in_flight", message: CUSTOMER_REASON.in_flight, display });
   }
 
+  // Throttle: the same document asked again within 90s gets the session we
+  // just made (still ~28 min of life) — no QuickBooks or Rainforest calls.
+  const { data: recent } = await admin.from("processor_pay_sessions")
+    .select("response, created_at").eq("doc_id", doc.id).maybeSingle();
+  if (recent?.response && Date.now() - new Date(recent.created_at).getTime() < PAY_SESSION_REUSE_MS) {
+    return json(recent.response);
+  }
+
   const conn = await deps.qb.connect(doc.shop_owner);
   if (!conn) return json({ rail: "processor", payable: false, reason: "qb_unavailable", message: CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT], display });
   const [liveFinal, liveDeposit] = await Promise.all([
@@ -256,7 +268,7 @@ async function payinSession(body: Any, deps: Deps) {
     config = await deps.rf.post("/v1/payin_configs", { ...configBody, idempotency_key: `${configBody.idempotency_key}:r${Date.now()}` });
   }
   const session = await deps.rf.post("/v1/sessions", buildPaymentSession(account.merchant_id));
-  return json({
+  const response = {
     rail: "processor",
     payable: true,
     kind: target.kind,
@@ -267,7 +279,10 @@ async function payinSession(body: Any, deps: Deps) {
     scriptUrl: componentScripts(deps.rf.base).payment,
     pricing: { card: formatRatePct("card"), ach: formatRatePct("ach") },
     display,
-  });
+  };
+  await admin.from("processor_pay_sessions")
+    .upsert({ doc_id: doc.id, response, created_at: new Date().toISOString() }, { onConflict: "doc_id" });
+  return json(response);
 }
 
 export async function handle(req: Request, deps: Deps) {
@@ -302,8 +317,10 @@ export async function handle(req: Request, deps: Deps) {
     if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can sign up for payments." }, 403);
     if (!envEnabled) return json({ error: "InkTracker payments aren't available yet." }, 400);
     if (!isPayingShop(shop)) return json({ error: "InkTracker payments are available on a paid plan." }, 403);
-    let merchantId = account?.merchant_id ?? null;
-    let applicationId = account?.merchant_application_id ?? null;
+    // A closed application is replaced with a new one (below, as if new).
+    const startOver = canStartOver(account);
+    let merchantId = startOver ? null : (account?.merchant_id ?? null);
+    let applicationId = startOver ? null : (account?.merchant_application_id ?? null);
     if (onboardingStage(account) === "active") return json({ error: "Your payments account is already approved." }, 400);
     if (!merchantId) {
       // One merchant per shop: claim creation first so two clicks (or two
@@ -315,28 +332,33 @@ export async function handle(req: Request, deps: Deps) {
       const { data: claimed } = await admin.from("processor_accounts")
         .update({ merchant_creating_at: nowIso })
         .eq("shop_owner", shopOwner)
-        .is("merchant_id", null)
         .or(`merchant_creating_at.is.null,merchant_creating_at.lt."${new Date(Date.now() - 2 * 60 * 1000).toISOString()}"`)
-        .select("shop_owner");
+        .select("shop_owner, merchant_id");
       if (!claimed?.length) return json({ error: "Sign-up is already opening. Try again in a moment." }, 409);
+      // Claimed, but another request saved a merchant meanwhile (and it isn't
+      // a closed one we're replacing) → use it.
+      if (claimed[0].merchant_id && !startOver) {
+        await admin.from("processor_accounts").update({ merchant_creating_at: null }).eq("shop_owner", shopOwner);
+        return json({ error: "Sign-up is ready. Click Continue sign-up." }, 409);
+      }
       const createBody = buildMerchantCreate(shop);
       // A merchant from an earlier attempt whose save failed? Adopt it —
       // never create a second merchant for the same shop.
-      let m = await findOurMerchant(deps, createBody.name, shopOwner);
-      if (!m) {
-        try {
-          m = await deps.rf.post("/v1/merchants", createBody);
-        } catch (err) {
-          // Nothing was created: release the claim so the owner can retry now.
-          await admin.from("processor_accounts").update({ merchant_creating_at: null }).eq("shop_owner", shopOwner);
-          throw err;
-        }
+      let m;
+      try {
+        m = await findOurMerchant(deps, createBody.name, shopOwner);
+        if (!m) m = await deps.rf.post("/v1/merchants", createBody);
+      } catch (err) {
+        // Nothing was saved: release the claim so the owner can retry now.
+        await admin.from("processor_accounts").update({ merchant_creating_at: null }).eq("shop_owner", shopOwner);
+        throw err;
       }
       merchantId = m?.merchant_id;
       applicationId = m?.merchant_application_id;
       if (!merchantId || !applicationId) throw new Error("Rainforest returned no merchant id");
       const patch = {
         shop_owner: shopOwner,
+        ...(startOver ? { enabled: false, enabled_at: null, onboarded_at: null } : {}),
         merchant_id: merchantId,
         merchant_application_id: applicationId,
         merchant_status: String(m?.merchant_status ?? "pending").toLowerCase(),
@@ -366,11 +388,9 @@ export async function handle(req: Request, deps: Deps) {
   if (action === "refreshStatus") {
     if (!account?.merchant_id) return status();
     const m = await deps.rf.get(`/v1/merchants/${encodeURIComponent(account.merchant_id)}`);
-    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    const ms = m?.merchant_status ?? m?.status;
-    if (ms) patch.merchant_status = String(ms).toLowerCase();
-    if (m?.merchant_application_status) patch.merchant_application_status = String(m.merchant_application_status).toLowerCase();
-    await admin.from("processor_accounts").update(patch).eq("shop_owner", shopOwner);
+    await admin.from("processor_accounts")
+      .update({ ...merchantStatusFields(m), updated_at: new Date().toISOString() })
+      .eq("shop_owner", shopOwner);
     return status();
   }
 

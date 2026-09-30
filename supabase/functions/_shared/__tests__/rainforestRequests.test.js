@@ -22,7 +22,6 @@ describe("buildMerchantCreate — prefill what we know, never sensitive data", (
       phone_number: "775-555-0142",
       website: "https://biotamfg.co",
       address: { address_line_1: "123 Commercial Row", city: "Reno", state: "NV", postal_code: "89501", country: "US" },
-      metadata: { inktracker_shop_owner: "joe@biotamfg.co" },
     });
   });
   it("drops what's missing; short names skip the statement descriptor", () => {
@@ -31,6 +30,7 @@ describe("buildMerchantCreate — prefill what we know, never sensitive data", (
     expect(b.address).toBeUndefined();
     expect(b.website).toBeUndefined();
     expect(Object.keys(b)).not.toContain("tax_id");
+    expect(Object.keys(b)).not.toContain("metadata"); // merchants have no metadata field
   });
 });
 

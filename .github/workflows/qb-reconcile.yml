@@ -62,7 +62,7 @@ jobs:
         # QuickBooks at the time (docs/rainforest-payments.md). Off until the
         # rainforestWebhook function is deployed: set the repo VARIABLE
         #   gh variable set RAINFOREST_SWEEP --body true
-        if: ${{ vars.RAINFOREST_SWEEP == 'true' }}
+        if: ${{ always() && vars.RAINFOREST_SWEEP == 'true' }}
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |

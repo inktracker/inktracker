@@ -86,7 +86,7 @@ export default function InvoicePayment() {
             <CheckCircle2 className="w-4 h-4" /> This invoice is paid. Thank you!
           </div>
         ) : session ? (
-          <OnlinePaymentPanel session={session} />
+          <OnlinePaymentPanel key={session.sessionKey} session={session} onReopen={() => { setSession(null); openPayment(); }} />
         ) : (
           <>
             {notice && (

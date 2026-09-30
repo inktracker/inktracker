@@ -21,7 +21,7 @@ import { toCustomerFacingQuote, isBrokerQuote } from "@/lib/quotes/customerFacin
 import { useBillingGate } from "@/lib/billing-gate";
 import { DEPOSITS_ENABLED, depositAmountFor } from "@/lib/deposits";
 import { qbTaxHoldState } from "@/lib/quotes/qbTaxHold";
-import { usePaymentRail } from "@/lib/payment/usePaymentRail";
+import { usePaymentRail, fetchPaymentStatus } from "@/lib/payment/usePaymentRail";
 
 // Saved totals win over live recompute — keeps the email's number
 // pinned to what the editor stamped on the row, so the customer
@@ -688,6 +688,21 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         `${fmtMoney(taxHold.quotedTax)}. Click "Use QuickBooks' tax" below, or fix the tax rate and retry, before sending.`,
       );
       return;
+    }
+    // This tab's payment status can be hours old. If the shop is back on
+    // QuickBooks (switched off, account on hold), a quote sent now would
+    // have no way to pay — the QuickBooks link was never made. Re-check and
+    // route the shop to the "get payment link" retry instead.
+    if (onlinePay && !isBrokerQuote(quote)) {
+      const fresh = await fetchPaymentStatus({ fresh: true });
+      if (!fresh.unavailable && fresh.rail !== "processor") {
+        setRailFromSync("qb");
+        const hasLink = depositMode ? Boolean(qbDepositLink) : Boolean(qbPaymentLink);
+        if (!hasLink) {
+          setError("Payments are back on QuickBooks for your shop. Click the retry button below to add a QuickBooks pay link, then send.");
+          return;
+        }
+      }
     }
     setSending(true);
 

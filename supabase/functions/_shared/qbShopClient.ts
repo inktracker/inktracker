@@ -65,7 +65,13 @@ export async function qbPost(conn: QbConn, entity: string, body: unknown): Promi
     headers: { Authorization: `Bearer ${conn.token}`, "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`QuickBooks ${entity} create failed (${res.status}): ${(await res.text()).slice(0, 500)}`);
+  if (!res.ok) {
+    const err = new Error(`QuickBooks ${entity} create failed (${res.status}): ${(await res.text()).slice(0, 500)}`);
+    // Callers need the status to tell "definitely rejected" (4xx) from
+    // "may have been created" (5xx, gateway timeouts).
+    (err as Error & { status?: number }).status = res.status;
+    throw err;
+  }
   return res.json();
 }
 

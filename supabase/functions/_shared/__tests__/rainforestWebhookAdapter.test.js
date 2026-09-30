@@ -66,7 +66,8 @@ describe("routeWebhook", () => {
     expect(routeWebhook({ event_type: "ach_return.created", data: { payin_id: "pyi_1", amount: 129700 } }).kind).toBe("returned");
     expect(routeWebhook({ event_type: "chargeback.dispute_action_required", data: { payin_id: "pyi_1", amount: 100 } }).kind).toBe("disputed");
     expect(routeWebhook({ event_type: "chargeback.lost", data: { payin_id: "pyi_1", amount: 100 } }).kind).toBe("charged_back");
-    expect(routeWebhook({ event_type: "chargeback.won", data: { payin_id: "pyi_1" } }).route).toBe("ignore");
+    expect(routeWebhook({ event_type: "chargeback.won", data: { payin_id: "pyi_1", amount: 100 } })).toEqual({ route: "dispute_won", payinId: "pyi_1", amountCents: 100 });
+    expect(routeWebhook({ event_type: "chargeback.provisional_win", data: { payin_id: "pyi_1" } }).route).toBe("ignore");
   });
   it("merchant + application events update onboarding state", () => {
     expect(routeWebhook({ event_type: "merchant.active", data: { merchant_id: "mid_1", status: "ACTIVE" } }))
