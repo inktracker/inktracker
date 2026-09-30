@@ -10,6 +10,7 @@ import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
+import { useOrderCompletionSend } from "@/lib/invoices/useOrderCompletionSend";
 import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
@@ -52,6 +53,8 @@ export default function Orders() {
   const [filter, setFilter] = useState(initialFilter);
   const [viewing, setViewing] = useState(null);
   const [user, setUser] = useState(null);
+  // After an admin/manager finishes an order, offer to email the invoice.
+  const { promptSend, sendModal } = useOrderCompletionSend(user);
   const { gate: billingGate } = useBillingGate(user);
   const { readOnly, reactivateHref } = useReadOnly(user);
   const [viewingInvoice, setViewingInvoice] = useState(null);
@@ -213,6 +216,9 @@ export default function Orders() {
       // reveal Create Invoice → Send. Only updates if this order is the one
       // being viewed; a completion triggered outside the modal leaves it closed.
       setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+      // Offer to email the invoice to the customer right away (admin/manager,
+      // non-broker orders with an invoice). Best-effort — never blocks.
+      promptSend(updated);
     } catch (err) {
       notify.error("Couldn't complete the order", err);
     }
@@ -452,6 +458,9 @@ export default function Orders() {
           onSendSuccess={() => setViewing(null)}
         />
       )}
+
+      {/* Post-completion "email the invoice" prompt (admin/manager). */}
+      {sendModal}
     </div>
   );
 }
