@@ -462,6 +462,57 @@ async function reconcileShop(adminClient: any, profile: any) {
     console.warn(`[qbReconcile] deposit pass failed for ${shopOwner}:`, (err as Error)?.message);
   }
 
+  // Broker-billing (Phase A) paid backstop — the shop's WHOLESALE bill to the
+  // broker lives on orders.qb_broker_invoice_id in the SHOP's own realm (NOT
+  // qb_invoice_id, so the passes above never touch it). The real-time signal is
+  // qbWebhook flipping broker_invoice_paid; this recovers a missed webhook, same
+  // shape as the deposit pass. The shop's token/realm (already loaded here) is
+  // the correct realm for this invoice — no cross-realm risk.
+  try {
+    const BROKER_PAID_CAP = 25;
+    const { data: brokerOrders, error: boErr } = await adminClient
+      .from("orders")
+      .select("id, order_id, shop_owner, qb_broker_invoice_id, broker_invoice_paid")
+      .eq("shop_owner", shopOwner)
+      .eq("broker_invoice_paid", false)
+      .not("qb_broker_invoice_id", "is", null)
+      .order("qb_broker_invoice_synced_at", { ascending: true, nullsFirst: true })
+      .limit(200);
+    if (boErr) {
+      classifications.push({ error: `broker-paid candidates query: ${boErr.message}` });
+    } else {
+      if ((brokerOrders ?? []).length > BROKER_PAID_CAP) {
+        console.warn(`[qbReconcile] broker-paid pass capped at ${BROKER_PAID_CAP}/${brokerOrders!.length} for ${shopOwner}`);
+      }
+      for (const ord of (brokerOrders ?? []).slice(0, BROKER_PAID_CAP)) {
+        try {
+          const invId = String(ord.qb_broker_invoice_id);
+          const resp = await qbQuery(accessToken, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(invId)}'`);
+          const live = resp?.QueryResponse?.Invoice?.[0] ?? null;
+          if (isInvoiceFullyPaid(live)) {
+            const { error: flipErr } = await adminClient
+              .from("orders")
+              .update({ broker_invoice_paid: true, broker_invoice_paid_at: new Date().toISOString() })
+              .eq("id", ord.id)
+              .eq("shop_owner", shopOwner)
+              .eq("broker_invoice_paid", false);
+            if (flipErr) {
+              classifications.push({ error: `broker-paid flip: ${flipErr.message}`, qb_invoice_id: invId });
+            } else {
+              classifications.push({ kind: "broker-invoice-paid-recovered", order_id: ord.order_id });
+            }
+          } else {
+            classifications.push({ kind: "broker-invoice-open", order_id: ord.order_id });
+          }
+        } catch (err) {
+          classifications.push({ error: (err as Error)?.message, qb_invoice_id: ord.qb_broker_invoice_id });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[qbReconcile] broker-paid (Phase A) pass failed for ${shopOwner}:`, (err as Error)?.message);
+  }
+
   // Fourth pass — books-drift verification. Mirror-flagged candidates
   // (row total vs qb_total) are re-checked against the LIVE QB invoice
   // while we hold this shop's token: stale mirrors self-heal (the Kato
@@ -608,6 +659,80 @@ async function reconcileShop(adminClient: any, profile: any) {
   }
 
   return { shopOwner, classifications, driftRows };
+}
+
+// ── Broker realm: Phase B client-invoice paid backstop ────────────────
+//
+// A broker connects their OWN QuickBooks. Their profile.role === "broker" and
+// profile.shop_owner points at the SHOP, so the full reconcileShop pass MUST
+// NOT run for them — every shop-scoped query there would run keyed to the shop
+// and cross-match on a colliding (realm-scoped, non-unique) QB invoice id. That
+// is why the main loop skips brokers. But that skip left the Phase B leg with
+// NO nightly backstop: if the qbWebhook paid event for a broker→client invoice
+// is missed, quotes.broker_client_invoice_paid stays false forever and the
+// white-label page keeps showing the client a "Pay Invoice" button they already
+// paid. This narrow pass restores the backstop WITHOUT any shop-scoped work: it
+// runs in the BROKER's own realm, scopes strictly by broker_id = the broker's
+// own email, and only ever flips broker_client_invoice_paid.
+async function reconcileBrokerClientInvoices(adminClient: any, profile: any) {
+  const brokerEmail: string = profile.email;
+  if (!brokerEmail) return { shopOwner: `broker:${profile.id}`, classifications: [{ error: "broker profile has no email" }] };
+
+  let accessToken: string;
+  try {
+    accessToken = await ensureFreshToken(adminClient, profile);
+  } catch (err) {
+    return { shopOwner: `broker:${brokerEmail}`, classifications: [{ error: (err as Error)?.message }] };
+  }
+  const realmId: string = profile.qb_realm_id;
+
+  const classifications: any[] = [];
+  try {
+    const BROKER_CLIENT_PAID_CAP = 25;
+    const { data: candidates, error: qErr } = await adminClient
+      .from("quotes")
+      .select("id, quote_id, broker_id, qb_broker_client_invoice_id, broker_client_invoice_paid")
+      .eq("broker_id", brokerEmail)
+      .eq("broker_client_invoice_paid", false)
+      .not("qb_broker_client_invoice_id", "is", null)
+      .order("qb_broker_client_invoice_synced_at", { ascending: true, nullsFirst: true })
+      .limit(200);
+    if (qErr) {
+      classifications.push({ error: `broker-client candidates query: ${qErr.message}` });
+    } else {
+      if ((candidates ?? []).length > BROKER_CLIENT_PAID_CAP) {
+        console.warn(`[qbReconcile] broker-client paid pass capped at ${BROKER_CLIENT_PAID_CAP}/${candidates!.length} for ${brokerEmail}`);
+      }
+      for (const q of (candidates ?? []).slice(0, BROKER_CLIENT_PAID_CAP)) {
+        try {
+          const invId = String(q.qb_broker_client_invoice_id);
+          const resp = await qbQuery(accessToken, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(invId)}'`);
+          const live = resp?.QueryResponse?.Invoice?.[0] ?? null;
+          if (isInvoiceFullyPaid(live)) {
+            const { error: flipErr } = await adminClient
+              .from("quotes")
+              .update({ broker_client_invoice_paid: true, broker_client_invoice_paid_at: new Date().toISOString() })
+              .eq("id", q.id)
+              .eq("broker_id", brokerEmail)
+              .eq("broker_client_invoice_paid", false);
+            if (flipErr) {
+              classifications.push({ error: `broker-client flip: ${flipErr.message}`, qb_invoice_id: invId });
+            } else {
+              classifications.push({ kind: "broker-client-invoice-paid-recovered", quote_id: q.quote_id });
+            }
+          } else {
+            classifications.push({ kind: "broker-client-invoice-open", quote_id: q.quote_id });
+          }
+        } catch (err) {
+          classifications.push({ error: (err as Error)?.message, qb_invoice_id: q.qb_broker_client_invoice_id });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[qbReconcile] broker-client (Phase B) pass failed for ${brokerEmail}:`, (err as Error)?.message);
+  }
+
+  return { shopOwner: `broker:${brokerEmail}`, classifications };
 }
 
 // Cascade handler for converted-but-unpaid quotes. If QB shows the
@@ -1646,11 +1771,21 @@ Deno.serve(async (req) => {
         const profile = await loadProfileWithSecrets(adminClient, { id: profileId });
         // Owners have shop_owner=NULL (keyed by email) — accept shop_owner || email.
         if (!profile?.qb_access_token || !(profile?.shop_owner || profile?.email)) continue;
-        // Skip non-shop roles (brokers can have personal QB tokens but
-        // their quotes flow through the shop's tenant).
-        if (profile.role && !["shop", "admin", "manager"].includes(profile.role)) continue;
-        const result = await reconcileShop(adminClient, profile);
-        shopResults.push(result);
+        // Brokers connect their OWN QuickBooks but their profile.shop_owner
+        // points at the SHOP — running the shop-scoped reconcileShop for them
+        // would cross-match the shop's rows on colliding QB ids. Route them
+        // ONLY to the narrow Phase B client-invoice paid backstop (in the
+        // broker's own realm, scoped by broker_id). Every other non-shop role
+        // (whose quotes flow through the shop's tenant) is skipped as before.
+        if (profile.role === "broker") {
+          const result = await reconcileBrokerClientInvoices(adminClient, profile);
+          shopResults.push(result);
+        } else if (profile.role && !["shop", "admin", "manager"].includes(profile.role)) {
+          continue;
+        } else {
+          const result = await reconcileShop(adminClient, profile);
+          shopResults.push(result);
+        }
       } catch (err) {
         shopResults.push({ profileId, error: (err as Error)?.message });
       }
