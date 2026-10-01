@@ -16,13 +16,18 @@ export const PRODUCTION_STAGES = ["Art Approval", "Order Goods", "Pre-Press", "P
 // removes either, the auto-derive in autoCheckGoodsTask stops firing for
 // it — these are the names we check against, and the Account UI warns.
 export const AUTO_DERIVED_TASKS_BY_STAGE = {
+  // Art Approval: set by the customer's sign-off / a sent proof, not by taps.
+  "Art Approval": ["Send proof to customer", "Get approval"],
   "Order Goods": ["Place blank order"],
   "Pre-Press":   ["Receive goods"],
 };
 
 // Flattened list of every auto-derived task name across stages (used by
 // callers that only care whether a name is auto-derived at all).
-export const ORDER_GOODS_AUTO_DERIVED_TASKS = Object.values(AUTO_DERIVED_TASKS_BY_STAGE).flat();
+export const ORDER_GOODS_AUTO_DERIVED_TASKS = [
+  ...AUTO_DERIVED_TASKS_BY_STAGE["Order Goods"],
+  ...AUTO_DERIVED_TASKS_BY_STAGE["Pre-Press"],
+];
 
 // Return the auto-derived task names that are MISSING from the shop's
 // current list for a given stage. Empty array means everything that

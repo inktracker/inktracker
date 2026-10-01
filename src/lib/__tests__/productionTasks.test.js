@@ -102,8 +102,12 @@ describe("DEFAULT_TASKS goods split", () => {
 
 describe("getMissingAutoDerivedTasks", () => {
   it("returns [] for stages with no auto-derived tasks", () => {
-    expect(getMissingAutoDerivedTasks("Art Approval", [])).toEqual([]);
     expect(getMissingAutoDerivedTasks("Printing", [])).toEqual([]);
+  });
+
+  it("Art Approval warns when the proof / approval tasks are renamed away", () => {
+    expect(getMissingAutoDerivedTasks("Art Approval", [])).toEqual(["Send proof to customer", "Get approval"]);
+    expect(getMissingAutoDerivedTasks("Art Approval", ["Send proof to customer", "Get approval"])).toEqual([]);
   });
 
   it("Order Goods expects only 'Place blank order'", () => {

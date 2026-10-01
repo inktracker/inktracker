@@ -1,7 +1,7 @@
 import { Hammer, CheckCircle2, ChevronDown } from "lucide-react";
 import {
   countGoodsProgress,
-  autoCheckGoodsTask,
+  autoCheckTask,
   GOODS_ORDER_STAGE,
   GOODS_RECEIVE_STAGE,
 } from "@/lib/orderGoodsProgress";
@@ -93,7 +93,9 @@ export default function FloorModePanel({
             what those already capture. */}
         {tasks.length > 0 && (() => {
           const counts = { total: goodsTotal, ordered: goodsOrdered, received: goodsReceived, marked: goodsOrdered + goodsReceived };
-          const autoDone = (task) => autoCheckGoodsTask(step, task, counts);
+          // Same helper as the Shop Floor + auto-advance: "Get approval" comes
+          // from the customer's sign-off and can't be ticked by hand here.
+          const autoDone = (task) => autoCheckTask(step, task, liveOrder, counts);
           const isDone = (task) => {
             const a = autoDone(task);
             return a === null ? !!stepChecks[task] : a;
@@ -122,11 +124,15 @@ export default function FloorModePanel({
                   const handleClick = bulkTarget
                     ? () => bulkOrderGoodsStep(bulkTarget)
                     : () => floorToggleTask(task);
+                  // Art items come from the proof / the customer's sign-off.
+                  const artAuto = step === "Art Approval" && auto !== null;
                   return (
                     <button key={task}
-                      onClick={handleClick}
-                      disabled={readOnly}
-                      title={readOnly
+                      onClick={artAuto ? undefined : handleClick}
+                      disabled={readOnly || artAuto}
+                      title={artAuto
+                        ? "Set automatically from the proof and the customer's approval"
+                        : readOnly
                         ? roTitle
                         : bulkTarget
                           ? `Marks every size as ${bulkTarget}. Or tap individual sizes below for partial.`

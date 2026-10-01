@@ -7,7 +7,8 @@ vi.mock("../autoPoFromOrder", () => ({ ensurePoDraftsForOrder: vi.fn(async () =>
 
 import { runOrderCompletion } from "../runOrderCompletion";
 import { ensurePoDraftsForOrder } from "../autoPoFromOrder";
-import { changeOrderStatus, buildStatusPayload, effectiveStatus, nextStatusOf, prevStatusOf, autoPoToast, floorCompletionPayload } from "../changeOrderStatus";
+import { changeOrderStatus, buildStatusPayload, effectiveStatus, nextStatusOf, prevStatusOf, autoPoToast, floorCompletionPayload, checkArtGate } from "../changeOrderStatus";
+import { artFingerprint } from "@/lib/art/artApproval";
 import { autoCheckTask, autoCheckArtApprovalTask } from "@/lib/orderGoodsProgress";
 
 const user = { email: "owner@example.com", shop_owner: "owner@example.com" };
@@ -92,9 +93,42 @@ describe("art approval derives from the customer's approval, never a floor tap",
   it("Get approval mirrors order.art_approved; other tasks stay manual", () => {
     expect(autoCheckArtApprovalTask("Art Approval", "Get approval", { art_approved: true })).toBe(true);
     expect(autoCheckArtApprovalTask("Art Approval", "Get approval", { art_approved: false })).toBe(false);
-    expect(autoCheckArtApprovalTask("Art Approval", "Send proof to customer", { art_approved: true })).toBeNull();
+    // "Send proof to customer" now ticks itself once a proof went out (approved implies sent).
+    expect(autoCheckArtApprovalTask("Art Approval", "Send proof to customer", { art_approved: true })).toBe(true);
+    expect(autoCheckArtApprovalTask("Art Approval", "Receive artwork", { art_approved: true })).toBeNull();
     expect(autoCheckArtApprovalTask("Printing", "Get approval", { art_approved: true })).toBeNull();
     expect(autoCheckTask("Art Approval", "Get approval", { art_approved: true })).toBe(true);
     expect(autoCheckTask("Pre-Press", "Burn screens", {})).toBeNull();
+  });
+});
+
+describe("art approval gate", () => {
+  const order = { id: "o1", status: "Art Approval", selected_artwork: [{ id: "a", url: "u" }], line_items: [] };
+  const base44 = { entities: { Order: { update: vi.fn((id, patch) => Promise.resolve({ ...order, ...patch })) } } };
+
+  it("checkArtGate: blocks leaving Art Approval without approval only when the shop requires it", () => {
+    expect(checkArtGate(order, "Order Goods", false)).toEqual({ ok: true });
+    const blocked = checkArtGate(order, "Order Goods", true);
+    expect(blocked.ok).toBe(false);
+    expect(blocked.reason).toMatch(/No proof has been sent/);
+    expect(blocked.reason).toMatch(/owner or manager can approve/);
+    expect(checkArtGate({ ...order, status: "Pre-Press" }, "Printing", true).ok).toBe(true);
+  });
+
+  it("approved art passes; an approval the art outgrew doesn't", () => {
+    const approved = { ...order, art_status: "approved", art_approved: true, art_approved_fingerprint: artFingerprint(order) };
+    expect(checkArtGate(approved, "Order Goods", true).ok).toBe(true);
+    expect(checkArtGate({ ...approved, selected_artwork: [{ id: "a", url: "u2" }] }, "Order Goods", true).reason).toMatch(/changed after the customer approved/);
+  });
+
+  it("changeOrderStatus refuses with a plain message and writes nothing — even a jump straight to Completed", async () => {
+    base44.entities.Order.update.mockClear();
+    await expect(changeOrderStatus({ order, newStatus: "Order Goods", user: {}, base44, requireArtApproval: true }))
+      .rejects.toMatchObject({ code: "ART_NOT_APPROVED" });
+    await expect(changeOrderStatus({ order, newStatus: "Completed", user: {}, base44, requireArtApproval: true }))
+      .rejects.toMatchObject({ code: "ART_NOT_APPROVED" });
+    expect(base44.entities.Order.update).not.toHaveBeenCalled();
+    await changeOrderStatus({ order, newStatus: "Order Goods", user: {}, base44, requireArtApproval: false });
+    expect(base44.entities.Order.update).toHaveBeenCalled();
   });
 });

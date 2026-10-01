@@ -19,18 +19,44 @@
 //                        staff never write invoices.
 //   • backward move    → the re-entered stage's checklist is cleared so it
 //                        can't bounce forward from stale ticks.
+//   • leaving Art Approval forward → refused until the customer approved the
+//                        current art, when the shop requires it
+//                        (pricing_config.requireArtApproval). An owner or
+//                        manager can approve on the customer's behalf with a
+//                        note (artProof override), which satisfies the gate.
 //   • "Order Goods"    → ensurePoDraftsForOrder (idempotent draft PO(s) per
 //                        supplier), fire-and-forget; result reported through
 //                        the optional onAutoPo callback.
 //
 // Status-change notifications and customer emails are DB triggers, so they
 // fire the same for every write here. Returns the updated order row.
-import { O_STATUSES } from "@/components/shared/pricing";
+import { O_STATUSES, getShopPricingConfig } from "@/components/shared/pricing";
+import { artGate } from "@/lib/art/artApproval";
 import { runOrderCompletion } from "./runOrderCompletion";
 import { ensurePoDraftsForOrder } from "./autoPoFromOrder";
 import { todayInShopTz } from "@/lib/shopTimezone";
 
 export const FIRST_STATUS = O_STATUSES[0];
+
+/** Does this shop require customer art approval before production? */
+export function shopRequiresArtApproval(pricingConfig = getShopPricingConfig()) {
+  return pricingConfig?.requireArtApproval === true;
+}
+
+/**
+ * Pure: may this status change go ahead? Only blocks leaving Art Approval
+ * forward without approved art, and only when the shop requires approval.
+ * @returns {{ ok: true } | { ok: false, reason: string }}
+ */
+export function checkArtGate(order, newStatus, requireArtApproval) {
+  if (!requireArtApproval) return { ok: true };
+  const g = artGate(order, effectiveStatus(order), newStatus, O_STATUSES);
+  if (g.ok) return g;
+  return {
+    ok: false,
+    reason: `${g.reason} Production waits for the customer's approval. An owner or manager can approve it for them (for example, approved by phone) from the order's Artwork section.`,
+  };
+}
 
 /** Status to treat an order as being in when its status is blank/unknown. */
 export function effectiveStatus(order) {
@@ -80,9 +106,16 @@ export function buildStatusPayload(order, newStatus) {
  *        floor_completed_at and leave invoicing to the office
  * @returns {Promise<object>} updated order
  */
-export async function changeOrderStatus({ order, newStatus, user, base44, onAutoPo, autoPoOptions, completionMode = "full" }) {
+export async function changeOrderStatus({ order, newStatus, user, base44, onAutoPo, autoPoOptions, completionMode = "full", requireArtApproval = shopRequiresArtApproval() }) {
   if (!order?.id) throw new Error("changeOrderStatus: order required");
   if (!O_STATUSES.includes(newStatus)) throw new Error(`changeOrderStatus: unknown status "${newStatus}"`);
+
+  const gate = checkArtGate(order, newStatus, requireArtApproval);
+  if (!gate.ok) {
+    const err = new Error(gate.reason);
+    err.code = "ART_NOT_APPROVED";
+    throw err;
+  }
 
   if (newStatus === "Completed") {
     if (order.status === "Completed") return order;

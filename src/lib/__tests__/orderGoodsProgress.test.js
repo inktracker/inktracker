@@ -1,3 +1,5 @@
+import { autoCheckArtApprovalTask } from "../orderGoodsProgress.js";
+import { artFingerprint } from "@/lib/art/artApproval";
 import { describe, it, expect } from "vitest";
 import {
   countGoodsProgress,
@@ -221,5 +223,19 @@ describe("unreceivedCount", () => {
   it("returns 0 for an empty order (not -1)", () => {
     expect(unreceivedCount(null)).toBe(0);
     expect(unreceivedCount({ line_items: [] })).toBe(0);
+  });
+});
+
+describe("art approval auto-tasks", () => {
+  const order = { selected_artwork: [{ id: "a", url: "u" }], line_items: [] };
+  it("'Get approval' follows the CURRENT approval (voided when the art changes)", () => {
+    const approved = { ...order, art_status: "approved", art_approved: true, art_approved_fingerprint: artFingerprint(order) };
+    expect(autoCheckArtApprovalTask("Art Approval", "Get approval", approved)).toBe(true);
+    expect(autoCheckArtApprovalTask("Art Approval", "Get approval", { ...approved, selected_artwork: [{ id: "a", url: "u2" }] })).toBe(false);
+  });
+  it("'Send proof to customer' ticks once a proof went out", () => {
+    expect(autoCheckArtApprovalTask("Art Approval", "Send proof to customer", order)).toBe(false);
+    expect(autoCheckArtApprovalTask("Art Approval", "Send proof to customer", { ...order, art_status: "sent", art_proof_version: 1 })).toBe(true);
+    expect(autoCheckArtApprovalTask("Art Approval", "Receive artwork", order)).toBeNull();
   });
 });
