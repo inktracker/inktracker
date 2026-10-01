@@ -21,12 +21,11 @@ import { imprintColorLabel, imprintCountText } from '../../lib/quotes/imprintLab
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 import { signArtworkUrl } from '../../lib/uploadFile';
 import { stripSyncNotes } from '../../lib/invoices/qbModifiedSync';
-import { customGarmentHeader, isSpecDump, brandStyleCategoryHeader } from "@/lib/quotes/garmentTitle";
+import { resolveGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { depositAmountFor } from "@/lib/deposits";
 import { slipSize } from "@/lib/orders/packingSlipLayout";
 import { drawCompactSlip } from "@/lib/orders/packingSlipDraw";
 import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
-import { cleanText, looksLikeCode } from "@/lib/quotes/lineItemText";
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -285,121 +284,10 @@ function capImagePixels(img, maxDim) {
   }
 }
 
-function extractTrailingGarmentNumber(title) {
-  const txt = cleanText(title);
-  if (!txt) return '';
-  const match = txt.match(/-\s*([A-Z0-9-]{3,12})$/i);
-  return match ? cleanText(match[1]) : '';
-}
-
-function stripTrailingGarmentNumber(title) {
-  const txt = cleanText(title);
-  if (!txt) return '';
-  return txt.replace(/\s*-\s*[A-Z0-9-]{3,12}\s*$/i, '').trim();
-}
-
-
-function isLikelySku(value) {
-  const txt = cleanText(value);
-  if (!txt) return false;
-
-  if (/^0\d{3,}$/.test(txt)) return true;
-
-  return false;
-}
-
-function getGarmentNumber(li) {
-  const titleTail = extractTrailingGarmentNumber(li?.productTitle);
-  if (titleTail && !isLikelySku(titleTail) && looksLikeCode(titleTail)) return titleTail;
-
-  const resolvedTitleTail = extractTrailingGarmentNumber(li?.resolvedTitle);
-  if (resolvedTitleTail && !isLikelySku(resolvedTitleTail) && looksLikeCode(resolvedTitleTail)) return resolvedTitleTail;
-
-  const candidates = [
-    li?.resolvedStyleNumber,
-    li?.supplierStyleNumber,
-    li?.garmentNumber,
-    li?.styleNumber,
-    li?.productNumber,
-    li?.itemNumber,
-    li?.catalogNumber,
-    li?.style
-  ];
-
-  for (const candidate of candidates) {
-    const value = cleanText(candidate);
-    if (!value) continue;
-    if (isLikelySku(value)) continue;
-    if (looksLikeCode(value)) return value;
-  }
-
-  return cleanText(li?.style) || 'Garment';
-}
-
-// AS Colour returns the full marketing description in styleName/title
-// ("The AS Colour Staple Tee. Enduring comfort in a regular fit, crafted from
-// 5.3 oz 100% combed cotton..."). Without a trim the PDF line header runs off
-// the page into the price column. Take the first sentence and hard-cap at
-// 80 chars as a safety net for descriptions without sentence breaks.
-function trimToShortGarmentTitle(text) {
-  if (!text) return '';
-  const firstSentence = String(text).split(/(?<=\.)\s+/)[0] || text;
-  const trimmed = firstSentence.replace(/\.$/, '').trim();
-  if (trimmed.length > 80) return trimmed.slice(0, 77).trimEnd() + '…';
-  return trimmed;
-}
-
-function getGarmentDescription(li) {
-  const candidates = [
-    stripTrailingGarmentNumber(li?.productTitle),
-    stripTrailingGarmentNumber(li?.resolvedTitle),
-    cleanText(li?.productDescription),
-    cleanText(li?.product_description),
-    cleanText(li?.resolvedDescription),
-    cleanText(li?.description),
-    cleanText(li?.title),
-    cleanText(li?.garmentName),
-    cleanText(li?.styleLabel),
-    cleanText(li?.displayName),
-    cleanText(li?.styleName)
-  ];
-
-  const garmentNumber = getGarmentNumber(li).toLowerCase();
-
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const normalized = candidate.toLowerCase();
-
-    if (normalized === garmentNumber) continue;
-    if (looksLikeCode(candidate)) continue;
-    // Supplier marketing paragraph, not a name — skip so the header falls
-    // back to a clean "Brand Style#" instead of a truncated spec blurb.
-    if (isSpecDump(candidate)) continue;
-
-    return trimToShortGarmentTitle(candidate);
-  }
-
-  return '';
-}
-
-function getItemHeaderLine(li) {
-  const garmentNumber = getGarmentNumber(li);
-  // Shop's custom title wins over resolved/supplier fields — see
-  // src/lib/quotes/garmentTitle.js.
-  const custom = customGarmentHeader(li, garmentNumber);
-  if (custom) return custom;
-  const storedName = (li?.productName || '').trim();
-  const description = (storedName && !looksLikeCode(storedName) && !isSpecDump(storedName))
-    ? trimToShortGarmentTitle(storedName)
-    : getGarmentDescription(li);
-
-  if (description) {
-    return `${garmentNumber} - ${description}`;
-  }
-
-  // No concise name — clean "Brand Style# — Category" (never the spec paragraph).
-  return brandStyleCategoryHeader(cleanText(li?.brand), garmentNumber, li?.category);
-}
+// The PDF line-item header is built by the ONE shared resolver in
+// src/lib/quotes/garmentTitle.js so the printed quote reads identically to
+// the admin quote view and the customer QuotePayment page — no forked copies.
+const getItemHeaderLine = resolveGarmentHeader;
 
 function getItemMetaLine(li) {
   const meta = [];

@@ -1,3 +1,4 @@
+import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode } from "./lineItemText";
 // Custom garment title — the shop's own display text for a line item.
 //
 // Root cause (Truman, 2026-08-03, style 31-069): the shop sells an OTTO
@@ -77,41 +78,92 @@ export function customGarmentHeader(li, styleNumber) {
 // quote — ugly, and worse on a broker's white-label quote (Joe, 2026-10-01).
 // Treat such text as NOT a product name so the header falls back to a clean
 // "Brand Style#". A real garment name is short and reads like a title.
-export function isSpecDump(text) {
-  const t = clean(text);
-  if (!t) return false;
-  if (t.length > 55) return true;                          // names are short
-  if (/[.!?]\s+\S/.test(t)) return true;                   // more than one sentence
-  if (/\b\d+(?:\.\d+)?\s?(?:oz|ounce|gsm|singles|gm)\b/i.test(t)) return true; // spec
-  return false;
+
+
+// ── Shared garment HEADER resolver ───────────────────────────────────────────
+// ONE header builder for every customer- and shop-facing surface — the quote
+// detail (admin), the customer QuotePayment page, and the PDF. These had each
+// forked their own copy and drifted: the customer page showed the raw supplier
+// spec paragraph ("1717 - 6.1-ounce, 100% US ring spun cotton…") while the
+// admin quote read cleanly ("1717 - COMFORT COLORS Heavyweight Ring Spun Tee").
+// Joe, 2026-10-01: "have it match how the admin quotes read." This IS the admin
+// quote's logic, lifted verbatim, so all three now render identically.
+
+const DASH = "[-–—]"; // hyphen, en-dash, em-dash
+
+function resolveGarmentNumber(li) {
+  const candidates = [
+    li?.supplierStyleNumber, li?.resolvedStyleNumber, li?.styleNumber,
+    li?.garmentNumber, li?.productNumber, li?.style,
+  ];
+  for (const candidate of candidates) {
+    const value = cleanText(candidate).toUpperCase();
+    if (!value) continue;
+    if (isWarehouseSku(value)) continue;
+    if (!looksLikeCode(value)) continue;
+    return value;
+  }
+  const productTitleTail = extractTrailingCode(li?.productTitle).toUpperCase();
+  if (productTitleTail && !isWarehouseSku(productTitleTail)) return productTitleTail;
+  const resolvedTitleTail = extractTrailingCode(li?.resolvedTitle).toUpperCase();
+  if (resolvedTitleTail && !isWarehouseSku(resolvedTitleTail)) return resolvedTitleTail;
+  return cleanText(li?.style).toUpperCase() || "GARMENT";
 }
 
-// The fallback header when no concise product name exists: "Brand Style#"
-// (e.g. "Comfort Colors 1717"), or whichever half is present.
-export function brandStyleHeader(brand, styleNumber) {
-  const b = clean(brand);
-  const n = clean(styleNumber);
-  if (b && n) return `${b} ${n}`;
-  return b || n || "Garment";
+// Take the first sentence and hard-cap at 80 chars so a marketing paragraph
+// doesn't run off the line; supplier names that ARE clean pass through whole.
+function trimToShortTitle(text) {
+  if (!text) return "";
+  const firstSentence = String(text).split(/(?<=\.)\s+/)[0] || text;
+  const trimmed = firstSentence.replace(/\.$/, "").trim();
+  if (trimmed.length > 80) return trimmed.slice(0, 77).trimEnd() + "…";
+  return trimmed;
 }
 
-// Singular, human label for a wizard garment category ("T-Shirts" → "T-Shirt")
-// so a header with no supplier name can still say WHAT the garment is:
-// "Comfort Colors 1717 — T-Shirt" instead of a bare SKU (Joe, 2026-10-01).
-// Simple plurals get de-pluralized; compound categories ("Hoodies &
-// Sweatshirts") are left as-is (still informative).
-export function categoryLabel(category) {
-  const c = clean(category);
-  if (!c) return "";
-  if (c.includes("&")) return c;           // compound — leave it
-  return c.replace(/s$/i, "");             // T-Shirts→T-Shirt, Tanks→Tank, Polos→Polo
+function scrubDescription(raw, garmentNumber, brand) {
+  if (!raw) return "";
+  let t = cleanText(raw);
+  t = t.replace(new RegExp(`^[A-Z0-9-]{2,20}\\s*${DASH}\\s*`, "i"), "");
+  t = t.replace(new RegExp(`\\s*${DASH}\\s*[A-Z0-9-]{2,20}\\s*$`, "i"), "");
+  if (garmentNumber) {
+    const escaped = garmentNumber.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+    t = t.replace(new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`, "gi"), " ");
+  }
+  t = t.replace(new RegExp(`^[\\s${DASH}]+|[\\s${DASH}]+$`, "g"), "").replace(/\s{2,}/g, " ").trim();
+  if (brand && t.toLowerCase() === brand.toLowerCase()) return "";
+  return t;
 }
 
-// The full fallback header when no supplier product NAME exists:
-// "Brand Style — Category", dropping any half that's missing. The spec
-// paragraph is never used; the category gives the garment type.
-export function brandStyleCategoryHeader(brand, styleNumber, category) {
-  const base = brandStyleHeader(brand, styleNumber);
-  const cat = categoryLabel(category);
-  return cat ? `${base} — ${cat}` : base;
+function resolveGarmentDescription(li) {
+  const garmentNumber = resolveGarmentNumber(li).toLowerCase();
+  const rawCandidates = [
+    li?.styleName, li?.resolvedDescription, li?.productDescription,
+    li?.product_description, li?.garmentName, li?.productTitle,
+    li?.resolvedTitle, li?.description, li?.displayName, li?.title,
+  ];
+  const brand = cleanText(li?.brand).toLowerCase();
+  for (const raw of rawCandidates) {
+    const candidate = scrubDescription(raw, garmentNumber, brand);
+    if (!candidate) continue;
+    const normalized = candidate.toLowerCase();
+    if (normalized === garmentNumber) continue;
+    if (looksLikeCode(candidate)) continue;
+    if (["shirt", "garment", "tee"].includes(normalized)) continue;
+    return candidate;
+  }
+  return "";
+}
+
+// The one header string every surface renders. customTitle (shop's own) wins;
+// else "STYLE - <short supplier name>"; else just the style number.
+export function resolveGarmentHeader(li) {
+  const number = resolveGarmentNumber(li);
+  const custom = customGarmentHeader(li, number);
+  if (custom) return custom;
+  const storedName = cleanText(li?.productName || "");
+  const rawDescription = (storedName && !looksLikeCode(storedName))
+    ? storedName
+    : resolveGarmentDescription(li);
+  const description = trimToShortTitle(rawDescription);
+  return description ? `${number} - ${description}` : number;
 }

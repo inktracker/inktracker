@@ -40,8 +40,7 @@ import { notify } from "@/lib/notify";
 import AttachmentGallery from "../shared/AttachmentGallery";
 import { DEPOSITS_ENABLED, depositAmountFor } from "@/lib/deposits";
 import ReactivateLink from "../shared/ReactivateLink";
-import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
-import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode } from "@/lib/quotes/lineItemText";
+import { resolveGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 
 // Shown on every disabled write affordance when the shop is read-only
@@ -100,19 +99,6 @@ function getShopFacingReference(quote, fallbackCustomer) {
   return clientName ? `Reference: ${clientName}` : "";
 }
 
-// Some suppliers (AS Colour) stuff the full marketing description into the
-// title field. Trim to the first sentence + 80-char cap so quote views
-// don't render a paragraph where a product name should be. Mirrors
-// trimToShortTitle in BrokerPricePanel and trimToShortGarmentTitle in
-// pdfExport.
-function trimToShortTitle(text) {
-  if (!text) return "";
-  const firstSentence = String(text).split(/(?<=\.)\s+/)[0] || text;
-  const trimmed = firstSentence.replace(/\.$/, "").trim();
-  if (trimmed.length > 80) return trimmed.slice(0, 77).trimEnd() + "…";
-  return trimmed;
-}
-
 function getQuoteTotalsForDisplay(q) {
   return calcQuoteTotals(q || {}, isBrokerQuote(q) ? BROKER_MARKUP : undefined);
 }
@@ -161,102 +147,10 @@ function getImprintArtwork(imp) {
 
 
 
-function getPreferredGarmentNumber(li) {
-  const candidates = [
-    li?.supplierStyleNumber,
-    li?.resolvedStyleNumber,
-    li?.styleNumber,
-    li?.garmentNumber,
-    li?.productNumber,
-    li?.style,
-  ];
-
-  for (const candidate of candidates) {
-    const value = cleanText(candidate).toUpperCase();
-    if (!value) continue;
-    if (isWarehouseSku(value)) continue;
-    if (!looksLikeCode(value)) continue;
-    return value;
-  }
-
-  const productTitleTail = extractTrailingCode(li?.productTitle).toUpperCase();
-  if (productTitleTail && !isWarehouseSku(productTitleTail)) {
-    return productTitleTail;
-  }
-
-  const resolvedTitleTail = extractTrailingCode(li?.resolvedTitle).toUpperCase();
-  if (resolvedTitleTail && !isWarehouseSku(resolvedTitleTail)) {
-    return resolvedTitleTail;
-  }
-
-  return cleanText(li?.style).toUpperCase() || "GARMENT";
-}
-
-const DASH = "[-\u2013\u2014]"; // hyphen, en-dash, em-dash
-
-function scrubDescription(raw, garmentNumber, brand) {
-  if (!raw) return "";
-  let t = cleanText(raw);
-  // Strip leading "CODE - " / "CODE — "
-  t = t.replace(new RegExp(`^[A-Z0-9-]{2,20}\\s*${DASH}\\s*`, "i"), "");
-  // Strip trailing " - CODE" / " — CODE"
-  t = t.replace(new RegExp(`\\s*${DASH}\\s*[A-Z0-9-]{2,20}\\s*$`, "i"), "");
-  // Remove garment number appearing as a standalone token
-  if (garmentNumber) {
-    const escaped = garmentNumber.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
-    t = t.replace(new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`, "gi"), " ");
-  }
-  // Clean up stray leading/trailing dashes and spaces
-  t = t.replace(new RegExp(`^[\\s${DASH}]+|[\\s${DASH}]+$`, "g"), "").replace(/\s{2,}/g, " ").trim();
-  // If all that's left is just the brand name, it's not useful as a description
-  if (brand && t.toLowerCase() === brand.toLowerCase()) return "";
-  return t;
-}
-
-function getPreferredGarmentDescription(li) {
-  const garmentNumber = getPreferredGarmentNumber(li).toLowerCase();
-
-  const rawCandidates = [
-    li?.styleName,
-    li?.resolvedDescription,
-    li?.productDescription,
-    li?.product_description,
-    li?.garmentName,
-    li?.productTitle,
-    li?.resolvedTitle,
-    li?.description,
-    li?.displayName,
-    li?.title,
-  ];
-
-  const brand = cleanText(li?.brand).toLowerCase();
-
-  for (const raw of rawCandidates) {
-    const candidate = scrubDescription(raw, garmentNumber, brand);
-    if (!candidate) continue;
-    const normalized = candidate.toLowerCase();
-    if (normalized === garmentNumber) continue;
-    if (looksLikeCode(candidate)) continue;
-    if (["shirt", "garment", "tee"].includes(normalized)) continue;
-    return candidate;
-  }
-
-  return "";
-}
-
-function getGarmentHeader(li) {
-  const number = getPreferredGarmentNumber(li);
-  // Shop's custom title wins over resolved/supplier fields — see
-  // src/lib/quotes/garmentTitle.js.
-  const custom = customGarmentHeader(li, number);
-  if (custom) return custom;
-  const storedName = cleanText(li?.productName || "");
-  const rawDescription = (storedName && !looksLikeCode(storedName))
-    ? storedName
-    : getPreferredGarmentDescription(li);
-  const description = trimToShortTitle(rawDescription);
-  return description ? `${number} - ${description}` : number;
-}
+// The line-item header is built by the ONE shared resolver in
+// src/lib/quotes/garmentTitle.js so the customer QuotePayment page and the
+// PDF read identically to this admin view — no forked copies to drift.
+const getGarmentHeader = resolveGarmentHeader;
 
 function getGarmentMeta(li) {
   const parts = [];

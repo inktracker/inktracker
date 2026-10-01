@@ -34,9 +34,8 @@ import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import OnlinePaymentPanel, { PaidNotice, readPaidReturn } from "@/components/payment/OnlinePaymentPanel";
 import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
-import { customGarmentHeader, isSpecDump, brandStyleCategoryHeader } from "@/lib/quotes/garmentTitle";
+import { resolveGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { cardSurchargeNote } from "@/lib/payment/cardSurcharge";
-import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 
 // Proof-grid tile. PDFs get a static tile instead of a live <object> embed —
 // an embedded PDF thumbnail downloads the whole file per tile AND renders the
@@ -95,85 +94,11 @@ function ProofThumb({ art, onOpen }) {
 
 
 
-function getPreferredGarmentNumber(li) {
-  const candidates = [
-    li?.supplierStyleNumber,
-    li?.resolvedStyleNumber,
-    li?.styleNumber,
-    li?.garmentNumber,
-    li?.productNumber,
-  ];
-
-  for (const candidate of candidates) {
-    const value = cleanText(candidate).toUpperCase();
-    if (!value) continue;
-    if (isWarehouseSku(value)) continue;
-    if (!looksLikeCode(value)) continue;
-    return value;
-  }
-
-  const productTitleTail = extractTrailingCode(li?.productTitle);
-  if (productTitleTail && !isWarehouseSku(productTitleTail)) {
-    return productTitleTail;
-  }
-
-  const resolvedTitleTail = extractTrailingCode(li?.resolvedTitle);
-  if (resolvedTitleTail && !isWarehouseSku(resolvedTitleTail)) {
-    return resolvedTitleTail;
-  }
-
-  return cleanText(li?.style) || "Garment";
-}
-
-function getPreferredGarmentDescription(li) {
-  const candidates = [
-    cleanText(li?.resolvedDescription),
-    cleanText(li?.productDescription),
-    cleanText(li?.product_description),
-    cleanText(li?.garmentName),
-    cleanText(li?.styleName),
-    cleanText(li?.description),
-    stripTrailingCode(li?.productTitle),
-    stripTrailingCode(li?.resolvedTitle),
-    cleanText(li?.title),
-    cleanText(li?.displayName),
-  ];
-
-  const garmentNumber = getPreferredGarmentNumber(li).toLowerCase();
-
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const normalized = candidate.toLowerCase();
-
-    if (normalized === garmentNumber) continue;
-    if (looksLikeCode(candidate)) continue;
-    if (normalized === "shirt") continue;
-    if (normalized === "garment") continue;
-    // Supplier catalogs put the full marketing paragraph in these fields; it's
-    // not a name. Skip it so the header falls back to a clean "Brand Style#".
-    if (isSpecDump(candidate)) continue;
-
-    // Strip trailing style number from descriptions like "Comfort Colors — 1717"
-    const stripped = candidate.replace(/\s*[—–-]\s*\d{3,5}[A-Z]?\s*$/i, "").trim();
-    if (stripped && stripped.toLowerCase() !== garmentNumber) return stripped;
-    if (stripped) return stripped;
-  }
-
-  return ""; // no concise name — getGarmentHeader renders "Brand Style#"
-}
-
-function getGarmentHeader(li) {
-  const number = getPreferredGarmentNumber(li);
-  // Shop's custom title wins over resolved/supplier fields — see
-  // src/lib/quotes/garmentTitle.js.
-  const custom = customGarmentHeader(li, number);
-  if (custom) return custom;
-  const description = getPreferredGarmentDescription(li);
-  // Concise supplier name → "STYLE - Name"; otherwise a clean "Brand STYLE"
-  // (the full spec paragraph never becomes the header). The Brand/Color line
-  // below carries the brand regardless.
-  return description ? `${number} - ${description}` : brandStyleCategoryHeader(cleanText(li?.brand), number, li?.category);
-}
+// The customer line-item header is built by the ONE shared resolver so this
+// page reads identically to the admin quote (QuoteDetailModal) — Joe,
+// 2026-10-01: "have it match how the admin quotes read." All header logic
+// lives in src/lib/quotes/garmentTitle.js; nothing is forked here.
+const getGarmentHeader = resolveGarmentHeader;
 
 function getLineItemPricing(li, quote) {
   const qty = getQty(li);
