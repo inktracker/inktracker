@@ -42,10 +42,12 @@ let existingAccounts: Any[] = [];
 let accountOnRead: Any = { id: "acct_1", charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements: { currently_due: [] } };
 let postImpl: ((path: string, params: Any, opts: Any) => Promise<Any>) | null = null;
 let oauthAccountId = "acct_existing";
+let checkoutNow: Any = null;
 
 function fakeStripe(calls: StripeCall[] = [], live = true) {
   return {
     live,
+    deauthorize: () => Promise.resolve({}),
     oauthToken: (code: string) => {
       calls.push({ method: "OAUTH", path: "/oauth/token", params: { code } });
       return code === "ac_good"
@@ -55,6 +57,7 @@ function fakeStripe(calls: StripeCall[] = [], live = true) {
     get: (path: string, params?: Any, opts?: Any) => {
       calls.push({ method: "GET", path, params, opts });
       if (path === "/v1/accounts") return Promise.resolve({ data: existingAccounts, has_more: false });
+      if (path.startsWith("/v1/checkout/sessions/")) return checkoutNow ? Promise.resolve(checkoutNow) : Promise.reject(Object.assign(new Error("404"), { status: 404 }));
       return Promise.resolve(accountOnRead);
     },
     post: (path: string, params?: Any, opts?: Any) => {
@@ -294,7 +297,7 @@ Deno.test("payinSession: a Checkout ON the shop's account for the LIVE QuickBook
   // 2.99% of $1,499.01 = $44.82; Stripe 2.9% + 30¢ = $43.77 → InkTracker $1.05.
   assertEquals(cs.params.payment_intent_data.application_fee_amount, 105);
   assertEquals(cs.params.customer_email, "buyer@tahoegift.com");
-  assertEquals(cs.params.success_url, `https://www.inktracker.app/QuotePayment?id=${QUOTE_ID}&token=tok&paid=card`);
+  assertEquals(cs.params.success_url, `https://www.inktracker.app/QuotePayment?id=${QUOTE_ID}&token=tok&paid=card&session_id={CHECKOUT_SESSION_ID}`);
 });
 
 Deno.test("payinSession: bank → us_bank_account and the bank fee; a shop without ACH gets a plain message", async () => {
@@ -467,4 +470,30 @@ Deno.test("checkout asks Stripe to email the customer a receipt", async () => {
   const calls: StripeCall[] = [];
   await call(withQuote({ ...ACTIVE, enabled: true }), "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls);
   assertEquals(calls.find((c) => c.path === "/v1/checkout/sessions")!.params.payment_intent_data.receipt_email, "buyer@tahoegift.com");
+});
+
+Deno.test("paid return: confirmed only for a COMPLETE checkout of THIS document, on the shop's account", async () => {
+  const fake = withQuote({ ...ACTIVE, enabled: true });
+  const ask = async (sessionId: string) => (await (await call(fake, "", { action: "paidStatus", id: QUOTE_ID, token: "tok", sessionId })).json());
+  checkoutNow = { id: "cs_live_abc", client_reference_id: QUOTE_ID, status: "complete", payment_status: "paid" };
+  try {
+    assertEquals(await ask("cs_live_abc"), { confirmed: true, state: "paid" });
+    checkoutNow = { ...checkoutNow, payment_status: "unpaid" }; // bank, clearing
+    assertEquals(await ask("cs_live_abc"), { confirmed: true, state: "processing" });
+    checkoutNow = { ...checkoutNow, client_reference_id: "someone-elses-quote" };
+    assertEquals(await ask("cs_live_abc"), { confirmed: false });
+    checkoutNow = { id: "cs_live_abc", client_reference_id: QUOTE_ID, status: "open", payment_status: "unpaid" };
+    assertEquals(await ask("cs_live_abc"), { confirmed: false });
+    assertEquals(await ask(""), { confirmed: false }); // a typed ?paid=card with no session
+    assertEquals(await ask("{CHECKOUT_SESSION_ID}"), { confirmed: false });
+    assertEquals((await call(fake, "", { action: "paidStatus", id: QUOTE_ID, token: "nope", sessionId: "cs_live_abc" })).status, 404);
+  } finally {
+    checkoutNow = null;
+  }
+});
+
+Deno.test("test mode: TEST/DEMO in the JOB TITLE counts on the pay page too (same answer as qbSync)", async () => {
+  const fake = withQuote({ ...ACTIVE, enabled: true, stripe_livemode: false }, { job_title: "DEMO hoodies" });
+  const j = await (await call(fake, "", { action: "payRail", id: QUOTE_ID, token: "tok" }, undefined, [], false)).json();
+  assertEquals(j.rail, "processor");
 });

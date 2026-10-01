@@ -20,6 +20,8 @@ export type StripeApi = {
   post: (path: string, params?: Any, opts?: StripeOpts) => Promise<Any>;
   /** OAuth: trade the code from "connect my existing Stripe account" for its id. */
   oauthToken: (code: string) => Promise<Any>;
+  /** Disconnect a shop's Stripe account from InkTracker's platform. */
+  deauthorize: (accountId: string, clientId: string) => Promise<Any>;
   live: boolean;
 };
 
@@ -72,8 +74,20 @@ export function stripeApi(env: (k: string) => string | undefined, fetchImpl: typ
     }
     return j;
   };
+  const deauthorize = async (accountId: string, clientId: string) => {
+    if (!key) throw new StripeError("STRIPE_CONNECT_SECRET_KEY is not set", 500);
+    const res = await fetchImpl("https://connect.stripe.com/oauth/deauthorize", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: formEncode({ client_id: clientId, stripe_user_id: accountId }),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new StripeError(`Stripe deauthorize → ${res.status}: ${text.slice(0, 300)}`, res.status);
+    return text ? JSON.parse(text) : {};
+  };
   return {
     oauthToken,
+    deauthorize,
     live: key.startsWith("sk_live_") || key.startsWith("rk_live_"),
     get: (p, q, o) => call("GET", p, q, o),
     post: (p, b, o) => call("POST", p, b, o),

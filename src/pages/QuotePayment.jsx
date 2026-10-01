@@ -1090,7 +1090,12 @@ export default function QuotePayment() {
               subLabel = "You'll see the exact amount due, including sales tax, before you pay.";
             }
 
-            if (onlinePay && paidReturn) return <PaidNotice method={paidReturn} />;
+            if (onlinePay && paidReturn) {
+              return (
+                <PaidNotice docType="quote" id={quote.id} token={publicToken} paid={paidReturn}
+                  fallback={<OnlinePaymentPanel docType="quote" id={quote.id} token={publicToken} />} />
+              );
+            }
             if (showPayChoice) {
               return (
                 <OnlinePaymentPanel

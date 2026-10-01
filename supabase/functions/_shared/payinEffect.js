@@ -138,6 +138,7 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     // payin.created_at never changes, so re-writing it is harmless; only
     // written when known so an event without it can't blank it.
     ...(event.paidAt ? { paid_at: event.paidAt } : {}),
+    ...(typeof event.livemode === "boolean" ? { livemode: event.livemode } : {}),
   };
 
   const label = docNumber(quote) ?? (md.quote_number || null);

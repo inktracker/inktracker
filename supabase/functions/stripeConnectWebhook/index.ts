@@ -136,8 +136,11 @@ function opsAlert(message: string, context: Record<string, unknown> = {}) {
  * books. Allowed only on purpose (STRIPE_TEST_BOOKS_TO_QB=true, e.g. a shop
  * connected to a QuickBooks sandbox company).
  */
-function booksAllowed(deps: Deps): boolean {
-  return deps.stripe.live || flagOn(deps.env("STRIPE_TEST_BOOKS_TO_QB"));
+function booksAllowed(deps: Deps, livemode?: boolean | null): boolean {
+  // The money's own mode wins: a TEST payment recorded before the live key
+  // went in must never be booked by a later (live) sweep.
+  const live = typeof livemode === "boolean" ? livemode : deps.stripe.live;
+  return live || flagOn(deps.env("STRIPE_TEST_BOOKS_TO_QB"));
 }
 const TEST_MODE_NOT_BOOKED = "Stripe test mode: not recorded in QuickBooks";
 
@@ -179,7 +182,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     .eq("processor_payin_id", payinId)
     .is("qb_payment_id", null)
     .or(`qb_posting_at.is.null,qb_posting_at.lt."${staleBefore}"`)
-    .select("processor_payin_id, shop_owner, qb_invoice_id, amount_cents, platform_fee_cents, method, pay_kind, last_event_at, paid_at, quote_id, invoice_id, qb_post_notified_at");
+    .select("processor_payin_id, shop_owner, qb_invoice_id, amount_cents, platform_fee_cents, method, pay_kind, last_event_at, paid_at, quote_id, invoice_id, qb_post_notified_at, livemode");
   if (claimErr) throw new Error(`ledger claim failed: ${claimErr.message}`);
   const row = rows?.[0];
   if (!row) return "not_claimed";
@@ -204,7 +207,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     await admin.from("processor_payments").update({ qb_post_notified_at: now.toISOString() }).eq("processor_payin_id", payinId);
   };
 
-  if (!booksAllowed(deps)) {
+  if (!booksAllowed(deps, row.livemode)) {
     await release({ qb_post_error: TEST_MODE_NOT_BOOKED });
     return "test_mode";
   }
@@ -302,7 +305,9 @@ export async function processPayout(deps: Deps, accountId: string, payoutId: str
   const { data: account } = await admin.from("processor_accounts")
     .select("shop_owner, merchant_id, qb_bank_account_id, qb_fee_account_id")
     .eq("merchant_id", accountId).maybeSingle();
-  if (!account) { opsAlert(`payout ${payoutId} for Stripe account ${accountId} that no shop owns`); return "unknown_merchant"; }
+  // A Stripe account no shop owns (e.g. a shop that deleted InkTracker):
+  // its payouts are none of our business — note it, don't page anyone.
+  if (!account) { console.warn(`[stripeConnectWebhook] payout ${payoutId} for Stripe account ${accountId} that no shop owns — ignored`); return "unknown_merchant"; }
   const po = await deps.stripe.get(`/v1/payouts/${encodeURIComponent(payoutId)}`, undefined, { account: accountId });
   if (!po?.id) return "no_payout";
   const payout = {
@@ -326,6 +331,7 @@ export async function processPayout(deps: Deps, accountId: string, payoutId: str
       net_cents: Number.isInteger(payout.amountCents) ? payout.amountCents : 0,
       payout_date: payoutDate,
       status: payout.status,
+      ...(typeof po.livemode === "boolean" ? { livemode: po.livemode } : {}),
     }, { onConflict: "processor_payout_id" });
     if (error) throw new Error(`payout row write failed: ${error.message}`);
   }
@@ -333,7 +339,7 @@ export async function processPayout(deps: Deps, accountId: string, payoutId: str
   // Stripe test mode: recorded, never booked into the shop's real books, and
   // no "needs recording" alerts for test money. (review_notified_at keeps the
   // nightly sweep from picking it up again.)
-  if (!booksAllowed(deps)) {
+  if (!booksAllowed(deps, typeof po.livemode === "boolean" ? po.livemode : null)) {
     await admin.from("processor_payouts").update({ qb_post_error: TEST_MODE_NOT_BOOKED, review_notified_at: now.toISOString(), updated_at: now.toISOString() }).eq("processor_payout_id", payoutId);
     return "test_mode";
   }
@@ -579,7 +585,9 @@ export async function applyPayinEvent(deps: Deps, event: Any): Promise<{ kind: s
   const { data: ledger } = await admin.from("processor_payments")
     .select("status, method, qb_payment_id, quote_id, invoice_id, qb_invoice_id").eq("processor_payin_id", event.payinId).maybeSingle();
 
-  const fee = event.method ? platformFeeCents(event.method, event.amountCents) : 0;
+  // What Stripe actually charged when we know it; the price table otherwise.
+  const fee = Number.isInteger(event.platformFeeCents) ? event.platformFeeCents
+    : event.method ? platformFeeCents(event.method, event.amountCents) : 0;
   const plan: Any = planPayinEffect({ event, account, quote: doc, ledger, platformFeeCents: fee });
 
   if (plan.alertOps) opsAlert(plan.alertOps, { payinId: event.payinId, reject: plan.reject });
@@ -903,7 +911,7 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
   //    last attempt (each attempt bumps updated_at) so one stuck row can't
   //    starve the rest.
   const { data: pending } = await admin.from("processor_payments")
-    .select("processor_payin_id, status, method")
+    .select("processor_payin_id, status, method, livemode")
     .is("qb_payment_id", null)
     .not("qb_invoice_id", "is", null)
     .in("status", [...BOOKABLE_STATUSES])
@@ -912,6 +920,7 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
     .limit(100);
   for (const r of pending ?? []) {
     if (r.status === "processing" && r.method !== "card") continue; // bank not cleared yet
+    if (!booksAllowed(deps, r.livemode)) continue; // test money: never booked
     out.payments++;
     try {
       if ((await postQbPaymentOnce(deps, String(r.processor_payin_id))).startsWith("posted")) out.paymentsBooked++;

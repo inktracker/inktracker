@@ -34,6 +34,10 @@ While `STRIPE_CONNECT_SECRET_KEY` is a **test** key:
   `STRIPE_TEST_BOOKS_TO_QB=true` is set on purpose (a shop connected to a
   QuickBooks sandbox company).
 
+Every payment and payout row also records its own mode (`livemode`), and
+test money is never booked — even by a nightly sweep after the live key
+goes in.
+
 **Going live:** every account remembers its Stripe mode
 (`processor_accounts.stripe_livemode`). Under the live key a test-mode
 account reads as "not set up" (rail = QuickBooks, no false "disconnected"
@@ -111,6 +115,15 @@ Rules that keep it safe:
   invoice. The shop is told, and the payout that carries it is left for
   the shop to record.
 * **Broker invoices always stay on QuickBooks.**
+* **"Payment received" is confirmed, not assumed.** Checkout returns with
+  `session_id`; the pay page asks `paidStatus`, which reads that session on
+  the shop's account and checks it completed for this document. A typed
+  `?paid=card` just shows the pay options again.
+* **The ledger's fee is what Stripe charged** (`application_fee_amount` on
+  the PaymentIntent), not a re-calculation.
+* **Deleting a shop disconnects its Stripe account** from InkTracker
+  (`/oauth/deauthorize`, needs `STRIPE_CONNECT_CLIENT_ID`); if that can't
+  run, the purge result says to remove it in Stripe Connect by hand.
 
 ### When is an invoice "paid"?
 
@@ -231,6 +244,8 @@ Stripe test cards: `4242 4242 4242 4242` (success), `4000 0000 0000 0002`
 - [ ] Checkout's `receipt_email` gets the customer a Stripe receipt
 - [ ] "I already have a Stripe account": the OAuth round trip links it; a second shop can't link the same account
 - [ ] A real (non-TEST) quote sent while in test mode still carries its QuickBooks pay link
+- [ ] `/oauth/deauthorize` disconnects a Standard account InkTracker CREATED (not only OAuth-connected ones)
+- [ ] success_url's `{CHECKOUT_SESSION_ID}` arrives filled in and `paidStatus` confirms it
 
 **Happy paths**
 - [ ] Card, full invoice: charge = live Balance; ledger `succeeded`; QB Payment gross into Undeposited Funds, method "Credit Card"; quote → order; shop notified once

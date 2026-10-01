@@ -104,6 +104,9 @@ create table if not exists public.processor_payments (
   processor_payout_id   text,
   last_event_type       text,
   last_event_at         timestamptz,
+  -- Stripe mode the money moved in (false = test). Test payments are never
+  -- booked into a shop's QuickBooks, before or after the live key goes in.
+  livemode              boolean,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()
 );
@@ -130,6 +133,8 @@ create table if not exists public.processor_payouts (
   qb_post_error         text,
   -- When the shop was told this payout needs recording by hand (once).
   review_notified_at    timestamptz,
+  -- Stripe mode of the payout (false = test; never booked).
+  livemode              boolean,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()
 );

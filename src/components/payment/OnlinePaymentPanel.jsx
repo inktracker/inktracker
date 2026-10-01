@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, CreditCard, Landmark, Loader2, Lock } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
 
@@ -11,9 +11,26 @@ import { base44 } from "@/api/supabaseClient";
 
 const fmt = (cents) => `$${(Number(cents || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/** What the customer sees when Stripe sends them back after paying. */
-export function PaidNotice({ method }) {
-  const bank = method === "ach";
+/**
+ * What the customer sees when Stripe sends them back after paying. Shown only
+ * once the server confirms that Checkout really completed for THIS document
+ * (a URL alone proves nothing); otherwise the pay options come back.
+ */
+export function PaidNotice({ docType, id, token, paid, fallback = null }) {
+  const [state, setState] = useState("checking"); // checking | paid | processing | unconfirmed
+  useEffect(() => {
+    let alive = true;
+    base44.functions.invoke("stripePayments", { action: "paidStatus", docType, id, token, sessionId: paid?.sessionId })
+      .then((r) => { if (alive) setState(r?.data?.confirmed ? r.data.state : "unconfirmed"); })
+      .catch(() => { if (alive) setState("unconfirmed"); });
+    return () => { alive = false; };
+  }, [docType, id, token, paid?.sessionId]);
+
+  if (state === "checking") {
+    return <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Checking your payment…</div>;
+  }
+  if (state === "unconfirmed") return fallback;
+  const bank = state === "processing";
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 flex items-start gap-3">
       <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
@@ -29,11 +46,13 @@ export function PaidNotice({ method }) {
   );
 }
 
-/** ?paid=card|ach on a pay page after Stripe Checkout, else null. */
+/** { method, sessionId } from ?paid=card|ach&session_id=… after Stripe Checkout, else null. */
 export function readPaidReturn() {
   try {
-    const v = new URLSearchParams(window.location.search).get("paid");
-    return v === "card" || v === "ach" ? v : null;
+    const q = new URLSearchParams(window.location.search);
+    const method = q.get("paid");
+    if (method !== "card" && method !== "ach") return null;
+    return { method, sessionId: q.get("session_id") || "" };
   } catch {
     return null;
   }

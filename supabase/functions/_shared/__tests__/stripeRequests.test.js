@@ -61,7 +61,7 @@ describe("buildCheckoutSession", () => {
     expect(params.customer_email).toBe("buyer@tahoegift.com");
     // New Stripe accounts don't email receipts by default; ask per payment.
     expect(params.payment_intent_data.receipt_email).toBe("buyer@tahoegift.com");
-    expect(params.success_url).toBe(`${page}&paid=card`);
+    expect(params.success_url).toBe(`${page}&paid=card&session_id={CHECKOUT_SESSION_ID}`);
     expect(params.cancel_url).toBe(page);
     expect(idempotencyKey).toMatch(/^it-checkout:q-uuid:3815:112648:card:w\d+$/);
     expect(params.expires_at * 1000 - now).toBeGreaterThanOrEqual(60 * 60 * 1000);
@@ -72,7 +72,7 @@ describe("buildCheckoutSession", () => {
     expect(params.payment_method_types).toEqual(["us_bank_account"]);
     expect(params.payment_method_options).toEqual({ us_bank_account: { verification_method: "automatic" } });
     expect(params.payment_intent_data.application_fee_amount).toBe(647);
-    expect(params.success_url).toBe(`${page}&paid=ach`);
+    expect(params.success_url).toBe(`${page}&paid=ach&session_id={CHECKOUT_SESSION_ID}`);
   });
 
   it("no fee line when InkTracker's fee is 0 (small card payment); no bad email", () => {

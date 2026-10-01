@@ -85,6 +85,11 @@ export function paymentIntentToEvent(kind, pi, accountId, { reversalCents, occur
     // When the customer paid — the QuickBooks date, even for a bank payment
     // that is only booked once it clears days later.
     paidAt: isoFromUnix(pi?.created),
+    // Test or live money (never book test money into a shop's QuickBooks).
+    ...(typeof pi?.livemode === "boolean" ? { livemode: pi.livemode } : {}),
+    // InkTracker's fee as Stripe actually charged it (null on the
+    // PaymentIntent = no fee), not re-derived from today's price table.
+    ...(pi && "application_fee_amount" in pi ? { platformFeeCents: Number.isInteger(pi.application_fee_amount) ? pi.application_fee_amount : 0 } : {}),
     ...(Number.isInteger(reversalCents) ? { reversalCents } : {}),
   };
 }

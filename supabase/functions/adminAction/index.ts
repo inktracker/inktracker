@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { checkAdminTargetAccess, isAssignableRole } from "../_shared/adminTargetAccess.js";
 import { authorizeShopPurge, SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, ARTWORK_SOURCE_TABLES, extractArtworkPaths, purgeBlockedByPayments } from "../_shared/shopPurge.js";
 import Stripe from "npm:stripe@14.25.0";
+import { stripeApi } from "../_shared/stripeApi.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -640,6 +641,28 @@ serve(async (req) => {
       // ── APPLY: delete rows, storage, Stripe customer, profiles, auth user ──
       const artworkPaths = await collectArtwork(); // BEFORE deleting the rows
 
+      // Disconnect the shop's Stripe account from InkTracker's platform: once
+      // the shop is gone InkTracker must not keep access to its Stripe
+      // account (or keep receiving its events). The account itself stays the
+      // shop's. Best-effort, and never blocks the deletion; if it can't be
+      // done here, say so in the result so a person removes it in Stripe
+      // (Connect → Accounts).
+      let stripeDisconnect: string = "none";
+      if (payAcct?.merchant_id) {
+        const clientId = Deno.env.get("STRIPE_CONNECT_CLIENT_ID") ?? "";
+        if (!clientId) {
+          stripeDisconnect = `manual: no STRIPE_CONNECT_CLIENT_ID — remove ${payAcct.merchant_id} in Stripe Connect`;
+        } else {
+          try {
+            await stripeApi((k) => Deno.env.get(k)).deauthorize(String(payAcct.merchant_id), clientId);
+            stripeDisconnect = "disconnected";
+          } catch (e) {
+            stripeDisconnect = `manual: ${(e as Error).message?.slice(0, 200)} — remove ${payAcct.merchant_id} in Stripe Connect`;
+            console.error(`[adminAction] Stripe disconnect failed for ${target}: ${(e as Error).message}`);
+          }
+        }
+      }
+
       const deleted: Record<string, number | string> = {};
       for (const { table, column } of SHOP_PURGE_TABLES) {
         const { error } = await adminClient.from(table).delete().eq(column, target);
@@ -720,6 +743,7 @@ serve(async (req) => {
         buckets: bucketsCleared,
         stripeCustomerId,
         stripeDeleted,
+        stripeDisconnect,
       });
     }
 

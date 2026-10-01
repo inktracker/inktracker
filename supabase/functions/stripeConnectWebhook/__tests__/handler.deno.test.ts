@@ -89,6 +89,7 @@ function setup({ qbConnected = true, qbPostFails = false, balance = 1643, payout
     stripe: {
       live,
       oauthToken: () => Promise.reject(new Error("the webhook never connects accounts")),
+      deauthorize: () => Promise.reject(new Error("the webhook never disconnects accounts")),
       get: (path: string, query?: Any, opts?: Any) => {
         stripeCalls.push({ path, query, opts });
         if (path === "/v1/payment_intents/search") {
@@ -657,4 +658,34 @@ Deno.test("backstop finds InkTracker payments by SEARCH (a busy account's other 
   assertEquals(searches.length, 2); // quotes and invoices
   assert(searches.every((c: Any) => c.opts.account === ACCT && /created>=\d+/.test(c.query.query)));
   assertEquals((deps as Any).stripeCalls.filter((c: Any) => c.path === "/v1/payment_intents").length, 0);
+});
+
+Deno.test("a TEST payment recorded before go-live is NEVER booked by a later live sweep", async () => {
+  const { db, deps, posted } = setup({ live: false });
+  await handle(await request({ ...evt("payment_intent.succeeded", pi({ livemode: false })), livemode: false }), deps);
+  assertEquals(db.tables.processor_payments[0].livemode, false);
+  // The live key goes in; the nightly sweep runs over the same ledger.
+  (deps as Any).stripe.live = true;
+  db.tables.processor_payments[0].updated_at = "2026-10-01T00:00:00Z";
+  await sweep(deps);
+  assertEquals(await postQbPaymentOnce(deps, "pi_1"), "test_mode");
+  assertEquals(posted.length, 0);
+});
+
+Deno.test("the ledger keeps the fee Stripe ACTUALLY charged, not today's price table", async () => {
+  const { db, deps } = setup();
+  await handle(await request(evt("payment_intent.succeeded", pi({ application_fee_amount: 99, livemode: true }))), deps);
+  assertEquals(db.tables.processor_payments[0].platform_fee_cents, 99);
+  assertEquals(db.tables.processor_payments[0].livemode, true);
+  const none = setup();
+  await handle(await request(evt("payment_intent.succeeded", pi({ application_fee_amount: null }))), none.deps);
+  assertEquals(none.db.tables.processor_payments[0].platform_fee_cents, 0);
+});
+
+Deno.test("payouts on a Stripe account no shop owns (a deleted shop) are ignored quietly", async () => {
+  const { db, deps } = setup({ payout: cleanPayout, bts: [chargeBt()] });
+  const r = await handle(await request({ ...evt("payout.paid", { id: "po_1" }), account: "acct_gone" }), deps);
+  assertEquals((await r.json()).payout, "unknown_merchant");
+  assertEquals(db.tables.processor_payouts.length, 0);
+  assertEquals(db.tables.notifications.length, 0);
 });

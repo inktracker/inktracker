@@ -109,7 +109,8 @@ export function buildCheckoutSession({ doc, docType, target, method, shopName, c
     metadata,
     client_reference_id: String(doc?.id ?? ""),
     customer_email: validEmail,
-    success_url: `${back}${join}paid=${method}`,
+    // Stripe fills in {CHECKOUT_SESSION_ID}; the page confirms it (paidStatus).
+    success_url: `${back}${join}paid=${method}&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: back,
     expires_at: expiresAt,
   });

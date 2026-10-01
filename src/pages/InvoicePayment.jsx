@@ -69,7 +69,8 @@ export default function InvoicePayment() {
             <CheckCircle2 className="w-4 h-4" /> This invoice is paid. Thank you!
           </div>
         ) : paidReturn ? (
-          <PaidNotice method={paidReturn} />
+          <PaidNotice docType="invoice" id={id} token={token} paid={paidReturn}
+            fallback={<OnlinePaymentPanel docType="invoice" id={id} token={token} />} />
         ) : (
           <OnlinePaymentPanel docType="invoice" id={id} token={token} />
         )}

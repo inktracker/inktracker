@@ -123,7 +123,9 @@ async function loadPublicDoc(admin: Any, body: Any) {
   const table = docType === "invoice" ? "invoices" : "quotes";
   const cols = docType === "invoice"
     ? "id, invoice_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, public_token, customer_name, paid, qb_tax_hold"
-    : "id, quote_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, broker_email, public_token, customer_name, customer_email, paid, qb_tax_hold";
+    // company + job_title: the test-mode TEST/DEMO check must see the same
+    // fields qbSync sees, or the two disagree on which way the customer pays.
+    : "id, quote_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, broker_email, public_token, customer_name, customer_email, company, job_title, paid, qb_tax_hold";
   const { data: doc } = await admin.from(table).select(cols).eq("id", id).maybeSingle();
   // Same answer for "no such doc" and "wrong token" — don't confirm ids exist.
   if (!doc || !safeEquals(String(body.token ?? ""), String(doc.public_token ?? ""))) return null;
@@ -302,6 +304,31 @@ async function payinSession(body: Any, deps: Deps) {
   return json(response);
 }
 
+/**
+ * Public: did this Checkout really pay? The pay page asks when Stripe sends
+ * the customer back (?paid=…&session_id=…) so "Payment received" is never
+ * shown on the strength of a URL anyone can type. The session must be on
+ * the shop's own account AND belong to this document.
+ */
+async function paidStatus(body: Any, deps: Deps) {
+  const found = await loadPublicDoc(deps.admin, body);
+  if (!found) return json({ error: "Not found" }, 404);
+  const { doc } = found;
+  const sessionId = String(body.sessionId ?? "");
+  if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(sessionId)) return json({ confirmed: false });
+  const account = await loadAccount(deps.admin, doc.shop_owner, deps.stripe.live);
+  if (!account?.merchant_id) return json({ confirmed: false });
+  let cs: Any;
+  try {
+    cs = await deps.stripe.get(`/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, undefined, { account: account.merchant_id });
+  } catch {
+    return json({ confirmed: false });
+  }
+  if (String(cs?.client_reference_id ?? "") !== String(doc.id) || cs?.status !== "complete") return json({ confirmed: false });
+  // Card: paid now. Bank: submitted, clears in days.
+  return json({ confirmed: true, state: cs.payment_status === "paid" ? "paid" : "processing" });
+}
+
 export async function handle(req: Request, deps: Deps) {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const body = await req.json().catch(() => ({}));
@@ -309,6 +336,7 @@ export async function handle(req: Request, deps: Deps) {
 
   if (action === "payinSession") return payinSession(body, deps);
   if (action === "payRail") return payRail(body, deps);
+  if (action === "paidStatus") return paidStatus(body, deps);
 
   const token = body.accessToken || req.headers.get("Authorization")?.replace("Bearer ", "") || "";
   if (!token) return json({ error: "Unauthorized" }, 401);
