@@ -291,6 +291,7 @@ export function buildOrderInsertFromQuote(quote, orderId) {
 
   return {
     order_id:           orderId,
+    quote_id:           quote.quote_id || "",
     shop_owner:         quote.shop_owner,
     broker_id:          quote.broker_id || "",
     broker_name:        quote.broker_name || "",
@@ -300,12 +301,29 @@ export function buildOrderInsertFromQuote(quote, orderId) {
     // Denormalize company so order surfaces render company-first (matches the
     // frontend buildOrderFromQuote). See feedback_company_name_first.
     company:            quote.company || "",
+    customer_email:     quote.customer_email || "",
     broker_client_name: isBroker ? (quote.customer_name || "") : "",
     job_title:          quote.job_title || "",
     date:               quote.date,
     due_date:           quote.due_date || null,
     status:             "Art Approval",
     line_items:         quote.line_items,
+    // Setup/screen fees + one-off charges MUST ride quote → order, same as the
+    // frontend twin: the order's `total` (carried below) already includes
+    // them, and the completion invoice's buildQBInvoicePayload emits the
+    // "Setup & Screen Fees" line and per-charge lines from THESE fields.
+    // Dropping them made every ONLINE-PAID conversion (webhook/reconcile/
+    // deposit — this builder's only callers) produce a final QB invoice that
+    // silently under-billed by the setup + fees while the order total still
+    // included them (audit 2026-09-30). Parity pinned in
+    // orderBuilderParity.test.js. No live-recompute fallback here (no pricing
+    // engine server-side) — the saved stamp is the contract.
+    setup_total:            Number(quote.setup_total) || 0,
+    additional_charges:     quote.additional_charges ?? null,
+    // Reorder flag + screen-count override ride along so screen-availability
+    // counts committed screens correctly (frontend twin carries both).
+    is_reorder:             Boolean(quote.is_reorder),
+    setup_screens_override: Number.isInteger(quote.setup_screens_override) ? quote.setup_screens_override : null,
     notes:              quote.notes,
     rush_rate:          quote.rush_rate,
     extras:             quote.extras,

@@ -3431,12 +3431,18 @@ async function handleRecordPayment(
   const nowIso = new Date().toISOString();
   const qbBalance = Number(freshInvoice.Balance ?? 0);
   if (qbBalance === 0) {
-    // QB already paid — just sync local. No new Payment row to avoid double-counting.
-    await adminClient
+    // QB already paid — just sync local. No new Payment row to avoid
+    // double-counting. Same checked-write rule as the main path below: a
+    // swallowed error here reported "Local state synced" while the row
+    // stayed Unpaid.
+    const { error: syncErr } = await adminClient
       .from(table)
       .update({ paid: true, paid_date: nowIso, qb_synced_at: nowIso })
       .eq("id", row.id)
       .eq("shop_owner", shopOwnerEmail);
+    if (syncErr) {
+      throw new Error(`QuickBooks shows this invoice paid, but syncing InkTracker failed: ${syncErr.message}. Retry Mark as Paid.`);
+    }
     return {
       recorded: false,
       alreadyPaidInQb: true,
@@ -3483,11 +3489,24 @@ async function handleRecordPayment(
         }],
       });
 
-      await adminClient
+      // The local paid flip must be CHECKED: supabase-js doesn't throw, and a
+      // swallowed error here used to return (and CACHE, via withQbIdempotency)
+      // recorded:true — QB showed Paid while InkTracker stayed Unpaid, and a
+      // retry with the same deterministic key replayed the cached success
+      // without re-attempting the write (audit 2026-09-30). Throwing marks the
+      // idempotency key failed so a retry re-runs; the QB Payment above is
+      // safe to re-approach because the Balance re-read guard caps/skips an
+      // already-posted payment, and nightly reconcile remains the backstop.
+      const { error: paidErr } = await adminClient
         .from(table)
         .update({ paid: true, paid_date: nowIso, qb_synced_at: nowIso })
         .eq("id", row.id)
         .eq("shop_owner", shopOwnerEmail);
+      if (paidErr) {
+        throw new Error(
+          `Payment recorded in QuickBooks (Payment ${payment?.Payment?.Id ?? "?"}), but marking ${docLabel} paid in InkTracker failed: ${paidErr.message}. Retry Mark as Paid — the QB side will not double-post.`,
+        );
+      }
 
       return {
         recorded: true,

@@ -75,8 +75,37 @@ export async function convertQuoteToOrder(supabase, quote) {
   }
 
   // We won the claim. Insert the order row now.
+  //
+  // CRITICAL: the insert result must be checked — supabase-js does NOT throw
+  // on a DB error. The claim above already committed converted_order_id, so a
+  // silently failed insert left a PAID quote marked "Converted to Order" with
+  // no order row, a success log, and a "converted to order ORD-…" email for an
+  // order that doesn't exist — permanently, because the claim gate
+  // (is converted_order_id null) never matches again and reconcile's cascade
+  // looks up an order that isn't there (audit 2026-09-30). On failure, roll
+  // the claim back (scoped to OUR orderId so a concurrent winner is untouched)
+  // and throw, so the webhook releases its event claim and QB redelivers.
   const orderRow = buildOrderInsertFromQuote(quote, orderId);
-  await supabase.from("orders").insert(orderRow);
+  const { error: insertErr } = await supabase.from("orders").insert(orderRow);
+  if (insertErr) {
+    const { error: rollbackErr } = await supabase
+      .from("quotes")
+      .update({
+        status:             quote.status ?? "Approved",
+        converted_order_id: null,
+        converted_at:       null,
+        deposit_paid:       Boolean(quote.deposit_paid),
+      })
+      .eq("id", quote.id)
+      .eq("shop_owner", quote.shop_owner)
+      .eq("converted_order_id", orderId);
+    if (rollbackErr) {
+      // Claim stuck AND order missing — the worst state. Make it loud; the
+      // thrown error below still prevents a false success/email.
+      console.error(`[convertQuoteToOrder] ROLLBACK FAILED for quote ${quote.id} (order ${orderId}): ${rollbackErr.message} — quote is claimed with no order row`);
+    }
+    throw new Error(`convertQuoteToOrder: orders.insert failed: ${insertErr.message}`);
+  }
 
   // Surface it on the shop's notification bell. convertQuoteToOrder is only
   // reached when the quote's invoice has been PAID (QB payment webhook, or a
