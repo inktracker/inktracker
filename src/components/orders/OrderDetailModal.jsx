@@ -50,7 +50,6 @@ import FloorModePanel from "./orderDetail/FloorModePanel";
 import OrderShippingSection from "./orderDetail/OrderShippingSection";
 import OrderJobCostSection from "./orderDetail/OrderJobCostSection";
 import OrderInvoiceActions from "./orderDetail/OrderInvoiceActions";
-import OrderUtilityActions from "./orderDetail/OrderUtilityActions";
 import OrderMessagesSection from "./orderDetail/OrderMessagesSection";
 import { useOrderShipping } from "./orderDetail/useOrderShipping";
 import { useOrderInvoice } from "./orderDetail/useOrderInvoice";
@@ -785,6 +784,16 @@ export default function OrderDetailModal({
         <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl space-y-2">
           <OrderInvoiceActions
             order={order}
+            liveOrder={liveOrder}
+            customer={customer}
+            shopName={shopName}
+            logoUrl={logoUrl}
+            copied={copied}
+            copyLink={copyLink}
+            onDelete={onDelete}
+            onSendToPartner={["shop", "admin", "manager"].includes(authUser?.role) && !readOnly ? () => setShowSendToPartner(true) : undefined}
+            onOrderFromAC={onOrderFromAC}
+            sourcePO={sourcePO}
             saving={saving}
             onRevert={onRevert}
             onAdvance={onAdvance}
@@ -806,24 +815,6 @@ export default function OrderDetailModal({
             onPrintTicket={() => setShowTicket(true)}
             onEditOrder={["shop", "admin", "manager"].includes(authUser?.role) ? () => setShowEditor(true) : undefined}
             editOrderDisabledReason={!canEditOrder ? (editTier.reason || (!showMoney ? "Editing recalculates pricing - not available with financials hidden." : (!managerCanAccess(authUser, "OrderEditing") ? "Order editing hasn't been enabled for your account - ask the shop owner." : null))) : null}
-            readOnly={readOnly}
-            reactivateHref={reactivateHref}
-          />
-
-          <OrderUtilityActions
-            order={order}
-            liveOrder={liveOrder}
-            customer={customer}
-            shopName={shopName}
-            logoUrl={logoUrl}
-            copied={copied}
-            copyLink={copyLink}
-            onOrderFromAC={onOrderFromAC}
-            sourcePO={sourcePO}
-            saving={saving}
-            onDelete={onDelete}
-            callAction={callAction}
-            onSendToPartner={["shop", "admin", "manager"].includes(authUser?.role) && !readOnly ? () => setShowSendToPartner(true) : undefined}
             readOnly={readOnly}
             reactivateHref={reactivateHref}
           />
