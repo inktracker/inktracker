@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Search, Download, Upload, RotateCcw, Loader2, FileText, Link2 } from "lucide-react";
+import { Search, Download, Upload, RotateCcw, Loader2, FileText, Link2, Send } from "lucide-react";
 import MockupCanvas from "../components/mockups/MockupCanvas";
 import PlacementSelect from "../components/shared/PlacementSelect";
 import { base44 } from "@/api/supabaseClient";
@@ -7,6 +7,8 @@ import { uploadFile } from "@/lib/uploadFile";
 import { notify } from "@/lib/notify";
 import { getShopPricingConfig, getDisplayName, getEnabledTechniques } from "../components/shared/pricing";
 import { shopScope } from "@/lib/shopScope";
+import { withMockupProof, countMockupProofs, proofRecipientEmail } from "@/lib/art/mockupProof";
+import { callArtProof } from "@/lib/art/artProofClient";
 // jspdf loaded on demand inside generateProofPDF below
 
 // Print-location options for the mockup. `value` MUST match a PRINT_AREAS
@@ -80,6 +82,16 @@ export default function Mockups() {
   // string = standalone (no link).
   const [selectedTargetKey, setSelectedTargetKey] = useState("");
   const [linking, setLinking] = useState(false);
+  // "link" | "send" while saving, so each button shows its own spinner.
+  const [linkMode, setLinkMode] = useState("");
+  // Replace the order's previous mockup (default) instead of stacking it.
+  const [replacePrevMockup, setReplacePrevMockup] = useState(true);
+  // Recipient override for "Send to customer"; blank = the order's contact.
+  const [sendTo, setSendTo] = useState("");
+  const [editingSendTo, setEditingSendTo] = useState(false);
+  // Arriving from an order's "Make a mockup" link (?order=<id>): preselect
+  // it once the picker has loaded.
+  const preselectRef = useRef(new URLSearchParams(window.location.search).get("order"));
   // Shop identity used by the Art Proof PDF header (logo + name) and
   // footer (website). Falls back to the proof rendering without those
   // accents when the load fails.
@@ -225,12 +237,22 @@ export default function Mockups() {
     return null;
   }
 
+  useEffect(() => {
+    const id = preselectRef.current;
+    if (!id || !orders.some((o) => o.id === id)) return;
+    preselectRef.current = null;
+    pickTargetToLink(`order:${id}`);
+  }, [orders]);
+
   // Picking a target: hydrate the proof fields from the order or quote
   // so the user doesn't have to retype customer/quote#/quantity/due-date.
   // Doesn't touch design fields (print sizes, colors, notes) — those
   // belong to the proof itself, not the underlying job.
   function pickTargetToLink(key) {
     setSelectedTargetKey(key);
+    setSendTo("");
+    setEditingSendTo(false);
+    setReplacePrevMockup(true);
     const target = resolveTarget(key);
     if (!target) return;
     const r = target.record;
@@ -701,57 +723,80 @@ export default function Mockups() {
     }
   }
 
-  // Generates the proof PDF, uploads it, and appends it to the selected
-  // order's selected_artwork so it shows up in the order's artwork panel
-  // during production. Doesn't replace previous proofs on the same order
-  // — additional proofs stack (the shop can manually remove old ones).
-  async function saveAndLinkProof() {
+  // Generates the proof PDF, uploads it, and attaches it to the selected
+  // order/quote's artwork (replacing the previous mockup unless the shop
+  // unticks that). With send=true it then emails the customer the proof to
+  // approve — same as "Send proof" on the order, so it becomes the next
+  // proof version and the approval follows it.
+  async function saveAndLinkProof({ send = false } = {}) {
     const target = resolveTarget(selectedTargetKey);
     if (!target) {
       notify.error("Pick an order or quote to link the proof to first.");
       return;
     }
     setLinking(true);
+    setLinkMode(send ? "send" : "link");
     try {
       const result = await generateProofPDF("blob");
       if (!result?.blob) throw new Error("Couldn't generate the proof PDF.");
       const file = new File([result.blob], result.filename, { type: "application/pdf" });
       const { path, file_url } = await uploadFile(file);
-      const r = target.record;
-      const next = [
-        ...(r.selected_artwork || []),
-        {
-          id: `proof-${Date.now()}`,
-          name: result.filename,
-          // Store BOTH the storage path (canonical, lets us re-sign on
-          // every view) and the legacy public URL (backward compat for
-          // anonymous/customer-facing reads while the bucket is still
-          // public). Once the bucket flips private, the path is the
-          // load-bearing field; file_url becomes stale.
-          path,
-          url: file_url,
-          file_url,
-          type: "proof",
-          uploaded_at: new Date().toISOString(),
-        },
-      ];
       const Entity = target.type === "order" ? base44.entities.Order : base44.entities.Quote;
-      const updated = await Entity.update(r.id, { selected_artwork: next });
+      // Re-read: the picker list can be minutes old, and writing its
+      // artwork back would drop files added to the job since.
+      const fresh = (await Entity.get(target.record.id)) || target.record;
+      const next = withMockupProof(fresh.selected_artwork, {
+        id: `proof-${Date.now()}`,
+        name: result.filename,
+        // Store BOTH the storage path (canonical, lets us re-sign on
+        // every view) and the legacy public URL (backward compat for
+        // anonymous/customer-facing reads while the bucket is still
+        // public). Once the bucket flips private, the path is the
+        // load-bearing field; file_url becomes stale.
+        path,
+        url: file_url,
+        file_url,
+        type: "proof",
+        uploaded_at: new Date().toISOString(),
+      }, { replace: replacePrevMockup });
+      const updated = await Entity.update(fresh.id, { selected_artwork: next });
       if (target.type === "order") {
         setOrders(prev => prev.map(o => (o.id === updated.id ? updated : o)));
       } else {
         setQuotes(prev => prev.map(q => (q.id === updated.id ? updated : q)));
       }
-      const label = r.order_id || r.quote_id || target.type;
-      notify.success(`Proof linked to ${label}.`);
+      const label = fresh.order_id || fresh.quote_id || target.type;
+      if (!send) {
+        notify.success(`Proof linked to ${label}.`);
+        return;
+      }
+      try {
+        const res = await callArtProof("send", { orderId: fresh.id, to: sendTo.trim() || undefined });
+        if (res?.order) setOrders(prev => prev.map(o => (o.id === res.order.id ? { ...o, ...res.order } : o)));
+        if (res?.emailed === false) {
+          notify.error("Proof saved, but the email didn't send", "Open the order and use Send proof to try again.");
+        } else {
+          notify.success(`Proof v${res.version} sent for approval`, `Emailed to ${res.sentTo}. You'll see their answer on ${label}.`);
+        }
+        setEditingSendTo(false);
+      } catch (err) {
+        // The mockup is attached either way; only the email failed.
+        notify.error(`Mockup saved to ${label}, but the proof didn't send`, err);
+      }
     } catch (err) {
       notify.error("Couldn't link the proof", err);
     } finally {
       setLinking(false);
+      setLinkMode("");
     }
   }
 
   const currentArtwork = artworks[view] || null;
+  const linkTarget = resolveTarget(selectedTargetKey);
+  const targetIsOrder = linkTarget?.type === "order";
+  const prevMockups = countMockupProofs(linkTarget?.record?.selected_artwork);
+  const defaultRecipient = targetIsOrder ? proofRecipientEmail(linkTarget.record) : "";
+  const recipient = sendTo.trim() || defaultRecipient;
 
   return (
     <div className="space-y-6">
@@ -1055,14 +1100,46 @@ export default function Mockups() {
               className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40">
               <FileText className="w-4 h-4" /> {generatingProof && !linking ? "Generating..." : "Generate Art Proof PDF"}
             </button>
+            {linkTarget && prevMockups > 0 && (
+              <label className="flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" checked={replacePrevMockup} onChange={e => setReplacePrevMockup(e.target.checked)} />
+                Replace the previous mockup on this {linkTarget.type}
+              </label>
+            )}
+            {targetIsOrder && (
+              <div className="space-y-1.5">
+                <button
+                  onClick={() => saveAndLinkProof({ send: true })}
+                  disabled={!garmentImg || generatingProof || linking || !recipient.includes("@")}
+                  title={!recipient.includes("@") ? "Add the customer's email to send the proof" : "Attach this mockup to the order and email it to the customer to approve"}
+                  className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {linkMode === "send" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {linkMode === "send" ? "Sending..." : "Send to customer for approval"}
+                </button>
+                {editingSendTo || !defaultRecipient ? (
+                  <input type="email" value={sendTo} onChange={e => setSendTo(e.target.value)}
+                    placeholder={defaultRecipient || "Customer email"}
+                    aria-label="Send the proof to"
+                    className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
+                ) : (
+                  <div className="text-xs text-slate-500 text-center">
+                    Goes to {defaultRecipient} ·{" "}
+                    <button type="button" onClick={() => setEditingSendTo(true)} className="font-semibold text-teal-700 hover:text-teal-800">change</button>
+                  </div>
+                )}
+              </div>
+            )}
             <button
-              onClick={saveAndLinkProof}
+              onClick={() => saveAndLinkProof()}
               disabled={!garmentImg || !selectedTargetKey || generatingProof || linking}
               title={!selectedTargetKey ? "Pick an order or quote above to enable linking" : "Generate proof PDF and attach it to the linked record"}
-              className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className={targetIsOrder
+                ? "w-full flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
+                : "w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"}
             >
-              {linking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-              {linking ? "Linking..." : "Save & Link"}
+              {linkMode === "link" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+              {linkMode === "link" ? "Linking..." : targetIsOrder ? "Save to order without sending" : "Save & Link"}
             </button>
           </div>
         </div>
