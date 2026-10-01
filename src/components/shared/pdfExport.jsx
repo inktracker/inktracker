@@ -201,6 +201,36 @@ function getGroupPriceForPdf(li, rushRate, extras, isBroker, allLineItems) {
   return calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap);
 }
 
+// Which stamped price a line DISPLAYS on the PDF. Both price sets are stamped
+// at save time; this just selects, never recomputes (except the legacy
+// fallback for pre-stamping rows). Pulled out of renderLineItems so the
+// mode→price mapping is unit-tested:
+//   - broker CLIENT form  → _client_ppp / _client_lineTotal (what the broker
+//     charges the end client). This is the branch that regressed — the caller
+//     used to pass isBroker=false in client mode, so it fell through to _ppp
+//     (wholesale) and the client PDF showed cost, not price.
+//   - broker SHOP form & non-broker → _ppp / _lineTotal.
+// fallbackPpp is the live-calc per-piece (already at the mode-correct markup)
+// used only when a row predates stamping.
+export function pickLineDisplayPrice(li, { isBroker = false, isClientMode = false, qty = 0, fallbackPpp = 0 } = {}) {
+  if (isBroker && isClientMode) {
+    if (li?._client_ppp != null) {
+      const ppp = li._client_ppp;
+      return { ppp, lineTotal: li._client_lineTotal != null ? li._client_lineTotal : ppp * qty };
+    }
+    const override = Number(li?.clientPpp);
+    const ppp = (Number.isFinite(override) && override > 0 && qty > 0) ? override : fallbackPpp;
+    return { ppp, lineTotal: ppp * qty };
+  }
+  if (li?._ppp != null) {
+    const ppp = li._ppp;
+    return { ppp, lineTotal: li._lineTotal != null ? li._lineTotal : ppp * qty };
+  }
+  const override = Number(li?.clientPpp);
+  const ppp = (!isBroker && Number.isFinite(override) && override > 0 && qty > 0) ? override : fallbackPpp;
+  return { ppp, lineTotal: ppp * qty };
+}
+
 // Effective tax rate by render mode:
 //   - Broker quote, shop form (broker → shop): always 0%. Shops don't
 //     charge brokers tax — broker is B2B.
@@ -440,7 +470,11 @@ function renderLineItems(
     // the quote-level legacy fallback — getLineExtras returns it when
     // li.extras is absent (old quotes pre-2026-06-04).
     const lineExtras = getLineExtras(li, { extras });
-    const r = getGroupPriceForPdf(li, rushRate, lineExtras, isBroker, lineItems);
+    // BROKER_MARKUP only applies to a broker SHOP form (broker pays the shop
+    // wholesale). In client mode the fallback must use STANDARD_MARKUP — the
+    // broker→client price. Only reached for legacy lines missing _ppp/_client
+    // stamps; modern lines read their stamps directly below.
+    const r = getGroupPriceForPdf(li, rushRate, lineExtras, isBroker && !isClientMode, lineItems);
     const activeSizes = activeSizeNames(li.sizes);
 
     const headerLine = getItemHeaderLine(li);
@@ -455,35 +489,13 @@ function renderLineItems(
     doc.setTextColor(30, 30, 50);
     doc.text(headerLine, margin + 2, yPos);
 
-    // Read per-line pricing straight from the line item — never recompute
-    // here. Both sides were stamped at save time:
-    //   shop form:    li._ppp / li._lineTotal       (broker-side)
-    //   client form:  li._client_ppp / li._client_lineTotal
-    // Legacy line items (saved before client_* stamping existed) fall back
-    // to live calc as a last resort so older quotes still render.
-    let avgPpp;
-    let lineTotal;
-    if (isBroker && isClientMode) {
-      if (li._client_ppp != null) {
-        avgPpp = li._client_ppp;
-        lineTotal = li._client_lineTotal != null ? li._client_lineTotal : avgPpp * qty;
-      } else {
-        // Legacy fallback: clientPpp override → STANDARD live calc.
-        const override = Number(li?.clientPpp);
-        const useOverride = Number.isFinite(override) && override > 0 && qty > 0;
-        avgPpp = useOverride ? override : (r ? r.ppp : 0);
-        lineTotal = avgPpp * qty;
-      }
-    } else if (li._ppp != null) {
-      avgPpp = li._ppp;
-      lineTotal = li._lineTotal != null ? li._lineTotal : avgPpp * qty;
-    } else {
-      // Legacy non-broker fallback (no stamping).
-      const override = Number(li?.clientPpp);
-      const useOverride = !isBroker && Number.isFinite(override) && override > 0 && qty > 0;
-      avgPpp = useOverride ? override : (r ? r.ppp : 0);
-      lineTotal = avgPpp * qty;
-    }
+    // Which stamped price this line DISPLAYS — see pickLineDisplayPrice.
+    const { ppp: avgPpp, lineTotal } = pickLineDisplayPrice(li, {
+      isBroker,
+      isClientMode,
+      qty,
+      fallbackPpp: r ? r.ppp : 0,
+    });
 
     if (r || lineTotal > 0) {
       doc.setFontSize(9);
@@ -984,7 +996,15 @@ export async function exportQuoteToPDF(
       pageHeight,
       margin,
       yPos,
-      hasBroker && !isClientMode,
+      // Pass the FULL broker flag (not `hasBroker && !isClientMode`). The line
+      // renderer's client-price branch is `isBroker && isClientMode`; gating
+      // isBroker on `!isClientMode` made those two mutually exclusive, so that
+      // branch was unreachable and a broker CLIENT quote rendered line items at
+      // WHOLESALE _ppp while the totals showed client price — the numbers didn't
+      // reconcile and the client saw the broker's cost (2026-10-01). Markup for
+      // the legacy live-calc fallback is now narrowed to shop-mode INSIDE
+      // renderLineItems. The order path (below) already passes the full flag.
+      hasBroker,
       isClientMode,
       scale,
       quoteDiscType
