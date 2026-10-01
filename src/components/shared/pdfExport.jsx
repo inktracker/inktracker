@@ -20,7 +20,7 @@ import { imprintColorLabel, imprintCountText } from '../../lib/quotes/imprintLab
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 import { signArtworkUrl } from '../../lib/uploadFile';
 import { stripSyncNotes } from '../../lib/invoices/qbModifiedSync';
-import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
+import { customGarmentHeader, isSpecDump, brandStyleHeader } from "@/lib/quotes/garmentTitle";
 import { depositAmountFor } from "@/lib/deposits";
 import { slipSize } from "@/lib/orders/packingSlipLayout";
 import { drawCompactSlip } from "@/lib/orders/packingSlipDraw";
@@ -371,11 +371,13 @@ function getGarmentDescription(li) {
 
     if (normalized === garmentNumber) continue;
     if (looksLikeCode(candidate)) continue;
+    // Supplier marketing paragraph, not a name — skip so the header falls
+    // back to a clean "Brand Style#" instead of a truncated spec blurb.
+    if (isSpecDump(candidate)) continue;
 
     return trimToShortGarmentTitle(candidate);
   }
 
-  if (cleanText(li?.brand)) return cleanText(li.brand);
   return '';
 }
 
@@ -386,7 +388,7 @@ function getItemHeaderLine(li) {
   const custom = customGarmentHeader(li, garmentNumber);
   if (custom) return custom;
   const storedName = (li?.productName || '').trim();
-  const description = (storedName && !looksLikeCode(storedName))
+  const description = (storedName && !looksLikeCode(storedName) && !isSpecDump(storedName))
     ? trimToShortGarmentTitle(storedName)
     : getGarmentDescription(li);
 
@@ -394,7 +396,8 @@ function getItemHeaderLine(li) {
     return `${garmentNumber} - ${description}`;
   }
 
-  return garmentNumber;
+  // No concise name — clean "Brand Style#" (never the spec paragraph).
+  return brandStyleHeader(cleanText(li?.brand), garmentNumber);
 }
 
 function getItemMetaLine(li) {

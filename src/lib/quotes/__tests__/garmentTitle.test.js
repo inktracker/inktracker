@@ -105,3 +105,32 @@ describe("customTitleAfterStyleChange (rule 4 — a title names ONE garment)", (
     expect(customTitleAfterStyleChange({ customTitle: "X" }, "5030")).toBe("");
   });
 });
+
+import { isSpecDump, brandStyleHeader } from "../garmentTitle";
+
+describe("isSpecDump — reject marketing paragraphs as garment names", () => {
+  it("true for the AS Colour / Comfort Colors blurbs", () => {
+    expect(isSpecDump("The timeless AS Colour Classic Tee, ideal for printing with its regular fit and heavy weight 6.5 oz, 22-singles 100% combed cotton.")).toBe(true);
+    expect(isSpecDump("6.1-ounce, 100% US ring spun cotton Soft-washed, garment-dyed fabric Top-stitched")).toBe(true);
+  });
+  it("false for a real short product name", () => {
+    expect(isSpecDump("Unisex Heavyweight Hooded Sweatshirt")).toBe(false);
+    expect(isSpecDump("Garment-Dyed Heavyweight Tee")).toBe(false);
+    expect(isSpecDump("")).toBe(false);
+  });
+  it("catches a short-but-sentencey or spec'd string", () => {
+    expect(isSpecDump("Soft tee. Great print.")).toBe(true); // two sentences
+    expect(isSpecDump("Heavy 6.5 oz tee")).toBe(true);        // spec marker
+  });
+});
+
+describe("brandStyleHeader", () => {
+  it("brand + number", () => {
+    expect(brandStyleHeader("Comfort Colors", "1717")).toBe("Comfort Colors 1717");
+  });
+  it("falls back to whichever half exists", () => {
+    expect(brandStyleHeader("", "5026")).toBe("5026");
+    expect(brandStyleHeader("AS Colour", "")).toBe("AS Colour");
+    expect(brandStyleHeader("", "")).toBe("Garment");
+  });
+});
