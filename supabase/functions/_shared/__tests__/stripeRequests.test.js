@@ -20,7 +20,7 @@ describe("buildAccountCreate — a Standard account prefilled, never sensitive d
       type: "standard",
       country: "US",
       email: "joe@biotamfg.co",
-      business_profile: { name: "Biota Mfg", url: "https://biotamfg.co", support_phone: "775-555-0100", mcc: "2759" },
+      business_profile: { name: "Biota Mfg", url: "https://biotamfg.co", support_phone: "775-555-0100" },
       metadata: { inktracker_shop_owner: "joe@biotamfg.co" },
     });
   });
@@ -29,7 +29,9 @@ describe("buildAccountCreate — a Standard account prefilled, never sensitive d
     expect(s).not.toMatch(/ssn|ein|tax_id/i);
   });
   it("missing fields are left out, not sent empty", () => {
-    expect(buildAccountCreate({}, "a@b.co").business_profile).toEqual({ mcc: "2759" });
+    expect(buildAccountCreate({}, "a@b.co").business_profile).toEqual({});
+    // Stripe asks the business type itself; an mcc outside its list fails the create.
+    expect(JSON.stringify(buildAccountCreate({ shop_name: "X" }, "a@b.co"))).not.toMatch(/mcc/);
   });
 });
 

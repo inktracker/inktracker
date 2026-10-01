@@ -50,8 +50,8 @@ export function buildAccountCreate(profile, shopOwner) {
       name,
       url: website(profile?.website),
       support_phone: clean(profile?.phone, 20),
-      // 2759 = Commercial printing (screen printing, embroidery shops).
-      mcc: "2759",
+      // No mcc: Stripe rejects codes outside its own list (2759 failed live,
+      // 2026-10-01) and asks the shop its business type during sign-up.
     },
     metadata: { inktracker_shop_owner: String(shopOwner ?? "") },
   });
