@@ -6,7 +6,7 @@
 
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { fakeSupabase } from "../../_shared/testing/fakeSupabase.ts";
-import { handle, postQbPaymentOnce, sweep, type Deps } from "../index.ts";
+import { handle, postQbPaymentOnce, sweep, checkPlanLapses, type Deps } from "../index.ts";
 
 const SECRET = "whsec_" + btoa("0123456789abcdef0123456789abcdef");
 const NOW = new Date("2026-10-02T17:00:00Z");
@@ -483,4 +483,24 @@ Deno.test("bank payment returned before it cleared → says it was never recorde
   await handle(await request({ event_type: "payin.returned", data: payin({ method_type: "ACH" }) }, { msgId: "r1" }), deps);
   const n = db.tables.notifications.find((x) => String(x.event_type) === "payment_returned");
   assert(n && String(n.body).includes("never recorded in QuickBooks"));
+});
+
+Deno.test("plan lapse: warned once with the date; paused notice after grace; renewal clears it", async () => {
+  const { db, deps, emails } = setup();
+  db.tables.profiles = [{ email: OWNER, role: "shop", subscription_tier: "shop", subscription_status: "canceled" }];
+  await checkPlanLapses(deps);
+  assert(db.tables.processor_accounts[0].plan_lapsed_at);
+  await checkPlanLapses(deps); // no repeat
+  assertEquals(db.tables.notifications.filter((n) => n.event_type === "payments_plan_lapsed").length, 1);
+  assert(emails.some((e) => String(e.subject).includes("online payments stop on")));
+
+  db.tables.processor_accounts[0].plan_lapsed_at = "2026-09-01T00:00:00Z"; // grace long over
+  await checkPlanLapses(deps);
+  await checkPlanLapses(deps);
+  assertEquals(db.tables.notifications.filter((n) => n.event_type === "payments_plan_paused").length, 1);
+
+  db.tables.profiles[0].subscription_status = "active";
+  await checkPlanLapses(deps);
+  assertEquals(db.tables.processor_accounts[0].plan_lapsed_at, null);
+  assert(db.tables.notifications.some((n) => n.event_type === "payments_plan_renewed"));
 });

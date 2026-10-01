@@ -83,3 +83,10 @@ describe("checkCanEnable", () => {
     expect(checkCanEnable({ envEnabled: true, account: { ...acct, qb_bank_account_id: null }, viewer: owner }).error).toMatch(/QuickBooks bank account/);
   });
 });
+
+describe("lapsed plan can't switch payments on", () => {
+  it("asks the owner to renew", () => {
+    const acct = { merchant_id: "m", merchant_status: "active", qb_bank_account_id: "35", qb_fee_account_id: "88" };
+    expect(checkCanEnable({ envEnabled: true, account: acct, viewer: { role: "shop" }, payingPlan: false }).error).toMatch(/Renew your plan/);
+  });
+});

@@ -9,6 +9,9 @@ import {
   loadPaymentRailState,
   restoreQbOnlinePayFields,
   flagOn,
+  paymentsPauseDate,
+  planGraceOver,
+  PLAN_GRACE_DAYS,
 } from "../paymentRail.js";
 
 const ready = { shop_owner: "joe@biotamfg.co", merchant_id: "mid_1", merchant_status: "active", enabled: true };
@@ -132,5 +135,17 @@ describe("back on QuickBooks after InkTracker payments", () => {
     // kill switch off after use → still restores
     expect(await loadPaymentRailState(client(used), "a@b.co", { envEnabled: false })).toEqual({ rail: RAIL.QB, restore: true });
     expect(await loadPaymentRailState(client(used), "a@b.co", { envEnabled: true, broker: true })).toEqual({ rail: RAIL.QB, restore: false });
+  });
+});
+
+describe("InkTracker plan lapse", () => {
+  const lapsed = { ...ready, plan_lapsed_at: "2026-10-01T12:00:00Z" };
+  it("keeps taking payments on InkTracker during the 14-day grace, then QuickBooks", () => {
+    expect(PLAN_GRACE_DAYS).toBe(14);
+    expect(paymentsPauseDate(lapsed)).toBe("2026-10-15");
+    expect(resolvePaymentRail({ envEnabled: true, account: lapsed, now: Date.parse("2026-10-10T00:00:00Z") })).toBe(RAIL.PROCESSOR);
+    expect(resolvePaymentRail({ envEnabled: true, account: lapsed, now: Date.parse("2026-10-16T00:00:00Z") })).toBe(RAIL.QB);
+    expect(planGraceOver({ plan_lapsed_at: null })).toBe(false);
+    expect(paymentsPauseDate({})).toBeNull();
   });
 });

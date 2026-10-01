@@ -9,7 +9,7 @@
 //     shop's money goes, which is billing, and managers are "full access
 //     minus billing".
 
-import { resolvePaymentRail, RAIL, ACTIVE_MERCHANT_STATUSES } from "./paymentRail.js";
+import { resolvePaymentRail, RAIL, ACTIVE_MERCHANT_STATUSES, paymentsPauseDate, planGraceOver } from "./paymentRail.js";
 import { PLATFORM_PRICING, formatRatePct } from "./rainforestPricing.js";
 
 const OWNER_ROLES = ["admin", "shop"];
@@ -83,6 +83,10 @@ export function buildStatusPayload({ envEnabled, account, viewer }) {
       cardFixedCents: PLATFORM_PRICING.card.fixedCents,
       achFixedCents: PLATFORM_PRICING.ach.fixedCents,
     },
+    // Plan lapsed: when new InkTracker payments stop (or stopped).
+    planLapsed: Boolean(account?.plan_lapsed_at),
+    paymentsPauseOn: paymentsPauseDate(account),
+    paymentsPausedForPlan: planGraceOver(account),
     canToggle: canTogglePayments(viewer),
     canStartOver: canStartOver(account) && canTogglePayments(viewer),
     canMapAccounts: canMapQbAccounts(viewer),
@@ -94,9 +98,10 @@ export function buildStatusPayload({ envEnabled, account, viewer }) {
  * shop language so the card can show exactly what's missing.
  * @returns {{ ok: true } | { ok: false, error: string }}
  */
-export function checkCanEnable({ envEnabled, account, viewer }) {
+export function checkCanEnable({ envEnabled, account, viewer, payingPlan = true }) {
   if (!canTogglePayments(viewer)) return { ok: false, error: "Only the shop owner can turn InkTracker payments on or off." };
   if (!envEnabled) return { ok: false, error: "InkTracker payments aren't available yet." };
+  if (!payingPlan) return { ok: false, error: "InkTracker payments are part of a paid plan. Renew your plan to turn them on." };
   const stage = onboardingStage(account);
   if (stage === "not_started") return { ok: false, error: "Finish the payments sign-up first." };
   if (stage === "in_progress") return { ok: false, error: "Finish the payments sign-up first." };
