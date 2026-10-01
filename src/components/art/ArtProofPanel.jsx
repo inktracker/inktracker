@@ -5,6 +5,7 @@ import { notify } from "@/lib/notify";
 import { artApprovalState } from "@/lib/art/artApproval";
 import { callArtProof } from "@/lib/art/artProofClient";
 import { createPageUrl } from "@/utils";
+import { managerCanAccess } from "@/lib/managerPermissions";
 import ArtStatusBadge from "./ArtStatusBadge";
 
 // The order's proof workflow: status, Send proof / Send revised proof (emails
@@ -29,7 +30,7 @@ const STATUS_TEXT = {
   superseded: "Replaced by a newer version",
 };
 
-export default function ArtProofPanel({ order, role, readOnly = false, onOrderUpdated }) {
+export default function ArtProofPanel({ order, role, user = null, readOnly = false, onOrderUpdated }) {
   const [proofs, setProofs] = useState([]);
   const [busy, setBusy] = useState("");
   const [composing, setComposing] = useState(false);
@@ -42,6 +43,8 @@ export default function ArtProofPanel({ order, role, readOnly = false, onOrderUp
   const canOverride = ["admin", "shop", "manager"].includes(role);
   const isBroker = role === "broker";
   const hasProof = Number(order?.art_proof_version) > 0;
+  // Managers whose owner turned off Mockups would land on a blocked page.
+  const canMockup = role !== "employee" && managerCanAccess(user, "Mockups");
 
   const loadProofs = useCallback(async () => {
     if (!order?.id) return;
@@ -95,10 +98,12 @@ export default function ArtProofPanel({ order, role, readOnly = false, onOrderUp
               className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-lg px-3 py-1.5 disabled:opacity-50">
               {hasProof ? "Send revised proof" : "Send proof to customer"}
             </button>
-            <Link to={`${createPageUrl("Mockups")}?order=${order.id}`}
-              className="text-xs font-semibold text-teal-700 hover:text-teal-800">
-              Make a mockup
-            </Link>
+            {canMockup && (
+              <Link to={`${createPageUrl("Mockups")}?order=${order.id}`}
+                className="text-xs font-semibold text-teal-700 hover:text-teal-800">
+                Make a mockup
+              </Link>
+            )}
             {canOverride && !state.approved && (
               <button type="button" disabled={!!busy}
                 onClick={() => { setOverriding((v) => !v); setComposing(false); }}

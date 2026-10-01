@@ -639,6 +639,7 @@ export default function OrderDetailModal({
                 <ArtProofPanel
                   order={{ ...liveOrder, selected_artwork: localArtwork }}
                   role={authUser?.role}
+                  user={authUser}
                   readOnly={readOnly}
                   onOrderUpdated={(updated) => { setLiveOrder((prev) => ({ ...prev, ...updated })); onUpdated?.(updated); }}
                 />

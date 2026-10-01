@@ -4,7 +4,7 @@
 
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { fakeSupabase } from "../../_shared/testing/fakeSupabase.ts";
-import { handle, sendReminders, proofRecipient, type Deps } from "../index.ts";
+import { handle, sendReminders, proofRecipient, proofImageUrls, buildProofEmail, type Deps } from "../index.ts";
 import { artApprovalState, artFingerprint } from "../../_shared/artApproval.js";
 
 // createCheckoutSession starts a server on import; stub it like its own tests.
@@ -195,4 +195,29 @@ Deno.test("send after a quote-carried approval is v2, not a second v1", async ()
   const fake = db({ art_status: "approved", art_proof_version: 1, art_approved: true });
   const j = await (await handle(as("own-auth", { action: "send", orderId: ORDER_ID }), deps(fake, []))).json();
   assertEquals(j.version, 2);
+});
+
+Deno.test("proof email shows the mockup picture (via the token proxy), never a PDF", async () => {
+  const order = {
+    id: ORDER_ID, order_id: "ORD-2026-0042", selected_artwork: [
+      { id: "a1", name: "Logo.pdf", url: "https://x.supabase.co/storage/v1/object/public/artwork/1700000000000-abc123.pdf" },
+      { id: "proof-1", name: "Art-Proof.pdf", type: "proof", path: "1700000000001-def456.pdf", preview: { path: "1700000000002-ghi789.png" } },
+      { id: "a2", name: "Back.png", path: "1700000000003-jkl012.png" },
+    ],
+  };
+  const imgs = proofImageUrls(order, "https://x.supabase.co/", "tok");
+  assertEquals(imgs.length, 2);
+  assert(imgs[0].url.startsWith(`https://x.supabase.co/functions/v1/artworkProof?type=order&id=${ORDER_ID}&token=tok&path=1700000000002-ghi789.png`));
+  assert(imgs[0].url.endsWith("&w=1024"));
+  assert(imgs[1].url.includes("path=1700000000003-jkl012.png"));
+  assertEquals(proofImageUrls(order, "", "tok"), []);
+  const { html } = buildProofEmail({ order, version: 2, shopName: "Biota", url: "https://a/ArtApproval", files: [], images: imgs });
+  assert(html.includes('<img src="https://x.supabase.co/functions/v1/artworkProof?type=order'));
+
+  // End to end: the send email carries it
+  const fake = db({ selected_artwork: order.selected_artwork });
+  const sent: any[] = [];
+  await handle(as("own-auth", { action: "send", orderId: ORDER_ID, message: "Check the colors" }), deps(fake, sent, { SUPABASE_URL: "https://x.supabase.co" }));
+  assert(String(sent[0].html).includes("1700000000002-ghi789.png"));
+  assert(String(sent[0].html).includes("Check the colors"));
 });
