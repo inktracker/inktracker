@@ -182,7 +182,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     .eq("processor_payin_id", payinId)
     .is("qb_payment_id", null)
     .or(`qb_posting_at.is.null,qb_posting_at.lt."${staleBefore}"`)
-    .select("processor_payin_id, shop_owner, qb_invoice_id, amount_cents, discount_cents, platform_fee_cents, method, pay_kind, last_event_at, paid_at, quote_id, invoice_id, qb_post_notified_at, livemode");
+    .select("processor_payin_id, shop_owner, qb_invoice_id, amount_cents, customer_fee_cents, platform_fee_cents, method, pay_kind, last_event_at, paid_at, quote_id, invoice_id, qb_post_notified_at, livemode");
   if (claimErr) throw new Error(`ledger claim failed: ${claimErr.message}`);
   const row = rows?.[0];
   if (!row) return "not_claimed";
@@ -267,11 +267,11 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
       return "already_in_qb";
     }
 
-    // A bank-transfer discount: the customer paid less, but the invoice is
-    // settled in full — the QuickBooks Payment covers payment + discount and
-    // the discount is booked on the payout Deposit (like a fee).
-    const discountCents = Number(row.discount_cents) || 0;
-    const invoiceCents = row.amount_cents + discountCents;
+    // A fee the customer paid on top (card surcharge / bank fee): the
+    // QuickBooks Payment is the invoice part; the fee is booked on the payout
+    // Deposit, next to the processing fees it covers.
+    const customerFeeCents = Number(row.customer_fee_cents) || 0;
+    const invoiceCents = row.amount_cents - customerFeeCents;
     const app = planQbApplication({ amountCents: invoiceCents, liveBalanceCents: Math.round(Number(inv.Balance) * 100) });
     if (!app.ok) throw new Error(`bad amounts for ${payinId}`);
     const method = pickQbPaymentMethod(await deps.qb.paymentMethods(conn), row.method === "ach" ? "ach" : "card");
@@ -280,7 +280,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
       customerRefValue: inv?.CustomerRef?.value,
       amountCents: invoiceCents,
       applyCents: app.applyCents,
-      discountCents,
+      customerFeeCents,
       payinId,
       // The shop's calendar date — a 6pm payment isn't "tomorrow" in its books.
       txnDate: localDate(row.paid_at ?? row.last_event_at ?? now.toISOString(), await loadShopTz(admin, row.shop_owner)),
@@ -388,7 +388,7 @@ export async function processPayout(deps: Deps, accountId: string, payoutId: str
   // never read as "not our payments".
   for (let i = 0; i < payinIds.length; i += 100) {
     const { data: rows, error } = await admin.from("processor_payments")
-      .select("processor_payin_id, qb_payment_id, qb_invoice_id, amount_cents, discount_cents")
+      .select("processor_payin_id, qb_payment_id, qb_invoice_id, amount_cents, customer_fee_cents")
       .eq("shop_owner", account.shop_owner)
       .in("processor_payin_id", payinIds.slice(i, i + 100));
     if (error) throw new Error(`ledger read failed: ${error.message}`);

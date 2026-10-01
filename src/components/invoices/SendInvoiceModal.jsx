@@ -284,7 +284,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
           ? { ...invoice, qb_payment_link: null, payment_link: effectiveLink }
           : invoice;
         pdfBase64 = await exportInvoiceToPDF(pdfInvoice, customer, shopName, logoUrl, "base64", {
-          bankDiscountPct: sendOnline ? (payStatus?.bankDiscountPct || 0) : 0,
+          feeNote: sendOnline ? (payStatus?.customerFeeNote || '') : '',
         });
       } catch {}
 

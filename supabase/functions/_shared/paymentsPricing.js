@@ -103,32 +103,86 @@ export function formatRatePct(method, pricing = PLATFORM_PRICING) {
   return `${Math.round(pricing[m].ratePct * 100) / 100}%`;
 }
 
-// ── Bank-transfer discount (per shop, off by default) ────────────────────
-// The card price is the invoice price; bank payers get `pct`% off. Capped at
-// 5% (the database enforces it too).
-export const MAX_BANK_DISCOUNT_PCT = 5;
+// ── Fees the customer pays (per shop, off by default) ───────────────────
+// Joe, 2026-10-01: the quote shows the plain total with a note; the pay page
+// adds the fee for the way the customer pays.
+//   card: 2.99% on CREDIT cards only. US card rules: no surcharge on debit or
+//         prepaid cards, never more than 3%, disclosed before the customer
+//         pays, shown as its own line on the receipt (Stripe's receipt does).
+//   bank: the shop's percentage, 0–1% (its all-in bank cost is 1%).
+export const CARD_SURCHARGE_PCT = 2.99;
+export const MAX_CARD_SURCHARGE_PCT = 3;
+export const MAX_BANK_FEE_PCT = 1;
+export const DEFAULT_BANK_FEE_PCT = 1;
 
-/** Valid discount percent (0–5, two decimals) or null. */
-export function normalizeDiscountPct(raw) {
+/** Valid bank fee percent (0–1, two decimals) or null. */
+export function normalizeBankFeePct(raw) {
+  if (raw === null || raw === undefined || raw === "") return null;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0 || n > MAX_BANK_DISCOUNT_PCT) return null;
+  if (!Number.isFinite(n) || n < 0 || n > MAX_BANK_FEE_PCT) return null;
   return Math.round(n * 100) / 100;
 }
 
-/** Cents off a bank payment of `balanceCents` (half-up, integer maths). */
-export function bankDiscountCents(balanceCents, pct) {
-  const amt = Number(balanceCents);
-  const p = normalizeDiscountPct(pct);
-  if (!validAmount(amt) || !p) return 0;
-  return Math.min(amt - 1, pctCents(amt, p));
+/** The shop's fee settings from its processor_accounts row. */
+export function customerFeeSettings(account) {
+  const on = account?.customer_fees_enabled === true;
+  return {
+    enabled: on,
+    cardPct: on ? CARD_SURCHARGE_PCT : 0,
+    bankPct: on ? (normalizeBankFeePct(account?.bank_fee_pct) ?? 0) : 0,
+  };
 }
 
 /**
- * What the customer pays for each method: the card price is the balance;
- * bank is the balance minus the shop's discount.
+ * Can the card surcharge run? It needs InkTracker's own card form (Stripe
+ * Checkout can't tell credit from debit before charging), which needs the
+ * platform's publishable key for the Stripe mode in use.
  */
-export function priceForMethod({ balanceCents, method, discountPct = 0 }) {
+export function cardFormKeyOk(publishableKey, live) {
+  const pk = String(publishableKey ?? "");
+  return live ? pk.startsWith("pk_live_") : pk.startsWith("pk_test_");
+}
+
+/** customerFeeSettings, with no card fee when the card form can't run. */
+export function effectiveCustomerFees(account, { cardFormReady }) {
+  const s = customerFeeSettings(account);
+  return { ...s, cardPct: cardFormReady ? s.cardPct : 0 };
+}
+
+/**
+ * The fee on one payment of `balanceCents`, in cents (half-up, integer
+ * maths). Card: only a card Stripe reports as "credit" — debit, prepaid and
+ * unknown cards pay no fee. Bank: the shop's percentage.
+ * @param {{balanceCents:number, method:string, funding?:string|null, settings:{cardPct:number, bankPct:number}}} a
+ */
+export function customerFeeCents({ balanceCents, method, funding = null, settings }) {
+  const amt = Number(balanceCents);
   const m = normalizePayMethod(method);
-  const discount = m === "ach" ? bankDiscountCents(balanceCents, discountPct) : 0;
-  return { chargeCents: Number(balanceCents) - discount, discountCents: discount };
+  if (!validAmount(amt) || !m || !settings) return 0;
+  if (m === "card") {
+    if (String(funding ?? "").toLowerCase() !== "credit") return 0;
+    const pct = Math.min(Number(settings.cardPct) || 0, MAX_CARD_SURCHARGE_PCT);
+    return pct > 0 ? pctCents(amt, pct) : 0;
+  }
+  const pct = Math.min(Number(settings.bankPct) || 0, MAX_BANK_FEE_PCT);
+  return pct > 0 ? pctCents(amt, pct) : 0;
+}
+
+/** Largest fee a payment of `invoiceCents` can carry (bounds metadata we read back). */
+export function maxCustomerFeeCents(invoiceCents) {
+  const amt = Number(invoiceCents);
+  return validAmount(amt) ? pctCents(amt, MAX_CARD_SURCHARGE_PCT) : 0;
+}
+
+const pctLabel = (p) => `${Math.round(Number(p) * 100) / 100}%`;
+
+/**
+ * The note on quotes, invoices and emails, or "" when the shop charges no
+ * fees. Plain words; the pay page shows the exact amount before paying.
+ */
+export function customerFeeNote(settings) {
+  if (!settings?.enabled) return "";
+  const card = settings.cardPct > 0 ? `Credit card payments include a ${pctLabel(settings.cardPct)} processing fee (no fee on debit cards).` : "";
+  const bank = settings.bankPct > 0 ? `Bank transfer payments include a ${pctLabel(settings.bankPct)} fee.` : "Bank transfer has no fee.";
+  return `${card} ${bank} The exact amount is shown before you pay.`.trim();
 }

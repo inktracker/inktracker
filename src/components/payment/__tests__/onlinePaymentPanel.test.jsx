@@ -1,27 +1,38 @@
 // @vitest-environment jsdom
 //
-// The card / bank choice shows each price, and the bank saving, when the
-// shop has a bank-transfer discount.
+// The card / bank choice shows what each way of paying costs when the shop
+// passes processing fees on, and nothing extra when it doesn't.
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import OnlinePaymentPanel from "../OnlinePaymentPanel.jsx";
 
 vi.mock("@/api/supabaseClient", () => ({ base44: { functions: { invoke: vi.fn() } } }));
+vi.mock("../CardPayForm", () => ({ default: () => <div>card form</div> }));
 afterEach(cleanup);
 
+const FEES = { enabled: true, cardPct: 2.99, bankPct: 1 };
+
 describe("OnlinePaymentPanel prices", { timeout: 20000 }, () => {
-  it("exact card and bank prices with the saving", () => {
-    render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={{ bankDiscountPct: 2, cardCents: 56872, bankCents: 55735, bankSavingsCents: 1137 }} />);
-    expect(screen.getByText("$568.72")).toBeTruthy();
-    expect(screen.getByText("$557.35 · save $11.37")).toBeTruthy();
-    expect(screen.getByText(/2% off for paying from your bank account/)).toBeTruthy();
+  it("exact totals with each fee, and no fee on debit", () => {
+    render(<OnlinePaymentPanel docType="quote" id="q" token="t"
+      pricing={{ fees: FEES, invoiceCents: 56872, creditFeeCents: 1700, bankFeeCents: 569, cardForm: { publishableKey: "pk_test_x", accountId: "acct_1" } }} />);
+    expect(screen.getByText("$585.72")).toBeTruthy();
+    expect(screen.getByText("Credit card: includes 2.99% fee ($17.00). Debit card: no fee, $568.72.")).toBeTruthy();
+    expect(screen.getByText("$574.41")).toBeTruthy();
+    expect(screen.getByText(/Includes 1% fee \(\$5\.69\)/)).toBeTruthy();
   });
-  it("deposits / balances: just the percentage", () => {
-    render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={{ bankDiscountPct: 2 }} />);
-    expect(screen.getByText("Save 2%")).toBeTruthy();
+  it("deposits / balances: just the percentages", () => {
+    render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={{ fees: FEES, cardForm: { publishableKey: "pk_test_x", accountId: "acct_1" } }} />);
+    expect(screen.getByText("Credit card: includes 2.99% fee. Debit card: no fee.")).toBeTruthy();
+    expect(screen.getByText(/Includes 1% fee\. Clears/)).toBeTruthy();
   });
-  it("no discount: no prices promised, no saving shown", () => {
+  it("fees off: no fee promised anywhere", () => {
     render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={null} />);
-    expect(screen.queryByText(/save/i)).toBeNull();
+    expect(screen.queryByText(/fee/i)).toBeNull();
+  });
+  it("card opens InkTracker's card form when the shop passes the card fee on", () => {
+    render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={{ fees: FEES, cardForm: { publishableKey: "pk_test_x", accountId: "acct_1" } }} />);
+    fireEvent.click(screen.getByText("Pay by card"));
+    expect(screen.getByText("card form")).toBeTruthy();
   });
 });

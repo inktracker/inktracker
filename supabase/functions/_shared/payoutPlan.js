@@ -51,7 +51,7 @@ export function planPayoutDeposit({ payout, items, ledgerByPayin, account, txnDa
   const list = Array.isArray(items) ? items : [];
   const payments = [];
   let feeCents = 0;
-  let discountCents = 0; // bank-transfer discounts customers got (own Deposit line)
+  let customerFeeCents = 0; // fees customers paid on top (own Deposit line)
   const problems = [];
   const waitingFor = []; // reasons we're waiting, for the shop if it drags on
   const ageDays = (now.getTime() - new Date(payout.createdAt ?? now).getTime()) / (24 * 60 * 60 * 1000);
@@ -73,14 +73,14 @@ export function planPayoutDeposit({ payout, items, ledgerByPayin, account, txnDa
         waitingFor.push(`A ${money(gross)} payment not yet recorded in QuickBooks.`);
         continue;
       }
-      if (gross !== led.amount_cents) { problems.push(`A payment shows ${money(gross)} here but ${money(led.amount_cents)} in QuickBooks.`); continue; }
-      // A bank-transfer discount: the QuickBooks Payment is for the full
-      // invoice (gross + discount); the discount comes off with the fees, so
-      // the Deposit still equals what reached the bank.
-      const disc = Number(led.discount_cents) || 0;
-      payments.push({ qbPaymentId: led.qb_payment_id, grossCents: gross + disc });
+      if (gross !== led.amount_cents) { problems.push(`A payment shows ${money(gross)} here but ${money(led.amount_cents)} in InkTracker.`); continue; }
+      // A fee the customer paid on top: the QuickBooks Payment is the
+      // invoice part (gross − fee); the fee is its own line, so the Deposit
+      // still equals what reached the bank.
+      const cf = Number(led.customer_fee_cents) || 0;
+      payments.push({ qbPaymentId: led.qb_payment_id, grossCents: gross - cf });
       feeCents += fee;
-      discountCents += disc;
+      customerFeeCents += cf;
     } else if (it.type === PAYOUT_ITEM.FEE && gross <= 0) {
       // Stripe charges with no sale behind them (e.g. bank verification).
       feeCents += -gross + fee;
@@ -112,24 +112,24 @@ export function planPayoutDeposit({ payout, items, ledgerByPayin, account, txnDa
     payments,
     feeCents,
     netCents: net,
-    // Its own line so the books show discounts given apart from fees; same
-    // expense account the shop picked for fees.
-    adjustments: discountCents > 0 ? [{
-      amountCents: -discountCents,
+    // Its own line, booked against the same expense account as the
+    // processing fees it pays for (so the shop's net fee cost shows there).
+    adjustments: customerFeeCents > 0 ? [{
+      amountCents: customerFeeCents,
       accountId: account?.qb_fee_account_id,
-      memo: `Bank transfer discounts — payout ${payout.id}`,
+      memo: `Processing fees paid by customers — payout ${payout.id}`,
     }] : [],
   });
   if (!built.ok) {
     return built.reason === "does_not_match_bank"
-      ? manual(payout, [`Payments minus fees${discountCents ? " and discounts" : ""} (${money(built.detail.grossTotal - built.detail.fee + built.detail.adjTotal)}) don't equal what reached the bank (${money(net)}).`])
+      ? manual(payout, [`Payments minus fees (${money(built.detail.grossTotal - built.detail.fee + built.detail.adjTotal)}) don't equal what reached the bank (${money(net)}).`])
       : manual(payout, [`Setup needed: ${built.reason.replace(/_/g, " ")}.`]);
   }
   return {
     plan: PAYOUT_PLAN.POST,
     body: built.body,
     feeCents,
-    discountCents,
+    customerFeeCents,
     netCents: net,
     payinIds: list.filter((i) => i.type === PAYOUT_ITEM.PAYMENT && i.payinId).map((i) => String(i.payinId)),
   };

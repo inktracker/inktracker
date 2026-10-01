@@ -6,7 +6,7 @@ import {
   statusesBelow,
   PAYIN_EVENT,
   REJECT,
-  bankDiscount,
+  customerFee,
 } from "../payinEffect.js";
 import { buildQbPaymentBody } from "../paymentsQbBooks.js";
 
@@ -298,12 +298,13 @@ describe("audit: booking when events arrive out of order", () => {
   });
 });
 
-describe("bank-transfer discount on the ledger", () => {
-  it("records the discount from our checkout's metadata; bounded to 5%", () => {
-    expect(bankDiscount({ bank_discount_cents: "1137" }, 55735)).toBe(1137);
-    expect(bankDiscount({ bank_discount_cents: "99999" }, 55735)).toBe(0); // implausible → ignored
-    expect(bankDiscount({}, 55735)).toBe(0);
-    const r = plan({ event: ev({ kind: "succeeded", method: "ach", amountCents: 55735, metadata: { ...ev().metadata, bank_discount_cents: "1137" } }) });
-    expect(r.ledger.discount_cents).toBe(1137);
+describe("fee the customer paid, on the ledger", () => {
+  it("records it from our checkout's metadata; bounded to 3% of the invoice", () => {
+    expect(customerFee({ customer_fee_cents: "1700" }, 58572)).toBe(1700);
+    expect(customerFee({ customer_fee_cents: "5000" }, 58572)).toBe(0); // implausible → ignored
+    expect(customerFee({ customer_fee_cents: "-5" }, 58572)).toBe(0);
+    expect(customerFee({}, 58572)).toBe(0);
+    const r = plan({ event: ev({ kind: "succeeded", method: "card", amountCents: 58572, metadata: { ...ev().metadata, customer_fee_cents: "1700" } }) });
+    expect(r.ledger.customer_fee_cents).toBe(1700);
   });
 });

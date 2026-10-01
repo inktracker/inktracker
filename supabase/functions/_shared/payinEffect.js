@@ -19,6 +19,7 @@
 //     undo a "succeeded".
 
 import { planReversal } from "./paymentsQbBooks.js";
+import { maxCustomerFeeCents } from "./paymentsPricing.js";
 
 /** Normalised event kinds the webhook adapter produces. */
 export const PAYIN_EVENT = Object.freeze({
@@ -139,8 +140,9 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     // written when known so an event without it can't blank it.
     ...(event.paidAt ? { paid_at: event.paidAt } : {}),
     ...(typeof event.livemode === "boolean" ? { livemode: event.livemode } : {}),
-    // Bank-transfer discount the customer got (set by our own checkout).
-    ...(bankDiscount(md, amt) ? { discount_cents: bankDiscount(md, amt) } : {}),
+    // Card surcharge / bank fee the customer paid on top (set by our own
+    // checkout). The QuickBooks Payment is the rest: the invoice.
+    ...(customerFee(md, amt) ? { customer_fee_cents: customerFee(md, amt) } : {}),
   };
 
   const label = docNumber(quote) ?? (md.quote_number || null);
@@ -265,14 +267,15 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
 }
 
 /**
- * The bank-transfer discount on a payment, from the metadata our checkout
- * set. Bounded: never negative, never more than 5% of the invoice.
+ * The fee the customer paid on top of the invoice (card surcharge or bank
+ * fee), from the metadata our checkout set. Bounded: never negative, never
+ * more than 3% of the invoice.
  */
-export function bankDiscount(md, amountCents) {
-  const d = Number(md?.bank_discount_cents);
-  if (!Number.isInteger(d) || d <= 0) return 0;
-  const invoice = Number(amountCents) + d;
-  return d <= Math.ceil(invoice * 0.05) ? d : 0;
+export function customerFee(md, amountCents) {
+  const f = Number(md?.customer_fee_cents);
+  const amt = Number(amountCents);
+  if (!Number.isInteger(f) || f <= 0 || !Number.isInteger(amt) || f >= amt) return 0;
+  return f <= maxCustomerFeeCents(amt - f) ? f : 0;
 }
 
 /** Statuses a row may be moved FROM to reach `to` (forward-only, for a guarded update). */

@@ -133,26 +133,48 @@ Rules that keep it safe:
   other failure alerts us (Sentry) and the purge result names the account
   to remove by hand. The deletion itself is never blocked.
 
-### Bank-transfer discount (per shop, off by default)
+### Customers pay the processing fee (per shop, off by default)
 
-Card surcharges are out (debit cards can't be surcharged and hosted Checkout
-can't tell credit from debit until after the charge). Instead the **card
-price is the invoice price** and bank payers get `bank_discount_pct`% off
-(0–5%, owner sets it in Account → Payments). At 2% the shop nets the same
-either way (card: 2.99% fee; bank: 1% + 2% off).
+Joe, 2026-10-01: quotes show the plain total with a note; the pay page adds
+the fee for the way the customer pays. (Replaced a same-day bank-transfer
+discount, #997, before any shop used it.)
 
-Shown everywhere a price is: quote/invoice email ("Pay by bank transfer:
-$X, save $Y"), the quote and invoice PDFs (under the total), the pay page
-buttons (exact card and bank amounts for a plain full payment, the % for
-deposits/balances), and Stripe's checkout (the line's description:
-"Invoice $X − bank transfer discount $Y").
+- **Card: 2.99% on credit cards only.** US card rules: no surcharge on debit
+  or prepaid cards, max 3%, disclosed before paying with a way out, shown as
+  its own line on the receipt, the full surcharge refunded on a full refund
+  and a prorated share on a partial one. Hosted Checkout fixes the amount
+  before the card is typed, so a surcharging shop takes the card on
+  InkTracker's pay page instead: Stripe's Payment Element (Stripe.js, on the
+  shop's account) → a ConfirmationToken → `cardQuote` reads
+  `payment_method_preview.card.funding` and shows invoice + fee = total →
+  the customer clicks Pay → `cardPay` re-reads the LIVE QuickBooks balance
+  (refuses if the total moved) and creates + confirms the PaymentIntent with
+  `amount_details[surcharge]` (Stripe public preview, API version
+  `2026-03-25.preview`, sent only on that call). If Stripe refuses the
+  surcharge, the card is charged WITHOUT it (never more than agreed) and the
+  function logs it. 3-D Secure: `handleNextAction` on the page; redirects come
+  back with `?paid=card&payment_intent=…` (paidStatus checks it's this
+  document's).
+- **Bank: the shop's `bank_fee_pct`, 0–1% (default 1%, the shop's cost).**
+  Bank still uses hosted Checkout, with the fee as its own line.
+- The owner turns it on in Account → Payments and must tick that card
+  surcharges are allowed for their business (some states ban or cap them;
+  Visa wants notice). `customer_fees_ack_at` records when.
+- Needs `STRIPE_CONNECT_PUBLISHABLE_KEY` (the platform's `pk_test_…` /
+  `pk_live_…`, matching the secret key's mode). Without it the card fee is off
+  everywhere (notes say so too) and cards use Checkout at the plain price.
 
-Books: the QuickBooks invoice is untouched (its sales tax stands — the shop
-never under-reports) and the QB Payment is for the **full invoice**; the
-discount is a separate "Bank transfer discounts" line on the payout Deposit
-(to the fee account), so the Deposit still equals the bank to the cent.
-`processor_payments.discount_cents` carries it from checkout metadata
-(bounded to 5%).
+Shown: quote/invoice emails and PDFs (a note under the total), the quote pay
+page (note under the button), the card/bank buttons (exact totals for a plain
+full payment, the % otherwise), the card confirm step, and Stripe's receipt.
+
+Books: the QuickBooks invoice is untouched; the QB Payment is the **invoice
+amount** (charged − `customer_fee_cents`); the fee is a positive "Processing
+fees paid by customers" line on the payout Deposit (to the fee account, so the
+shop's net fee cost shows there), and the Deposit still equals the bank to
+the cent. `processor_payments.customer_fee_cents` comes from checkout
+metadata (bounded to 3%). Whether a surcharge is taxable varies by state —
+the shop's accountant's call; InkTracker doesn't add tax to it.
 
 ### When is an invoice "paid"?
 
@@ -248,6 +270,9 @@ maps QB accounts. **Only the owner** signs up and switches it on or off.
    platforms to disclose their fees). Stripe's own Connected Account
    Agreement is accepted by the shop during Stripe's sign-up.
 6. Then `STRIPE_PAYMENTS_ENABLED=true`, and Biota signs up in test mode.
+7. For customers paying the card fee: the platform **publishable** key
+   (Developers → API keys, `pk_test_…` in test mode) →
+   `STRIPE_CONNECT_PUBLISHABLE_KEY`. Repeat with `pk_live_…` for live.
 
 ## Deploy order (when it's time)
 

@@ -13,8 +13,11 @@ import { formEncode } from "./stripeForm.js";
 type Any = any;
 
 export const STRIPE_API_VERSION = "2024-06-20";
+// Card surcharges are a Stripe public preview (amount_details.surcharge);
+// only the card-payment calls send this version.
+export const STRIPE_SURCHARGE_API_VERSION = "2026-03-25.preview";
 
-export type StripeOpts = { account?: string | null; idempotencyKey?: string };
+export type StripeOpts = { account?: string | null; idempotencyKey?: string; version?: string };
 export type StripeApi = {
   get: (path: string, query?: Any, opts?: StripeOpts) => Promise<Any>;
   post: (path: string, params?: Any, opts?: StripeOpts) => Promise<Any>;
@@ -44,7 +47,7 @@ export function stripeApi(env: (k: string) => string | undefined, fetchImpl: typ
       method,
       headers: {
         Authorization: `Bearer ${key}`,
-        "Stripe-Version": STRIPE_API_VERSION,
+        "Stripe-Version": opts.version ?? STRIPE_API_VERSION,
         ...(opts.account ? { "Stripe-Account": opts.account } : {}),
         ...(opts.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : {}),
         ...(method === "POST" ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),

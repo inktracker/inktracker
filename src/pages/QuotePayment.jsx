@@ -234,7 +234,7 @@ export default function QuotePayment() {
   // through Stripe instead of a QuickBooks link. Asked once per load;
   // anything but a clear "processor" keeps the QuickBooks flow.
   const [payRail, setPayRail] = useState("qb");
-  // Card / bank prices + the shop's bank-transfer discount (from payRail).
+  // Fees the shop passes on, exact amounts, card form settings (from payRail).
   const [payPricing, setPayPricing] = useState(null);
   // After Approve: show the card / bank choice (each opens Stripe Checkout).
   const [showPayChoice, setShowPayChoice] = useState(false);
@@ -1094,7 +1094,7 @@ export default function QuotePayment() {
             // (A deposit is a fixed, untaxed amount, so its label stays exact.)
             if (onlinePay && !(depositRoute && !depositPaid)) {
               buttonLabel = hasDeposit && depositPaid ? "Pay Remaining Balance" : "Approve & Continue to Payment";
-              subLabel = "You'll see the exact amount due, including sales tax, before you pay.";
+              subLabel = `You'll see the exact amount due, including sales tax, before you pay.${payPricing?.note ? ` ${payPricing.note}` : ""}`;
             }
 
             if (onlinePay && paidReturn) {

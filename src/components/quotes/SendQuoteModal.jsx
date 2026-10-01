@@ -801,7 +801,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           output: "base64",
           // Bank-transfer discount line, only when this quote is paid
           // through InkTracker payments.
-          bankDiscountPct: onlinePay ? (payStatus?.bankDiscountPct || 0) : 0,
+          feeNote: onlinePay ? (payStatus?.customerFeeNote || '') : '',
         });
       } catch (pdfErr) {
         console.warn("[SendQuoteModal] PDF generation failed:", pdfErr);
@@ -1033,7 +1033,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                     <span className="block font-semibold text-slate-800">{onlinePay ? "Stripe (through InkTracker)" : "QuickBooks (optional)"}</span>
                     <span className="block text-xs text-slate-500 mt-0.5">
                       {onlinePay && qbConnected
-                        ? `Customers pay by card or bank on Stripe's checkout.${payStatus?.bankDiscountPct ? ` Bank payers save ${payStatus.bankDiscountPct}%.` : ""} The invoice still goes in QuickBooks for your books.`
+                        ? `Customers pay by card or bank on Stripe's checkout.${payStatus?.customerFees?.enabled ? " Customers pay the processing fee (shown before they pay)." : ""} The invoice still goes in QuickBooks for your books.`
                         : qbConnected
                         ? "Create a QB invoice below to add a pay-now link. Skip for a quote-only email."
                         : "Connect QuickBooks in Account → Integrations to add a pay-now link. You can still send quotes without it."}

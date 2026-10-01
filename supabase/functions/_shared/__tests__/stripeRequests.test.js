@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession, buildConnectOAuthUrl } from "../stripeRequests.js";
+import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession, buildCardPaymentIntent, buildConnectOAuthUrl } from "../stripeRequests.js";
 import { formEncode } from "../stripeForm.js";
 
 describe("isPayingShop — payments are a paid-plan feature", () => {
@@ -129,20 +129,55 @@ describe("tax: QuickBooks is the only tax authority", () => {
   });
 });
 
-describe("bank-transfer discount at checkout", () => {
-  it("charges the discounted amount, names the discount on Stripe's page, fee on what was paid", () => {
-    const doc = { id: "q", quote_id: "Q-1", shop_owner: "s@x.co", public_token: "t" };
-    const { params, platformFeeCents, idempotencyKey } = buildCheckoutSession({ doc, docType: "quote", target: { kind: "full", qbInvoiceId: "3820", amountCents: 56872 }, method: "ach", discountCents: 1137, payPageUrl: "https://x/p", nowMs: 0 });
-    expect(params.line_items[0].price_data.unit_amount).toBe(55735);
-    expect(params.line_items[0].price_data.product_data.description).toBe("Invoice $568.72 − bank transfer discount $11.37");
-    expect(params.metadata.bank_discount_cents).toBe("1137");
-    expect(params.payment_intent_data.metadata.bank_discount_cents).toBe("1137");
-    expect(platformFeeCents).toBe(Math.max(0, Math.round(55735 * 0.01) - (500 + 150)));
-    expect(idempotencyKey).toMatch(/:55735:ach:/);
+describe("customer-paid fees at checkout", () => {
+  const doc = { id: "q", quote_id: "Q-1", shop_owner: "s@x.co", public_token: "t" };
+  const target = { kind: "full", qbInvoiceId: "3820", amountCents: 56872 };
+  it("bank fee: its own line on Stripe's page, charged on top, InkTracker's fee on what was paid", () => {
+    const { params, platformFeeCents, idempotencyKey, chargeCents } = buildCheckoutSession({ doc, docType: "quote", target, method: "ach", feeCents: 569, payPageUrl: "https://x/p", nowMs: 0 });
+    expect(params.line_items.map((l) => l.price_data.unit_amount)).toEqual([56872, 569]);
+    expect(params.line_items[1].price_data.product_data.name).toBe("Bank payment fee");
+    expect(chargeCents).toBe(57441);
+    expect(params.metadata.customer_fee_cents).toBe("569");
+    expect(params.payment_intent_data.metadata.customer_fee_cents).toBe("569");
+    expect(platformFeeCents).toBe(Math.max(0, Math.round(57441 * 0.01) - (460 + 150)));
+    expect(idempotencyKey).toMatch(/:57441:ach:/);
   });
-  it("no discount → no description, no metadata", () => {
-    const { params } = buildCheckoutSession({ doc: { id: "q", quote_id: "Q-1" }, docType: "quote", target: { kind: "full", qbInvoiceId: "1", amountCents: 1000 }, method: "card", payPageUrl: "https://x/p", nowMs: 0 });
-    expect(params.line_items[0].price_data.product_data).not.toHaveProperty("description");
-    expect(params.metadata).not.toHaveProperty("bank_discount_cents");
+  it("no fee → one line, no metadata", () => {
+    const { params } = buildCheckoutSession({ doc, docType: "quote", target: { kind: "full", qbInvoiceId: "1", amountCents: 1000 }, method: "card", payPageUrl: "https://x/p", nowMs: 0 });
+    expect(params.line_items).toHaveLength(1);
+    expect(params.metadata).not.toHaveProperty("customer_fee_cents");
+  });
+  it("a fee over 3% of the invoice is never charged", () => {
+    const { params } = buildCheckoutSession({ doc, docType: "quote", target, method: "ach", feeCents: 5000, payPageUrl: "https://x/p", nowMs: 0 });
+    expect(params.line_items).toHaveLength(1);
+  });
+});
+
+describe("card payment with a surcharge (InkTracker's own card form)", () => {
+  const doc = { id: "q", quote_id: "Q-1", shop_owner: "s@x.co", public_token: "t" };
+  const target = { kind: "full", qbInvoiceId: "3820", amountCents: 56872 };
+  it("charges invoice + surcharge, tells Stripe it's a surcharge, confirms with the card token", () => {
+    const { params, chargeCents, idempotencyKey, platformFeeCents } = buildCardPaymentIntent({ doc, docType: "quote", target, confirmationToken: "ctoken_1", surchargeCents: 1700, customer: { email: "c@x.co" }, payPageUrl: "https://x/QuotePayment?id=q&token=t" });
+    expect(chargeCents).toBe(58572);
+    expect(params).toMatchObject({
+      amount: 58572,
+      currency: "usd",
+      confirm: true,
+      confirmation_token: "ctoken_1",
+      payment_method_types: ["card"],
+      amount_details: { surcharge: { amount: 1700, enforce_validation: "enabled" } },
+      receipt_email: "c@x.co",
+      return_url: "https://x/QuotePayment?id=q&token=t&paid=card",
+    });
+    expect(params.metadata).toMatchObject({ inktracker_quote_id: "q", qb_invoice_id: "3820", customer_fee_cents: "1700" });
+    expect(platformFeeCents).toBe(Math.max(0, Math.round(58572 * 0.0299) - (Math.round(58572 * 0.029) + 30)));
+    expect(params.application_fee_amount).toBe(platformFeeCents || undefined);
+    expect(idempotencyKey).toBe("it-card:ctoken_1:58572");
+  });
+  it("debit card (no surcharge): plain invoice amount, no surcharge field", () => {
+    const { params } = buildCardPaymentIntent({ doc, docType: "quote", target, confirmationToken: "ctoken_2", surchargeCents: 0, payPageUrl: "https://x/p" });
+    expect(params.amount).toBe(56872);
+    expect(params).not.toHaveProperty("amount_details");
+    expect(params.metadata).not.toHaveProperty("customer_fee_cents");
   });
 });
