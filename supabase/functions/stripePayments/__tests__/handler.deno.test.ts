@@ -75,7 +75,7 @@ let liveInvoice: Record<string, unknown> | null = null;
 let qbConnected = true;
 
 // Live key by default; test-mode behaviour is exercised explicitly.
-function call(fake: unknown, authId: string, body: Record<string, unknown>, env: Record<string, string> = { STRIPE_PAYMENTS_ENABLED: "true" }, calls: StripeCall[] = [], live = true) {
+function call(fake: unknown, authId: string, body: Record<string, unknown>, env: Record<string, string> = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_test123" }, calls: StripeCall[] = [], live = true) {
   const req = new Request("http://x/stripePayments", {
     method: "POST",
     headers: authId ? { Authorization: "Bearer t" } : {},
@@ -459,9 +459,10 @@ Deno.test("connect existing: expired state, a Stripe account another shop uses, 
   assertEquals(r.status, 409);
   assert((await r.json()).error.includes("another InkTracker shop"));
 
-  assertEquals((await call(db(null), "own-auth", { action: "connectExisting" })).status, 400);
+  assertEquals((await call(db(null), "own-auth", { action: "connectExisting" }, { STRIPE_PAYMENTS_ENABLED: "true" })).status, 400);
   const st = await (await call(db(null), "own-auth", { action: "status" }, env)).json();
   assertEquals(st.canConnectExisting, true);
+  assertEquals((await (await call(db(null), "own-auth", { action: "status" }, { STRIPE_PAYMENTS_ENABLED: "true" })).json()).canConnectExisting, false);
   assertEquals((await (await call(db(ACTIVE), "own-auth", { action: "status" }, env)).json()).canConnectExisting, false);
 });
 
@@ -496,4 +497,11 @@ Deno.test("test mode: TEST/DEMO in the JOB TITLE counts on the pay page too (sam
   const fake = withQuote({ ...ACTIVE, enabled: true, stripe_livemode: false }, { job_title: "DEMO hoodies" });
   const j = await (await call(fake, "", { action: "payRail", id: QUOTE_ID, token: "tok" }, undefined, [], false)).json();
   assertEquals(j.rail, "processor");
+});
+
+Deno.test("sign-up needs the platform client id (so the account can always be disconnected later)", async () => {
+  const calls: StripeCall[] = [];
+  const r = await call(db(null), "own-auth", { action: "startOnboarding" }, { STRIPE_PAYMENTS_ENABLED: "true" }, calls);
+  assertEquals(r.status, 400);
+  assertEquals(calls.length, 0);
 });

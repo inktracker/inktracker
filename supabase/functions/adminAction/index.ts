@@ -4,6 +4,8 @@ import { checkAdminTargetAccess, isAssignableRole } from "../_shared/adminTarget
 import { authorizeShopPurge, SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, ARTWORK_SOURCE_TABLES, extractArtworkPaths, purgeBlockedByPayments } from "../_shared/shopPurge.js";
 import Stripe from "npm:stripe@14.25.0";
 import { stripeApi } from "../_shared/stripeApi.ts";
+import { disconnectStripeAccount, DISCONNECT } from "../_shared/stripeDisconnect.js";
+import { captureError } from "../_shared/observability.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -601,7 +603,7 @@ serve(async (req) => {
       // mid-payment). A missing table (payments migration not applied) is
       // simply no account.
       const { data: payAcct } = await adminClient.from("processor_accounts")
-        .select("merchant_id, enabled").eq("shop_owner", target).maybeSingle();
+        .select("merchant_id, enabled, stripe_livemode").eq("shop_owner", target).maybeSingle();
       const paymentsBlock = purgeBlockedByPayments(payAcct ?? null);
       // 200 + error (not 409) so the delete screen shows this message instead
       // of a generic "non-2xx" failure.
@@ -647,20 +649,20 @@ serve(async (req) => {
       // shop's. Best-effort, and never blocks the deletion; if it can't be
       // done here, say so in the result so a person removes it in Stripe
       // (Connect → Accounts).
-      let stripeDisconnect: string = "none";
-      if (payAcct?.merchant_id) {
-        const clientId = Deno.env.get("STRIPE_CONNECT_CLIENT_ID") ?? "";
-        if (!clientId) {
-          stripeDisconnect = `manual: no STRIPE_CONNECT_CLIENT_ID — remove ${payAcct.merchant_id} in Stripe Connect`;
-        } else {
-          try {
-            await stripeApi((k) => Deno.env.get(k)).deauthorize(String(payAcct.merchant_id), clientId);
-            stripeDisconnect = "disconnected";
-          } catch (e) {
-            stripeDisconnect = `manual: ${(e as Error).message?.slice(0, 200)} — remove ${payAcct.merchant_id} in Stripe Connect`;
-            console.error(`[adminAction] Stripe disconnect failed for ${target}: ${(e as Error).message}`);
-          }
-        }
+      const platform = stripeApi((k) => Deno.env.get(k));
+      const disc = await disconnectStripeAccount({
+        accountId: payAcct?.merchant_id ?? null,
+        accountLive: typeof payAcct?.stripe_livemode === "boolean" ? payAcct.stripe_livemode : null,
+        keyLive: platform.live,
+        clientId: Deno.env.get("STRIPE_CONNECT_CLIENT_ID") ?? "",
+        deauthorize: (id, cid) => platform.deauthorize(id, cid),
+      });
+      const stripeDisconnect = disc.detail ? `${disc.status}: ${disc.detail}` : disc.status;
+      if (disc.status === DISCONNECT.MANUAL) {
+        // Never blocks the deletion, but a person must finish it: InkTracker
+        // must not keep access to a former customer's Stripe account.
+        console.error(`[adminAction] Stripe disconnect needs a person for ${target}: ${disc.detail}`);
+        captureError(new Error(`Stripe disconnect failed on shop deletion: ${disc.detail}`), { fn: "adminAction", shop: target }).catch(() => {});
       }
 
       const deleted: Record<string, number | string> = {};

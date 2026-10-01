@@ -122,8 +122,16 @@ Rules that keep it safe:
 * **The ledger's fee is what Stripe charged** (`application_fee_amount` on
   the PaymentIntent), not a re-calculation.
 * **Deleting a shop disconnects its Stripe account** from InkTracker
-  (`/oauth/deauthorize`, needs `STRIPE_CONNECT_CLIENT_ID`); if that can't
-  run, the purge result says to remove it in Stripe Connect by hand.
+  (`_shared/stripeDisconnect.js`). Per Stripe's docs, `POST
+  connect.stripe.com/oauth/deauthorize` disconnects "an account with access
+  to the Stripe Dashboard" — every Standard account, including the ones
+  InkTracker creates — and needs the platform `client_id`, so **sign-up
+  refuses until `STRIPE_CONNECT_CLIENT_ID` is set**. Deleting the account is
+  never an option (live Standard accounts can't be deleted, and it would
+  destroy the shop's own Stripe). An account the shop already disconnected
+  counts as done; a test-mode account under the live key is skipped; any
+  other failure alerts us (Sentry) and the purge result names the account
+  to remove by hand. The deletion itself is never blocked.
 
 ### When is an invoice "paid"?
 
@@ -201,11 +209,14 @@ maps QB accounts. **Only the owner** signs up and switches it on or off.
    with the events listed above. Its signing secret →
    `STRIPE_CONNECT_WEBHOOK_SECRET`.
 4. Branding (Settings → Connect → Branding) so the sign-up page says InkTracker.
-4a. For "I already have a Stripe account": Settings → Connect → Onboarding
-   options → OAuth: copy the **client id** (`ca_…`) into
-   `STRIPE_CONNECT_CLIENT_ID` and add the redirect URI
-   `https://www.inktracker.app/Account?payments=oauth`. Without the client id
-   the option simply doesn't show.
+4a. **Required:** Settings → Connect → Onboarding options → OAuth: copy the
+   **client id** (`ca_…`, the test one while testing) into
+   `STRIPE_CONNECT_CLIENT_ID`, and add the redirect URI
+   `https://www.inktracker.app/Account?payments=oauth`. Sign-up won't start
+   without it (it's what lets InkTracker disconnect a shop's account later),
+   and it also turns on "I already have a Stripe account". Note from Stripe:
+   OAuth can't connect a Standard account that another platform controls;
+   those shops use the normal sign-up instead (Stripe shows the error).
 5. InkTracker's terms should say shops pay QuickBooks-matched rates and that
    InkTracker keeps the difference over Stripe's fee (Stripe requires
    platforms to disclose their fees). Stripe's own Connected Account
@@ -244,7 +255,7 @@ Stripe test cards: `4242 4242 4242 4242` (success), `4000 0000 0000 0002`
 - [ ] Checkout's `receipt_email` gets the customer a Stripe receipt
 - [ ] "I already have a Stripe account": the OAuth round trip links it; a second shop can't link the same account
 - [ ] A real (non-TEST) quote sent while in test mode still carries its QuickBooks pay link
-- [ ] `/oauth/deauthorize` disconnects a Standard account InkTracker CREATED (not only OAuth-connected ones)
+- [ ] Delete a TEST shop: its Stripe account shows as disconnected in Connect → Accounts (and `account.application.deauthorized` arrives)
 - [ ] success_url's `{CHECKOUT_SESSION_ID}` arrives filled in and `paidStatus` confirms it
 
 **Happy paths**

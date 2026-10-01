@@ -373,6 +373,13 @@ export async function handle(req: Request, deps: Deps) {
     if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can sign up for payments." }, 403);
     if (!envEnabled) return json({ error: "InkTracker payments aren't available yet." }, 400);
     if (!isPayingShop(shop)) return json({ error: "InkTracker payments are available on a paid plan." }, 403);
+    // The platform client id is what lets InkTracker disconnect this account
+    // later (a shop deleting InkTracker must not leave us with access to its
+    // Stripe). No account comes into being without it.
+    if (!clientId) {
+      console.error("[stripePayments] STRIPE_CONNECT_CLIENT_ID is not set; refusing sign-up");
+      return json({ error: "InkTracker payments aren't available yet." }, 400);
+    }
     // A closed account (rejected / disconnected), or one from the other
     // Stripe mode, is replaced with a new one.
     const startOver = canStartOver(account) || Boolean(account?.modeMismatch);
