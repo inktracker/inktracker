@@ -209,6 +209,22 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
 
   if (!booksAllowed(deps, row.livemode)) {
     await release({ qb_post_error: TEST_MODE_NOT_BOOKED });
+    // Test mode is otherwise silent (the "paid" notice comes from the
+    // QuickBooks side, which test money never reaches). Tell the shop once.
+    const { data: doc } = row.quote_id
+      ? await admin.from("quotes").select("quote_id").eq("id", row.quote_id).maybeSingle()
+      : row.invoice_id
+        ? await admin.from("invoices").select("invoice_id").eq("id", row.invoice_id).maybeSingle()
+        : { data: null };
+    const label = doc?.quote_id ?? doc?.invoice_id ?? null;
+    await notifyOnce({
+      shopOwner: row.shop_owner,
+      eventType: "payment_test_received",
+      severity: "info",
+      title: `Test payment received: $${(row.amount_cents / 100).toFixed(2)}${label ? ` for ${label}` : ""}`,
+      body: "Stripe is in test mode, so this wasn't recorded in your QuickBooks and the quote wasn't marked paid. Live payments are recorded in QuickBooks and marked paid automatically.",
+      metadata: { processor: "stripe", payin_id: payinId, test: true },
+    });
     return "test_mode";
   }
 

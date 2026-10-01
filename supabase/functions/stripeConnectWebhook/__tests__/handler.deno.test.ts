@@ -621,6 +621,11 @@ Deno.test("test mode: payments are recorded but NEVER posted to the shop's real 
   assertEquals(posted.length, 0);
   assertEquals(deposits.length, 0);
   assertEquals(emails.length, 0); // no "not recorded" alarms for test money
+  // …but the shop IS told a test payment came in — once, not every night.
+  const notes = db.tables.notifications.filter((n) => n.event_type === "payment_test_received");
+  assertEquals(notes.length, 1);
+  assertEquals(notes[0].title, "Test payment received: $1643.00 for Q-2026-HKSO");
+  assertEquals(notes[0].severity, "info");
 });
 
 Deno.test("test mode: booking can be allowed on purpose (a QuickBooks sandbox shop)", async () => {
