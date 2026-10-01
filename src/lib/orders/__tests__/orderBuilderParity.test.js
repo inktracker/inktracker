@@ -65,6 +65,52 @@ describe("order-builder parity — deposit fields (CRITICAL 1 pin)", () => {
   });
 });
 
+describe("order-builder parity — fee fields (under-billing pin, 2026-09-30)", () => {
+  // The edge builder dropped setup_total + additional_charges while the
+  // order's total still included them — so every ONLINE-PAID conversion
+  // produced a completion invoice short the setup fees + one-off charges
+  // ($20–$200+). These fields must ride in BOTH builders, like the deposit
+  // fields above.
+  const feeQuote = {
+    ...quote,
+    setup_total: 60,
+    additional_charges: [{ label: "Shipping", amount: 25, taxable: false }],
+    is_reorder: true,
+    setup_screens_override: 3,
+  };
+
+  it("the EDGE builder carries setup_total, additional_charges, reorder fields, quote_id, customer_email", () => {
+    const order = buildOrderInsertFromQuote(feeQuote, "ORD-3");
+    expect(order.setup_total).toBe(60);
+    expect(order.additional_charges).toEqual([{ label: "Shipping", amount: 25, taxable: false }]);
+    expect(order.is_reorder).toBe(true);
+    expect(order.setup_screens_override).toBe(3);
+    expect(order.quote_id).toBe("Q-2026-TEST");
+    expect(order.customer_email).toBe("acme@example.com");
+  });
+
+  it("the FRONTEND builder carries the same fee fields", () => {
+    const order = buildOrderFromQuote(feeQuote, { userEmail: "shop@x.com", now: new Date("2026-08-12T00:00:00Z") });
+    expect(order.setup_total).toBe(60);
+    expect(order.additional_charges).toEqual([{ label: "Shipping", amount: 25, taxable: false }]);
+    expect(order.is_reorder).toBe(true);
+    expect(order.setup_screens_override).toBe(3);
+  });
+
+  it("both builders default the fee fields identically when absent", () => {
+    const edge = buildOrderInsertFromQuote(quote, "ORD-4");
+    const fe = buildOrderFromQuote(quote, { userEmail: "shop@x.com", now: new Date("2026-08-12T00:00:00Z") });
+    expect(edge.setup_total).toBe(0);
+    expect(fe.setup_total).toBe(0);
+    expect(edge.additional_charges).toBeNull();
+    expect(fe.additional_charges).toBeNull();
+    expect(edge.is_reorder).toBe(false);
+    expect(fe.is_reorder).toBe(false);
+    expect(edge.setup_screens_override).toBeNull();
+    expect(fe.setup_screens_override).toBeNull();
+  });
+});
+
 describe("quote duplication — deposit lifecycle never survives (CRITICAL 2 pin)", () => {
   it("QUOTE_DUPLICATE_EXCLUDED strips the snapshot and both deposit-invoice pointers", () => {
     for (const col of ["deposit_amount", "deposit_paid_at", "qb_deposit_invoice_id", "qb_deposit_payment_link", "deposit_paid"]) {

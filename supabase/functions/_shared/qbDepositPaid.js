@@ -59,8 +59,18 @@ export async function processDepositInvoicePaid(supabase, { quote, qbInvoiceId, 
       console.error(`[qbDepositPaid] conversion failed for ${quote.quote_id}:`, convErr?.message || convErr);
     }
   }
+  // Carry the deposit pointer to the order — and CHECK the write. The pointer
+  // is load-bearing (settlement finds the deposit invoice through it at final
+  // push, CRITICAL 1), this is the LAST writer (reconcile's deposit backstop
+  // only scans deposit_paid=false quotes, so once the flag flips above a
+  // failed carry is never repaired), and supabase-js doesn't throw. A
+  // swallowed failure here logged status:"success" while the order lacked
+  // qb_deposit_invoice_id — so the customer got billed the FULL amount at
+  // final push with the deposit never credited (audit 2026-09-30). Log it as
+  // an error so operators/reconcile alerts can see and fix it.
+  let carryFailed = null;
   if (orderId) {
-    await supabase
+    const { error: carryErr } = await supabase
       .from("orders")
       .update({
         deposit_paid: true,
@@ -71,15 +81,20 @@ export async function processDepositInvoicePaid(supabase, { quote, qbInvoiceId, 
       })
       .eq("order_id", orderId)
       .eq("shop_owner", shopOwner);
+    if (carryErr) {
+      carryFailed = carryErr.message;
+      console.error(`[qbDepositPaid] deposit-pointer carry to order ${orderId} FAILED: ${carryErr.message} — deposit settlement will not find the deposit invoice at final push`);
+    }
   }
 
   await logEvent(supabase, {
     shop_owner: shopOwner,
     action: source === "reconcile" ? "reconcile_deposit_paid" : "webhook_deposit_paid",
-    status: "success",
+    status: carryFailed ? "error" : "success",
     qb_invoice_id: qbInvoiceId,
     quote_id: quote.id,
-    response_body: { quote_id_human: quote.quote_id, order_id: orderId, collected, source },
+    ...(carryFailed ? { error_message: `order deposit-pointer carry failed: ${carryFailed}` } : {}),
+    response_body: { quote_id_human: quote.quote_id, order_id: orderId, collected, source, ...(carryFailed ? { carry_failed: true } : {}) },
   });
 
   try {
