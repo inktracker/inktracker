@@ -464,6 +464,13 @@ export default function Production() {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
       }
+      // Advancing OUT of Printing is how most orders actually finish — the
+      // operator clicks the stage arrow, not the explicit Mark Complete
+      // button. Without this the send-invoice prompt only fired on the
+      // button path, so finishing via the arrow meant going to find the
+      // invoice by hand (Joe, 2026-10-01). changeOrderStatus ran the full
+      // completion above, so the invoice already exists here.
+      if (nextStatus === "Completed") promptSend(updated);
     } catch (err) {
       notify.error(nextStatus === "Completed" ? "Couldn't complete the order" : "Couldn't update the order status", err);
     }

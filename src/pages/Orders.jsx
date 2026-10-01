@@ -190,6 +190,10 @@ export default function Orders() {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
       }
+      // Same as Production: finishing via the stage arrow must offer the
+      // invoice email, not just the explicit Complete button (completion
+      // already ran inside changeOrderStatus, so the invoice exists).
+      if (nextStatus === "Completed") promptSend(updated);
     } catch (err) {
       notify.error("Couldn't update the order status", err);
     }
