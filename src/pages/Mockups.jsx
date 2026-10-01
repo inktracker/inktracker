@@ -9,6 +9,7 @@ import { getShopPricingConfig, getDisplayName, getEnabledTechniques } from "../c
 import { shopScope } from "@/lib/shopScope";
 import { withMockupProof, countMockupProofs, proofRecipientEmail } from "@/lib/art/mockupProof";
 import { callArtProof } from "@/lib/art/artProofClient";
+import { artApprovalState } from "@/lib/art/artApproval";
 // jspdf loaded on demand inside generateProofPDF below
 
 // Print-location options for the mockup. `value` MUST match a PRINT_AREAS
@@ -89,9 +90,13 @@ export default function Mockups() {
   // Recipient override for "Send to customer"; blank = the order's contact.
   const [sendTo, setSendTo] = useState("");
   const [editingSendTo, setEditingSendTo] = useState(false);
+  // Optional note in the proof email ("check the colors"), like Send proof.
+  const [sendNote, setSendNote] = useState("");
+  const [editingNote, setEditingNote] = useState(false);
   // Arriving from an order's "Make a mockup" link (?order=<id>): preselect
   // it once the picker has loaded.
-  const preselectRef = useRef(new URLSearchParams(window.location.search).get("order"));
+  const deepLinkOrderId = useRef(new URLSearchParams(window.location.search).get("order")).current;
+  const preselectRef = useRef(deepLinkOrderId);
   // Shop identity used by the Art Proof PDF header (logo + name) and
   // footer (website). Falls back to the proof rendering without those
   // accents when the load fails.
@@ -179,7 +184,20 @@ export default function Mockups() {
           base44.entities.Customer.all({ shop_owner: shopScope(me) }),
         ]);
         if (cancelled) return;
-        setOrders((ordersRes || []).filter(o => o.status !== "Completed"));
+        let openOrders = (ordersRes || []).filter(o => o.status !== "Completed");
+        // "Make a mockup" from an order the picker doesn't list (completed,
+        // or older than the newest 200): fetch it so it can still be picked.
+        // Re-done on every reload (tab focus) so the pick doesn't vanish.
+        if (deepLinkOrderId && !openOrders.some(o => o.id === deepLinkOrderId)) {
+          const extra = await base44.entities.Order.get(deepLinkOrderId).catch(() => null);
+          if (cancelled) return;
+          if (extra) openOrders = [extra, ...openOrders];
+          else if (preselectRef.current) {
+            preselectRef.current = null;
+            notify.error("Couldn't open that order", "Pick the order from the list under Proof Details.");
+          }
+        }
+        setOrders(openOrders);
         const TERMINAL_QUOTE_STATUSES = new Set(["Converted to Order", "Declined", "Voided"]);
         setQuotes((quotesRes || []).filter(q => !TERMINAL_QUOTE_STATUSES.has(q.status)));
         setShop((shopsRes || [])[0] || null);
@@ -252,6 +270,8 @@ export default function Mockups() {
     setSelectedTargetKey(key);
     setSendTo("");
     setEditingSendTo(false);
+    setSendNote("");
+    setEditingNote(false);
     setReplacePrevMockup(true);
     const target = resolveTarget(key);
     if (!target) return;
@@ -723,6 +743,15 @@ export default function Mockups() {
     }
   }
 
+  // PNG of the first view that has artwork (the one the PDF leads with).
+  async function uploadMockupPreview() {
+    const v = views.find((id) => artworks[id]) || view;
+    const blob = await canvasRefs.current[v]?.exportPng?.();
+    if (!blob) return null;
+    const { path, file_url } = await uploadFile(new File([blob], `mockup-${viewLabel(v)}.png`, { type: "image/png" }));
+    return { path, url: file_url };
+  }
+
   // Generates the proof PDF, uploads it, and attaches it to the selected
   // order/quote's artwork (replacing the previous mockup unless the shop
   // unticks that). With send=true it then emails the customer the proof to
@@ -734,6 +763,16 @@ export default function Mockups() {
       notify.error("Pick an order or quote to link the proof to first.");
       return;
     }
+    // Art the customer already approved: changing it (even saving without
+    // sending) means they have to approve again before the job can finish.
+    if (target.type === "order") {
+      const st = artApprovalState(target.record);
+      if (st.approved && !window.confirm(send
+        ? `The customer already approved this art${st.version ? ` (v${st.version})` : ""}. Sending a new mockup replaces that approval, and they'll need to approve again. Send it?`
+        : `The customer already approved this art${st.version ? ` (v${st.version})` : ""}. Saving a new mockup changes it, so they'll need to approve again before the job can be completed. Save anyway?`)) {
+        return;
+      }
+    }
     setLinking(true);
     setLinkMode(send ? "send" : "link");
     try {
@@ -741,6 +780,9 @@ export default function Mockups() {
       if (!result?.blob) throw new Error("Couldn't generate the proof PDF.");
       const file = new File([result.blob], result.filename, { type: "application/pdf" });
       const { path, file_url } = await uploadFile(file);
+      // A picture of the mockup for the proof email (the PDF can't show in
+      // an inbox). Best-effort: the proof still sends without it.
+      const preview = await uploadMockupPreview().catch(() => null);
       const Entity = target.type === "order" ? base44.entities.Order : base44.entities.Quote;
       // Re-read: the picker list can be minutes old, and writing its
       // artwork back would drop files added to the job since.
@@ -757,6 +799,7 @@ export default function Mockups() {
         url: file_url,
         file_url,
         type: "proof",
+        ...(preview ? { preview } : {}),
         uploaded_at: new Date().toISOString(),
       }, { replace: replacePrevMockup });
       const updated = await Entity.update(fresh.id, { selected_artwork: next });
@@ -771,7 +814,7 @@ export default function Mockups() {
         return;
       }
       try {
-        const res = await callArtProof("send", { orderId: fresh.id, to: sendTo.trim() || undefined });
+        const res = await callArtProof("send", { orderId: fresh.id, to: sendTo.trim() || undefined, message: sendNote.trim() || undefined });
         if (res?.order) setOrders(prev => prev.map(o => (o.id === res.order.id ? { ...o, ...res.order } : o)));
         if (res?.emailed === false) {
           notify.error("Proof saved, but the email didn't send", "Open the order and use Send proof to try again.");
@@ -779,6 +822,8 @@ export default function Mockups() {
           notify.success(`Proof v${res.version} sent for approval`, `Emailed to ${res.sentTo}. You'll see their answer on ${label}.`);
         }
         setEditingSendTo(false);
+        setSendNote("");
+        setEditingNote(false);
       } catch (err) {
         // The mockup is attached either way; only the email failed.
         notify.error(`Mockup saved to ${label}, but the proof didn't send`, err);
@@ -1126,7 +1171,19 @@ export default function Mockups() {
                   <div className="text-xs text-slate-500 text-center">
                     Goes to {defaultRecipient} ·{" "}
                     <button type="button" onClick={() => setEditingSendTo(true)} className="font-semibold text-teal-700 hover:text-teal-800">change</button>
+                    {!editingNote && (
+                      <>
+                        {" "}·{" "}
+                        <button type="button" onClick={() => setEditingNote(true)} className="font-semibold text-teal-700 hover:text-teal-800">add a note</button>
+                      </>
+                    )}
                   </div>
+                )}
+                {editingNote && (
+                  <textarea rows={2} value={sendNote} onChange={e => setSendNote(e.target.value)}
+                    placeholder="Anything they should check, like colors or placement."
+                    aria-label="Note to the customer"
+                    className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                 )}
               </div>
             )}

@@ -1,3 +1,13 @@
+import { resolveArtworkPath } from "../_shared/artworkPath.js";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { loadProfileWithSecrets, loadShopProfileForUser } from "../_shared/profileSecrets.ts";
+import { planSendProof, planOverride } from "../_shared/artProofEffects.js";
+import { proofReminderDue } from "../_shared/artApproval.js";
+import { sendAndLogApprovalNotification } from "../_shared/approvalNotificationEmail.js";
+import { insertShopNotification } from "../_shared/notifications.js";
+import { renderEmailLayout, renderEmailButton } from "../_shared/emailLayout.ts";
+import { escapeHtml } from "../_shared/emailSanitize.js";
+
 // Artwork proofs — shop-side actions. Supabase Edge Function.
 //
 //   send      → new proof version from the order's current art; emails the
@@ -11,15 +21,6 @@
 // Customer responses (approve / request changes) live in
 // createCheckoutSession, next to the approval page's other actions. Logic:
 // _shared/artApproval.js + _shared/artProofEffects.js.
-
-import { createClient } from "npm:@supabase/supabase-js@2.102.1";
-import { loadProfileWithSecrets, loadShopProfileForUser } from "../_shared/profileSecrets.ts";
-import { planSendProof, planOverride } from "../_shared/artProofEffects.js";
-import { proofReminderDue } from "../_shared/artApproval.js";
-import { sendAndLogApprovalNotification } from "../_shared/approvalNotificationEmail.js";
-import { insertShopNotification } from "../_shared/notifications.js";
-import { renderEmailLayout, renderEmailButton } from "../_shared/emailLayout.ts";
-import { escapeHtml } from "../_shared/emailSanitize.js";
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
@@ -61,7 +62,35 @@ export function proofRecipient(order: Any, override?: string) {
   return { to: String(order?.customer_email ?? "").trim(), role: "customer" };
 }
 
-export function buildProofEmail({ order, version, shopName, logoUrl, message, url, files, reminder = false }: Any) {
+const RASTER = /\.(png|jpe?g|gif|webp)$/i;
+
+/**
+ * Pictures for the proof email: a mockup's PNG preview, or any uploaded art
+ * that is itself an image. Served through the token-checked artworkProof
+ * proxy at w=1024 (email bodies render ~600px; the print original would be
+ * wasted egress). PDFs/AI files have no picture and stay as names.
+ */
+export function proofImageUrls(order: Any, supabaseUrl: string | undefined, token: string) {
+  const base = String(supabaseUrl || "").replace(/\/$/, "");
+  if (!base || !token || !order?.id) return [];
+  const out: { url: string; name: string }[] = [];
+  for (const a of Array.isArray(order.selected_artwork) ? order.selected_artwork : []) {
+    let path = a?.preview?.path ? String(a.preview.path) : null;
+    if (!path) {
+      const own = resolveArtworkPath(a?.path || a?.url || a?.file_url);
+      if (own && RASTER.test(String(own).split("?")[0])) path = own;
+    }
+    if (!path) continue;
+    out.push({
+      url: `${base}/functions/v1/artworkProof?type=order&id=${encodeURIComponent(order.id)}&token=${encodeURIComponent(token)}&path=${encodeURIComponent(path)}&w=1024`,
+      name: String(a?.name || "Artwork"),
+    });
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+export function buildProofEmail({ order, version, shopName, logoUrl, message, url, files, images = [], reminder = false }: Any) {
   const what = order.job_title ? `${order.job_title} (${order.order_id})` : order.order_id;
   const subject = reminder
     ? `Reminder: your proof for ${what} is waiting for approval`
@@ -77,6 +106,8 @@ export function buildProofEmail({ order, version, shopName, logoUrl, message, ur
         ? "Just a reminder: we're waiting on your approval before we start printing."
         : `Your artwork proof${version > 1 ? ` (version ${version})` : ""} is ready. Please check every detail, then approve it or tell us what to change.`}</p>` +
       (message ? `<p style="margin:0 0 12px;white-space:pre-line">${escapeHtml(message)}</p>` : "") +
+      (images ?? []).map((im: Any) =>
+        `<p style="margin:0 0 12px"><a href="${escapeHtml(url)}"><img src="${escapeHtml(im.url)}" alt="${escapeHtml(im.name)}" width="520" style="max-width:100%;height:auto;border:1px solid #e5e7eb;border-radius:8px;display:block"></a></p>`).join("") +
       (fileList ? `<ul style="margin:0 0 16px;padding-left:18px">${fileList}</ul>` : "") +
       renderEmailButton("Review and approve", url) +
       `<p style="margin:16px 0 0;font-size:13px;color:#6b7280">Production starts once you approve.</p>`,
@@ -138,7 +169,10 @@ export async function sendReminders(deps: Deps): Promise<{ reminded: number }> {
     const brand = await shopBrand(admin, order.shop_owner);
     const to = p.sent_to || proofRecipient(order).to;
     if (!to) continue;
-    const { subject, html } = buildProofEmail({ order, version: p.version, ...brand, url: approvalUrl(deps.env, order), reminder: true });
+    const { subject, html } = buildProofEmail({
+      order, version: p.version, ...brand, url: approvalUrl(deps.env, order), reminder: true,
+      images: proofImageUrls(order, deps.env("SUPABASE_URL"), order.public_token),
+    });
     await (deps.send ?? defaultSend)(admin, {
       shop_owner: order.shop_owner, event_type: "art_proof_reminder", order_id: order.id,
       recipient_email: to, recipient_role: order.broker_id ? "broker" : "customer",
@@ -196,6 +230,7 @@ export async function handle(req: Request, deps: Deps) {
     const { subject, html } = buildProofEmail({
       order: { ...order, public_token: publicToken }, version: plan.version, ...brand, message: body.message,
       url: approvalUrl(deps.env, { ...order, public_token: publicToken }), files: plan.insert.snapshot.files,
+      images: proofImageUrls(order, deps.env("SUPABASE_URL"), publicToken),
     });
     const sent = await (deps.send ?? defaultSend)(admin, {
       shop_owner: order.shop_owner, event_type: "art_proof_sent", order_id: order.id,
