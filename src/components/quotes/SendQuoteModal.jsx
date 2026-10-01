@@ -16,6 +16,7 @@ import {
   shouldClearQbPaymentLink,
   buildSendQuoteEmailRequest,
   buildPostSendQuotePatch,
+  sendMintsShopQbInvoice,
 } from "@/lib/quotes/sendOrchestration";
 import { effectiveQuoteTotals } from "@/lib/quotes/effectiveTotals";
 import { toCustomerFacingQuote, isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
@@ -264,6 +265,23 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // payment provider and clicks the explicit "Create QB Invoice" button.
   // Send remains disabled until this succeeds.
   async function handleCreateQbInvoice({ acceptQbTax = false, resyncOnly = false, qbOnly = false } = {}) {
+    // BROKER quotes NEVER create a QB invoice through this (shop) path.
+    //
+    // This builds the invoice at BROKER_MARKUP (WHOLESALE — the shop→broker
+    // amount) and, since the broker is the caller, QuickBooks creates it in the
+    // BROKER's OWN books. That put the you↔broker wholesale invoice ($703.35)
+    // into the broker's QB instead of his client invoice ($769.50) — Joe,
+    // 2026-10-01: "his qb is creating the invoice that is between him and i".
+    // It was also redundant: the broker's email carries the white-label
+    // approval-page link, not this QB pay link, and the REAL broker→client
+    // invoice (client price, broker's realm, stamped on qb_broker_client_*) is
+    // created by createBrokerClientInvoice AFTER the send (BrokerDashboard
+    // onSuccess). So for a broker quote we just send the email — one invoice,
+    // one leg, in the right books.
+    if (!sendMintsShopQbInvoice(quote)) {
+      await handleSend();
+      return;
+    }
     // Last-mile confirm — the default button both creates the QB invoice AND
     // sends the customer the quote email, so it's a real outbound-email gate.
     // qbOnly is the books-only path: same QB create (same guards, same

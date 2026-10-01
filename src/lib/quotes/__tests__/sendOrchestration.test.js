@@ -8,6 +8,7 @@ import {
   buildPostSendQuotePatch,
   extractProofImageUrls,
   MAX_PDF_ATTACHMENT_B64_CHARS,
+  sendMintsShopQbInvoice,
 } from "../sendOrchestration.js";
 
 describe("extractProofImageUrls", () => {
@@ -551,5 +552,17 @@ describe("extractProofImageUrls — edge cases", () => {
       { url: `${base}/ok.png`, name: "Front" },
     ] });
     expect(out).toEqual([{ url: proxy("ok.png"), name: "Front" }]);
+  });
+});
+
+describe("sendMintsShopQbInvoice — brokers never mint the shop's QB invoice on send", () => {
+  it("false for broker quotes (by broker_id, broker_email, or brokerId)", () => {
+    expect(sendMintsShopQbInvoice({ broker_id: "ethan@ttrsupply.com" })).toBe(false);
+    expect(sendMintsShopQbInvoice({ broker_email: "e@x.com" })).toBe(false);
+    expect(sendMintsShopQbInvoice({ brokerId: "e@x.com" })).toBe(false);
+  });
+  it("true for a normal shop quote", () => {
+    expect(sendMintsShopQbInvoice({ customer_id: "c1" })).toBe(true);
+    expect(sendMintsShopQbInvoice({})).toBe(true);
   });
 });

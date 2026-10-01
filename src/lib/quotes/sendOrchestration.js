@@ -1,5 +1,5 @@
 import { resolveArtworkPath } from "@/lib/artworkPath";
-import { customerFacingShopName } from "./customerFacingQuote";
+import { customerFacingShopName, isBrokerQuote } from "./customerFacingQuote";
 
 // Pure orchestration logic for the Send Quote flow.
 //
@@ -323,4 +323,16 @@ export function buildPostSendQuotePatch({
     tax_rate: isBrokerQuote ? 0 : (currentTaxRate ?? 0),
     customer_email: recipients[0] ?? "",
   };
+}
+
+
+// Only a NON-broker (shop) quote mints the shop's QB invoice during the send
+// flow. A broker's "Send to Client" must NOT: that create builds at WHOLESALE
+// (the shop→broker amount) and, with the broker as caller, lands in the
+// BROKER's own QuickBooks — the you↔broker invoice in his books instead of his
+// client's invoice (Joe, 2026-10-01). The real broker→client invoice (client
+// price, broker's realm, qb_broker_client_*) is createBrokerClientInvoice's
+// job, fired after the send.
+export function sendMintsShopQbInvoice(quote) {
+  return !isBrokerQuote(quote);
 }
