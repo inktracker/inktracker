@@ -22,6 +22,8 @@
 // { error } on bad input.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { asBareEmail } from "../_shared/emailSanitize.js";
+import { escapeLikeLiteral } from "../_shared/likeEscape.js";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -60,22 +62,38 @@ Deno.serve(async (req) => {
     if (!ownerEmail || typeof ownerEmail !== "string") {
       return json({ error: "ownerEmail is required" }, 400);
     }
+    // Must be a real email SHAPE. Note this alone does NOT close the wildcard
+    // hole — EMAIL_RE admits `%` (e.g. "%@gmail.com" passes) — the escape on
+    // the query below is the actual fix; this just rejects obvious garbage.
+    const email = asBareEmail(ownerEmail);
+    if (!email) {
+      return json({ error: "ownerEmail is required" }, 400);
+    }
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-    // Rate-limit per queried email so this anonymous endpoint can't be used as
-    // an unthrottled existence-oracle / DB-load source by probing many emails.
-    const { data: underLimit } = await admin.rpc("check_request_rate", {
-      p_key: `shopcfg:${ownerEmail.trim().toLowerCase()}`, p_limit_per_hr: 120,
-    });
-    if (underLimit === false) {
+    // Two rate limits:
+    //  - per client IP: the key an attacker CANNOT choose. Keying only on the
+    //    queried email let every new probe string mint a fresh 120/hr bucket,
+    //    making the limit useless against enumeration.
+    //  - per queried email (kept): bounds load on any one shop's row.
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+    const [{ data: ipUnder }, { data: emailUnder }] = await Promise.all([
+      admin.rpc("check_request_rate", { p_key: `shopcfg_ip:${ip}`, p_limit_per_hr: 240 }),
+      admin.rpc("check_request_rate", { p_key: `shopcfg:${email.toLowerCase()}`, p_limit_per_hr: 120 }),
+    ]);
+    if (ipUnder === false || emailUnder === false) {
       return json({ error: "Too many requests. Please try again shortly." }, 429);
     }
 
+    // escapeLikeLiteral turns ilike into plain case-insensitive EQUALITY:
+    // `%`/`_` in the input match literally, never as wildcards. Without it,
+    // this anonymous endpoint was an enumeration oracle — "%@gmail.com" with
+    // prefix-walking could pull EVERY shop's pricing_config (2026-09-30).
     const { data, error } = await admin
       .from("shops")
       .select(SAFE_COLUMNS)
-      .ilike("owner_email", ownerEmail.trim())
+      .ilike("owner_email", escapeLikeLiteral(email))
       .maybeSingle();
 
     if (error) {
