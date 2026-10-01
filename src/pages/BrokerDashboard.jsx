@@ -49,6 +49,7 @@ import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { exportQuoteToPDF } from "../components/shared/pdfExport";
 import { STANDARD_MARKUP, O_STATUSES, getBrokerClientDisplay } from "../components/shared/pricing";
 import { normalizeQuoteStatus } from "@/lib/broker/quoteStatus";
+import { depositAmountFor } from "@/lib/deposits";
 import { getQuoteTotalSafe as getQuoteTotalSafeLib } from "@/lib/broker/quoteTotals";
 import SendQuoteModal from "../components/quotes/SendQuoteModal";
 import { notify } from "@/lib/notify";
@@ -143,7 +144,13 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
         afterDisc: Number(quote.total) - Number(quote.tax || 0),
         tax:       Number(quote.tax || 0),
         total:     Number(quote.total),
-        deposit:   (Number(quote.total)) * ((parseFloat(quote.deposit_pct) || 0) / 100),
+        // depositAmountFor, NOT an inline total×pct: the snapshot
+        // (deposit_amount) is the agreement and always wins, pct is clamped
+        // 0–100, and the result is rounded to cents — the inline copy here
+        // had drifted from the 4 other implementations ("must never disagree
+        // by a penny") and showed a different deposit than the editor/PDF/QB
+        // once a quote was edited after the deposit was set.
+        deposit:   depositAmountFor(quote),
       }
     : calcQuoteTotals(quote, BROKER_MARKUP);
   // Gate on > 0, not Number.isFinite: client_* are NOT NULL DEFAULT 0
@@ -156,7 +163,9 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
         afterDisc: Number(quote.client_total) - Number(quote.client_tax || 0),
         tax:       Number(quote.client_tax || 0),
         total:     Number(quote.client_total),
-        deposit:   (Number(quote.client_total)) * ((parseFloat(quote.deposit_pct) || 0) / 100),
+        // Same contract as the broker side, with the CLIENT total as the
+        // pct-fallback base (the snapshot, when present, still wins).
+        deposit:   depositAmountFor({ ...quote, total: Number(quote.client_total) }),
       }
     : calcQuoteTotals(quote, STANDARD_MARKUP);
   const normalizedStatus = normalizeQuoteStatus(quote.status);

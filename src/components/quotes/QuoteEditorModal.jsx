@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { defaultExtrasList } from "@/lib/pricing/extrasDefaults";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import {
@@ -49,12 +50,7 @@ const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 // (or for shops that haven't customized their extras at all). Every
 // entry uses `mode: "flat"` because the historical UI was flat-only;
 // once the shop saves their config the live values + modes take over.
-const DEFAULT_ADDONS = [
-  { key: "tags",           label: "Custom Tags",      rate: 1.5, mode: "flat" },
-  { key: "difficultPrint", label: "Difficult Print",  rate: 0.5, mode: "flat" },
-  { key: "colorMatch",     label: "Ink Color Match",  rate: 1.0, mode: "flat" },
-  { key: "waterbased",     label: "Water-Based Ink",  rate: 1.0, mode: "flat" },
-];
+const DEFAULT_ADDONS = defaultExtrasList({ mode: "flat" });
 
 // Friendly default labels for the standard keys so a freshly-saved
 // shop's extras render with sensible names before they customize.
