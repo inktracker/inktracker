@@ -43,6 +43,7 @@ import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { fetchAllRows } from "../_shared/paginate.js";
 import { escapeQbStringLiteral } from "../_shared/qbInvoice.js";
 import { logEvent } from "../_shared/qbAudit.js";
+import { sendResendEmail } from "../_shared/resendClient.js";
 import {
   classifyQuoteDrift,
   buildReconcileNotification,
@@ -65,6 +66,7 @@ import {
   chooseQuotePaymentRecipient,
   buildQuotePaymentEmail,
   sendAndLogApprovalNotification,
+  logNotificationAttempt,
 } from "../_shared/approvalNotificationEmail.js";
 import {
   summarizeQbErrors,
@@ -123,6 +125,28 @@ const SUPABASE_KEY     = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPERATOR_ALERT_EMAIL = Deno.env.get("OPERATOR_ALERT_EMAIL") ?? "";
 const RESEND_API_KEY       = Deno.env.get("RESEND_API_KEY") ?? "";
 const ALERT_FROM_EMAIL     = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
+
+// ── Operator alert transport ────────────────────────────────────────
+// ONE path for every operator alert/digest this function sends. Replaces the
+// 8 bare api.resend.com fetches that (a) had no retry — one 429 on Resend's
+// shared ~2req/s account limit and the alert was silently gone — and (b)
+// wrote no notification_log row, leaving probeEmailFailures structurally
+// blind to the alerting channel's own failures (audit 2026-09-30).
+// sendResendEmail retries 429/5xx/network with backoff and never throws;
+// the result keeps `.ok`/`.status` so call sites read naturally.
+async function sendOperatorEmail(adminClient: any, payload: { from: string; to: string[]; subject: string; html?: string; text?: string }) {
+  const r = await sendResendEmail(payload);
+  await logNotificationAttempt(adminClient, {
+    shop_owner: "__system__",
+    event_type: "operator_alert",
+    recipient_email: payload.to?.[0] ?? "",
+    subject: payload.subject,
+    status: r.ok ? "sent" : "failed",
+    failure_reason: r.ok ? null : (r.reason || `resend_${r.status}`),
+    resend_id: r.id ?? null,
+  });
+  return r;
+}
 
 // Constant-time string compare. Used for the CRON_SECRET bearer
 // check below — `!==` short-circuits on the first mismatched byte
@@ -1081,23 +1105,15 @@ async function scanAndAlertQbErrors(adminClient: any): Promise<{ scanned: number
     const text = buildQbErrorDigestText(summary);
     const html = buildQbErrorDigestHtml(summary);
     const subject = `[InkTracker] QuickBooks error spike — ${summary.total} event(s) across ${summary.shopCount} shop(s)`;
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const res = await sendOperatorEmail(adminClient, {
         from: `InkTracker <${ALERT_FROM_EMAIL}>`,
         to: [OPERATOR_ALERT_EMAIL],
         subject,
         html,
         text,
-      }),
-    });
+      });
     if (!res.ok) {
-      const body = await res.text();
-      console.warn(`[qbReconcile] Resend alert send failed: ${res.status} ${body}`);
+      console.warn(`[qbReconcile] Resend alert send failed: ${res.status} ${res.reason ?? ""}`);
       return { scanned: summary.total, alerted: false };
     }
     return { scanned: summary.total, alerted: true };
@@ -1147,21 +1163,14 @@ async function scanAndAlertDataIntegrity(adminClient: any): Promise<{ violations
       (s: number, r: any) => s + Number(r.missing_link || 0) + Number(r.dangling_link || 0),
       0,
     );
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const res = await sendOperatorEmail(adminClient, {
         from: `InkTracker <${ALERT_FROM_EMAIL}>`,
         to: [OPERATOR_ALERT_EMAIL],
         subject: `[InkTracker] Data integrity violation — ${total} orphaned customer reference(s)`,
         text,
-      }),
-    });
+      });
     if (!res.ok) {
-      console.warn(`[qbReconcile] integrity alert send failed: ${res.status} ${await res.text()}`);
+      console.warn(`[qbReconcile] integrity alert send failed: ${res.status} ${res.reason ?? ""}`);
       return { violations: total, alerted: false };
     }
     // Record the send so the 24h dedup above suppresses repeats today.
@@ -1275,22 +1284,15 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
       return { findings: 0, alerted: false };
     }
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const res = await sendOperatorEmail(adminClient, {
         from: `InkTracker <${ALERT_FROM_EMAIL}>`,
         to: [OPERATOR_ALERT_EMAIL],
         subject: `[InkTracker] Books drift — ${summary.driftCount} row(s) disagree with QuickBooks` +
                  (summary.stuckCount ? `, ${summary.stuckCount} stuck paid order(s)` : ""),
         text: buildBooksDriftAlertText(summary),
-      }),
-    });
+      });
     if (!res.ok) {
-      console.warn(`[qbReconcile] books-drift alert send failed: ${res.status} ${await res.text()}`);
+      console.warn(`[qbReconcile] books-drift alert send failed: ${res.status} ${res.reason ?? ""}`);
       return { findings: summary.driftCount + summary.stuckCount, alerted: false };
     }
     await logEvent(adminClient, {
@@ -1352,13 +1354,9 @@ async function alertWebhookHealth(adminClient: any, paidNotRecorded: number): Pr
       `  • Production (not sandbox) mode\n\n` +
       `(An occasional single conversion can be normal — e.g. a payment recorded directly in QuickBooks ` +
       `never fires our webhook.)`;
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: `InkTracker <${ALERT_FROM_EMAIL}>`, to: [OPERATOR_ALERT_EMAIL], subject, text }),
-    });
+    const res = await sendOperatorEmail(adminClient, { from: `InkTracker <${ALERT_FROM_EMAIL}>`, to: [OPERATOR_ALERT_EMAIL], subject, text });
     if (!res.ok) {
-      console.warn(`[qbReconcile] webhook-health alert send failed: ${res.status} ${await res.text()}`);
+      console.warn(`[qbReconcile] webhook-health alert send failed: ${res.status} ${res.reason ?? ""}`);
       return { alerted: false };
     }
     // Record the send so the 24h dedup above suppresses repeats today.
@@ -1412,18 +1410,14 @@ async function scanAndAlertEmailHealth(adminClient: any): Promise<{ failed: numb
       .maybeSingle();
     if (recent) return { failed: summary.failed, alerted: false };
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const res = await sendOperatorEmail(adminClient, {
         from: `InkTracker <${ALERT_FROM_EMAIL}>`,
         to: [OPERATOR_ALERT_EMAIL],
         subject: `[InkTracker] Notification emails failing — ${summary.failed} failed send(s) in 24h`,
         text: buildEmailHealthAlertText(summary),
-      }),
-    });
+      });
     if (!res.ok) {
-      console.warn(`[qbReconcile] email-health alert send failed: ${res.status} ${await res.text()}`);
+      console.warn(`[qbReconcile] email-health alert send failed: ${res.status} ${res.reason ?? ""}`);
       return { failed: summary.failed, alerted: false };
     }
     await logEvent(adminClient, {
@@ -1495,18 +1489,14 @@ async function scanAndAlertPayLinks(adminClient: any): Promise<{ failing: number
       .maybeSingle();
     if (recent) return { failing: summary.failing.length, alerted: false };
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const res = await sendOperatorEmail(adminClient, {
         from: `InkTracker <${ALERT_FROM_EMAIL}>`,
         to: [OPERATOR_ALERT_EMAIL],
         subject: `[InkTracker] Pay links failing validation — ${summary.failing.length} quote(s) show Approve-only`,
         text: buildPayLinkAlertText(summary, { sinceDays }),
-      }),
-    });
+      });
     if (!res.ok) {
-      console.warn(`[qbReconcile] pay-link alert send failed: ${res.status} ${await res.text()}`);
+      console.warn(`[qbReconcile] pay-link alert send failed: ${res.status} ${res.reason ?? ""}`);
       return { failing: summary.failing.length, alerted: false };
     }
     await logEvent(adminClient, {
@@ -1562,18 +1552,14 @@ async function scanAndAlertUnsentQuotes(adminClient: any): Promise<{ failing: nu
       .maybeSingle();
     if (recent) return { failing: summary.failing.length, alerted: false };
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const res = await sendOperatorEmail(adminClient, {
         from: `InkTracker <${ALERT_FROM_EMAIL}>`,
         to: [OPERATOR_ALERT_EMAIL],
         subject: `[InkTracker] ${summary.failing.length} quote(s) marked Sent but never emailed`,
         text: buildUnsentQuoteAlertText(summary, { sinceDays }),
-      }),
-    });
+      });
     if (!res.ok) {
-      console.warn(`[qbReconcile] unsent-quote alert send failed: ${res.status} ${await res.text()}`);
+      console.warn(`[qbReconcile] unsent-quote alert send failed: ${res.status} ${res.reason ?? ""}`);
       return { failing: summary.failing.length, alerted: false };
     }
     await logEvent(adminClient, {
@@ -1667,18 +1653,14 @@ async function scanAndSendGrowthReport(adminClient: any): Promise<{ sent: boolea
       resendMonthlyCap: Number(Deno.env.get("RESEND_MONTHLY_CAP")) || undefined,
     });
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const res = await sendOperatorEmail(adminClient, {
         from: `InkTracker <${ALERT_FROM_EMAIL}>`,
         to: [OPERATOR_ALERT_EMAIL],
         subject: buildGrowthReportSubject(stats),
         text: buildGrowthReportText(stats),
-      }),
-    });
+      });
     if (!res.ok) {
-      console.warn(`[qbReconcile] growth-report send failed: ${res.status} ${await res.text()}`);
+      console.warn(`[qbReconcile] growth-report send failed: ${res.status} ${res.reason ?? ""}`);
       return { sent: false };
     }
     await logEvent(adminClient, {
