@@ -3,6 +3,7 @@ import { base44 } from "@/api/supabaseClient";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { fmtDate, getQty, O_STATUSES, getOrderDisplayClient } from "../components/shared/pricing";
+import { anonEdgeResult } from "@/lib/anonEdge";
 
 export default function OrderStatus() {
   const [order, setOrder] = useState(null);
@@ -31,10 +32,13 @@ export default function OrderStatus() {
       orderId,
       token: publicToken,
     }).then((res) => {
-      if (res?.data?.error) { setError(res.data.error); return; }
-      if (!res?.data?.order) { setError("Order not found."); return; }
-      setOrder(res.data.order);
-      setShop(res.data.shop || null);
+      // Read BOTH halves of the invoke result — a 429/500 (data:null) used to
+      // fall through to "Order not found." (anonEdgeResult; audit 2026-09-30).
+      const { data, message } = anonEdgeResult(res, "Couldn't load this order right now. Please refresh and try again.");
+      if (message) { setError(message); return; }
+      if (!data.order) { setError("Order not found."); return; }
+      setOrder(data.order);
+      setShop(data.shop || null);
     }).catch(() => setError("Couldn't load this order right now. Please refresh and try again."))
       .finally(() => setLoading(false));
   }, [orderId, publicToken]);

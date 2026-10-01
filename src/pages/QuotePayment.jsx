@@ -27,6 +27,7 @@ import { toCustomerFacingQuote, customerFacingShopName, customerFacingTotals, is
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
 import { quoteAlreadyApproved, quoteAlreadyPaid } from "@/lib/quotes/approvalState";
+import { anonEdgeResult } from "@/lib/anonEdge";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import { localDateStr } from "@/lib/dateRangeUtils";
@@ -260,21 +261,26 @@ export default function QuotePayment() {
           token: publicToken,
         });
 
-        if (response?.data?.error) {
-          setError(response.data.error);
+        // anonEdgeResult reads BOTH halves of the invoke result — without the
+        // response.error half, a rate-limit 429 or server 500 (data: null)
+        // fell through to "Quote not found.", telling a real customer their
+        // quote doesn't exist.
+        const { data, message } = anonEdgeResult(response, "Couldn't load this quote right now. Please refresh and try again.");
+        if (message) {
+          setError(message);
           setLoading(false);
           return;
         }
 
-        if (!response?.data?.quote) {
+        if (!data.quote) {
           setError("Quote not found.");
           setLoading(false);
           return;
         }
 
-        setQuote(response.data.quote);
-        setShop(response.data.shop || null);
-        setCustomer(response.data.customer || null);
+        setQuote(data.quote);
+        setShop(data.shop || null);
+        setCustomer(data.customer || null);
       } catch (err) {
         setError("Failed to load quote. Please try again.");
       } finally {
@@ -370,21 +376,29 @@ export default function QuotePayment() {
         token: publicToken,
       });
 
-      if (response?.data?.error) {
-        setApproveError(response.data.error);
+      // Success ONLY when the server handed back the approved quote row.
+      // Before this, a failed invoke ({data:null, error}) skipped both guards
+      // and rendered a false "Quote approved successfully" — then proceeded
+      // to checkout with no approval recorded and no shop notification.
+      const { data, message } = anonEdgeResult(response, "Unable to approve the quote right now. Please try again.");
+      if (message) {
+        setApproveError(message);
+        return false;
+      }
+      if (!data.quote) {
+        setApproveError("Unable to approve the quote right now. Please try again.");
         return false;
       }
 
-      if (response?.data?.quote) {
-        setQuote(response.data.quote);
-        if (response.data.shop) setShop(response.data.shop);
-        if (response.data.customer) setCustomer(response.data.customer);
-      }
+      setQuote(data.quote);
+      if (data.shop) setShop(data.shop);
+      if (data.customer) setCustomer(data.customer);
 
       setApproveSuccess(true);
       return true;
-    } catch (err) {
-      setApproveError(err?.message || "Unable to approve quote right now.");
+    } catch {
+      // Designed copy only — never a raw JS error on the customer page.
+      setApproveError("Unable to approve the quote right now. Please try again.");
       return false;
     } finally {
       setApproveLoading(false);
