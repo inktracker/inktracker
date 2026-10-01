@@ -283,7 +283,9 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
         const pdfInvoice = sendOnline && effectiveLink
           ? { ...invoice, qb_payment_link: null, payment_link: effectiveLink }
           : invoice;
-        pdfBase64 = await exportInvoiceToPDF(pdfInvoice, customer, shopName, logoUrl, "base64");
+        pdfBase64 = await exportInvoiceToPDF(pdfInvoice, customer, shopName, logoUrl, "base64", {
+          bankDiscountPct: sendOnline ? (payStatus?.bankDiscountPct || 0) : 0,
+        });
       } catch {}
 
       const taggedSubject = addRefTag(subject, invoice.invoice_id, invoice.shop_owner);

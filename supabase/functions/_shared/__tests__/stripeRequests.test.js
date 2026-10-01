@@ -128,3 +128,21 @@ describe("tax: QuickBooks is the only tax authority", () => {
     }
   });
 });
+
+describe("bank-transfer discount at checkout", () => {
+  it("charges the discounted amount, names the discount on Stripe's page, fee on what was paid", () => {
+    const doc = { id: "q", quote_id: "Q-1", shop_owner: "s@x.co", public_token: "t" };
+    const { params, platformFeeCents, idempotencyKey } = buildCheckoutSession({ doc, docType: "quote", target: { kind: "full", qbInvoiceId: "3820", amountCents: 56872 }, method: "ach", discountCents: 1137, payPageUrl: "https://x/p", nowMs: 0 });
+    expect(params.line_items[0].price_data.unit_amount).toBe(55735);
+    expect(params.line_items[0].price_data.product_data.description).toBe("Invoice $568.72 − bank transfer discount $11.37");
+    expect(params.metadata.bank_discount_cents).toBe("1137");
+    expect(params.payment_intent_data.metadata.bank_discount_cents).toBe("1137");
+    expect(platformFeeCents).toBe(Math.max(0, Math.round(55735 * 0.01) - (500 + 150)));
+    expect(idempotencyKey).toMatch(/:55735:ach:/);
+  });
+  it("no discount → no description, no metadata", () => {
+    const { params } = buildCheckoutSession({ doc: { id: "q", quote_id: "Q-1" }, docType: "quote", target: { kind: "full", qbInvoiceId: "1", amountCents: 1000 }, method: "card", payPageUrl: "https://x/p", nowMs: 0 });
+    expect(params.line_items[0].price_data.product_data).not.toHaveProperty("description");
+    expect(params.metadata).not.toHaveProperty("bank_discount_cents");
+  });
+});

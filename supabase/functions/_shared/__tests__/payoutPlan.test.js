@@ -111,3 +111,25 @@ describe("audit: waiting payouts have an end state", () => {
     expect(r.plan).toBe(PAYOUT_PLAN.MANUAL);
   });
 });
+
+describe("bank-transfer discounts on a payout", () => {
+  it("QB Payment for the full invoice; discount gets its own line; Deposit = bank to the cent", () => {
+    // Invoice $568.72, customer paid by bank at 2% off: $557.35. Stripe+InkTracker fees $5.57 (1% of what was paid).
+    const r = planPayoutDeposit({
+      payout: po({ amountCents: 55735 - 557 }),
+      items: items([bankPayment("pi_b", 55735, 557)]),
+      ledgerByPayin: new Map([["pi_b", { qb_payment_id: "601", amount_cents: 55735, discount_cents: 1137, qb_invoice_id: "3820" }]]),
+      account,
+    });
+    expect(r.plan).toBe(PAYOUT_PLAN.POST);
+    expect(r.discountCents).toBe(1137);
+    expect(r.feeCents).toBe(557);
+    const lines = r.body.Line;
+    expect(lines[0]).toMatchObject({ Amount: 568.72, LinkedTxn: [{ TxnId: "601", TxnType: "Payment", TxnLineId: "0" }] });
+    expect(lines.find((l) => /Processing fees/.test(l.Description)).Amount).toBe(-5.57);
+    const disc = lines.find((l) => /Bank transfer discounts/.test(l.Description));
+    expect(disc.Amount).toBe(-11.37);
+    expect(disc.DepositLineDetail.AccountRef).toEqual({ value: "88" });
+    expect(lines.reduce((a, l) => a + Math.round(l.Amount * 100), 0)).toBe(55735 - 557);
+  });
+});

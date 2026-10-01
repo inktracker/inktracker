@@ -43,7 +43,7 @@ import {
 import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession, buildConnectOAuthUrl } from "../_shared/stripeRequests.js";
 import { accountStatusFields, readStripeList } from "../_shared/stripeWebhookAdapter.js";
 import { choosePayTarget, NOT_PAYABLE } from "../_shared/payinPlan.js";
-import { formatRatePct, normalizePayMethod } from "../_shared/paymentsPricing.js";
+import { formatRatePct, normalizePayMethod, priceForMethod, normalizeDiscountPct } from "../_shared/paymentsPricing.js";
 import { getShopQb, qbListAccounts, qbGetInvoice, type QbConn } from "../_shared/qbShopClient.ts";
 import { stripeApi, StripeError, type StripeApi } from "../_shared/stripeApi.ts";
 
@@ -90,7 +90,7 @@ export type Deps = {
 async function loadAccount(admin: Any, shopOwner: string, live: boolean) {
   const { data, error } = await admin
     .from("processor_accounts")
-    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, processor_used_at, plan_lapsed_at, qb_bank_account_id, qb_fee_account_id, stripe_livemode, oauth_state, oauth_state_at")
+    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, processor_used_at, plan_lapsed_at, qb_bank_account_id, qb_fee_account_id, stripe_livemode, oauth_state, oauth_state_at, bank_discount_pct")
     .eq("shop_owner", shopOwner)
     .maybeSingle();
   if (error) throw new Error(`Couldn't read payment settings: ${error.message}`);
@@ -122,10 +122,10 @@ async function loadPublicDoc(admin: Any, body: Any) {
   if (!UUID_RE.test(id)) return null;
   const table = docType === "invoice" ? "invoices" : "quotes";
   const cols = docType === "invoice"
-    ? "id, invoice_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, public_token, customer_name, paid, qb_tax_hold"
+    ? "id, invoice_id, shop_owner, status, total, qb_total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, public_token, customer_name, paid, qb_tax_hold"
     // company + job_title: the test-mode TEST/DEMO check must see the same
     // fields qbSync sees, or the two disagree on which way the customer pays.
-    : "id, quote_id, shop_owner, status, total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, broker_email, public_token, customer_name, customer_email, company, job_title, paid, qb_tax_hold";
+    : "id, quote_id, shop_owner, status, total, qb_total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, broker_email, public_token, customer_name, customer_email, company, job_title, paid, qb_tax_hold";
   const { data: doc } = await admin.from(table).select(cols).eq("id", id).maybeSingle();
   // Same answer for "no such doc" and "wrong token" — don't confirm ids exist.
   if (!doc || !safeEquals(String(body.token ?? ""), String(doc.public_token ?? ""))) return null;
@@ -164,7 +164,8 @@ async function payRail(body: Any, deps: Deps) {
   });
   if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
   const { display } = await loadDisplay(deps.admin, doc, docType);
-  return json({ rail: "processor", display, paid: Boolean(doc.paid) });
+  const account = await loadAccount(deps.admin, doc.shop_owner, deps.stripe.live);
+  return json({ rail: "processor", display, paid: Boolean(doc.paid), pricing: methodPrices(doc, account) });
 }
 
 /**
@@ -184,6 +185,22 @@ async function findOurAccount(deps: Deps, shopOwner: string) {
 }
 
 const appUrl = (deps: Deps) => (deps.env("PUBLIC_APP_URL") ?? "https://www.inktracker.app").replace(/\/$/, "");
+
+/**
+ * What the pay page shows on its card / bank buttons. From InkTracker's
+ * copy of the QuickBooks total (no QuickBooks call on page load — link
+ * scanners open these pages); checkout always charges the LIVE balance, and
+ * the page says so. Exact amounts only for a plain full payment: deposits and
+ * balances are worked out at checkout.
+ */
+function methodPrices(doc: Any, account: Any) {
+  const discountPct = normalizeDiscountPct(account?.bank_discount_pct) ?? 0;
+  const plain = !doc.deposit_paid && !(Number(doc.deposit_amount) > 0) && !(Number(doc.deposit_pct) > 0);
+  const totalCents = Math.round(Number(doc.qb_total ?? doc.total) * 100);
+  if (!plain || !Number.isInteger(totalCents) || totalCents <= 0) return { bankDiscountPct: discountPct };
+  const bank = priceForMethod({ balanceCents: totalCents, method: "ach", discountPct });
+  return { bankDiscountPct: discountPct, cardCents: totalCents, bankCents: bank.chargeCents, bankSavingsCents: bank.discountCents };
+}
 
 /** Where the customer comes back to after Checkout (the same pay page). */
 function payPageUrl(deps: Deps, doc: Any, docType: string) {
@@ -262,10 +279,13 @@ async function payinSession(body: Any, deps: Deps) {
     .select("processor_payin_id")
     .eq("shop_owner", doc.shop_owner)
     .eq("qb_invoice_id", String(target.qbInvoiceId));
+  // Bank-transfer discount: the card price is the balance; bank pays less.
+  const price = priceForMethod({ balanceCents: target.amountCents, method, discountPct: account.bank_discount_pct });
   const built = buildCheckoutSession({
     doc,
     docType,
     target,
+    discountCents: price.discountCents,
     method,
     shopName: display.shopName,
     customer: { email: doc.customer_email },
@@ -295,7 +315,8 @@ async function payinSession(body: Any, deps: Deps) {
     payable: true,
     method,
     kind: target.kind,
-    amountCents: target.amountCents,
+    amountCents: price.chargeCents,
+    discountCents: price.discountCents,
     checkoutUrl: session.url,
     display,
   };
@@ -542,6 +563,18 @@ export async function handle(req: Request, deps: Deps) {
       qb_fee_account_id: v.feeAccountId,
       updated_at: new Date().toISOString(),
     }, { onConflict: "shop_owner" });
+    if (error) return json({ error: `Couldn't save: ${error.message}` }, 500);
+    return status();
+  }
+
+  if (action === "setBankDiscount") {
+    if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can change the bank transfer discount." }, 403);
+    const pct = normalizeDiscountPct(body.pct);
+    if (pct === null) return json({ error: "Enter a discount from 0% to 5%." }, 400);
+    if (!account) return json({ error: "Set up payments first." }, 400);
+    const { error } = await admin.from("processor_accounts")
+      .update({ bank_discount_pct: pct, updated_at: new Date().toISOString() })
+      .eq("shop_owner", shopOwner);
     if (error) return json({ error: `Couldn't save: ${error.message}` }, 500);
     return status();
   }

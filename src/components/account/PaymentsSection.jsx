@@ -60,6 +60,7 @@ export default function PaymentsSection() {
   const [accounts, setAccounts] = useState(null);
   const [bankId, setBankId] = useState("");
   const [feeId, setFeeId] = useState("");
+  const [discountPct, setDiscountPct] = useState("");
 
   const apply = useCallback((d) => {
     setState(d);
@@ -75,7 +76,7 @@ export default function PaymentsSection() {
         : (back.error && notify.error("Stripe account not connected", back.error), call("status")))
       : call(back ? "refreshStatus" : "status");
     first
-      .then((d) => { if (alive) { setState(d); setBankId(d.qbBankAccountId || ""); setFeeId(d.qbFeeAccountId || ""); } })
+      .then((d) => { if (alive) { setState(d); setBankId(d.qbBankAccountId || ""); setFeeId(d.qbFeeAccountId || ""); setDiscountPct(d.bankDiscountPct ? String(d.bankDiscountPct) : "0"); } })
       .catch(() => { if (alive) setState(null); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -267,6 +268,24 @@ export default function PaymentsSection() {
                         ? "Customers pay by card or bank through Stripe. QuickBooks pay links are off on new and updated invoices."
                         : "When this is on, quote and invoice emails link to InkTracker's payment page (Stripe checkout) instead of QuickBooks."}
                     </div>
+                    {state.canToggle && (
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-1.5 max-w-xl">
+                        <label className="flex items-center gap-2 flex-wrap" htmlFor="payments-bank-discount">
+                          <span className="font-semibold text-slate-700">Bank transfer discount</span>
+                          <input id="payments-bank-discount" type="number" min="0" max="5" step="0.25" inputMode="decimal"
+                            className="w-20 text-sm border border-slate-200 rounded-lg px-2 py-1 bg-white"
+                            value={discountPct} onChange={(e) => setDiscountPct(e.target.value)} />
+                          <span>%</span>
+                          <button className={ghost} disabled={!!busy || Number(discountPct) === Number(state.bankDiscountPct || 0)}
+                            onClick={() => run("setBankDiscount", { pct: Number(discountPct) || 0 }, (d) => { apply(d); notify.success(Number(discountPct) > 0 ? `Bank payers now save ${Number(discountPct)}%` : "Bank transfer discount off"); })}>
+                            {busy === "setBankDiscount" ? "Saving…" : "Save"}
+                          </button>
+                        </label>
+                        <div>
+                          Your quote and invoice price is the card price. Customers who pay by bank transfer get this much off, shown on the email, the pay page and Stripe's checkout. At 2% you keep the same amount either way: a card costs you 2.99%, a bank payment 1% plus the 2% off. 0 turns it off.
+                        </div>
+                      </div>
+                    )}
                     {state.canToggle ? (
                       <button className={on ? ghost : btn} disabled={!!busy} onClick={toggle}>
                         {busy === "setEnabled" ? "Saving…" : on ? "Turn off (go back to QuickBooks)" : "Turn on InkTracker payments"}

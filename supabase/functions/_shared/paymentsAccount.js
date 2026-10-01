@@ -61,6 +61,7 @@ export function buildStatusPayload({ envEnabled, account, viewer }) {
     qbAccountsMapped: Boolean(account?.qb_bank_account_id && account?.qb_fee_account_id),
     qbBankAccountId: account?.qb_bank_account_id ?? null,
     qbFeeAccountId: account?.qb_fee_account_id ?? null,
+    bankDiscountPct: Number(account?.bank_discount_pct) || 0,
     pricing: {
       card: formatRatePct("card"),
       ach: formatRatePct("ach"),

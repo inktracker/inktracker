@@ -799,6 +799,9 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           customerEmail: quote.customer_email || customer?.email || "",
           customerPhone: customer?.phone || "",
           output: "base64",
+          // Bank-transfer discount line, only when this quote is paid
+          // through InkTracker payments.
+          bankDiscountPct: onlinePay ? (payStatus?.bankDiscountPct || 0) : 0,
         });
       } catch (pdfErr) {
         console.warn("[SendQuoteModal] PDF generation failed:", pdfErr);
@@ -1027,9 +1030,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                     ? <CheckCircle2 className="w-4 h-4 text-[#2CA01C] shrink-0 mt-0.5" />
                     : <AlertCircle className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />}
                   <span className="text-sm">
-                    <span className="block font-semibold text-slate-800">QuickBooks (optional)</span>
+                    <span className="block font-semibold text-slate-800">{onlinePay ? "Stripe (through InkTracker)" : "QuickBooks (optional)"}</span>
                     <span className="block text-xs text-slate-500 mt-0.5">
-                      {qbConnected
+                      {onlinePay && qbConnected
+                        ? `Customers pay by card or bank on Stripe's checkout.${payStatus?.bankDiscountPct ? ` Bank payers save ${payStatus.bankDiscountPct}%.` : ""} The invoice still goes in QuickBooks for your books.`
+                        : qbConnected
                         ? "Create a QB invoice below to add a pay-now link. Skip for a quote-only email."
                         : "Connect QuickBooks in Account → Integrations to add a pay-now link. You can still send quotes without it."}
                     </span>
@@ -1160,6 +1165,8 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                     <p className="text-xs text-slate-500">
                       {depositMode
                         ? `Creates a ${fmtMoney(depositDollars)} deposit invoice in QuickBooks to get a pay-deposit link, then InkTracker sends one branded quote email with the PDF, Approve button, and that link. The full invoice — with this deposit applied — is created when you invoice the finished job.`
+                        : onlinePay
+                        ? "Creates the invoice in QuickBooks for your books, then InkTracker sends one branded quote email with the PDF, Approve button and a link to pay by card or bank through Stripe. The books-only button puts the invoice in QuickBooks without emailing anyone, and the quote stays un-sent."
                         : "Creates the invoice in QuickBooks to get a pay-now link, then InkTracker sends one branded quote email with the PDF, Approve button, and that link. QuickBooks doesn't email a separate copy. The books-only button puts the invoice in QuickBooks without emailing anyone — the quote stays un-sent."}
                     </p>
                     {qbError && (

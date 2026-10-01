@@ -102,3 +102,33 @@ export function formatRatePct(method, pricing = PLATFORM_PRICING) {
   if (!m) return "";
   return `${Math.round(pricing[m].ratePct * 100) / 100}%`;
 }
+
+// ── Bank-transfer discount (per shop, off by default) ────────────────────
+// The card price is the invoice price; bank payers get `pct`% off. Capped at
+// 5% (the database enforces it too).
+export const MAX_BANK_DISCOUNT_PCT = 5;
+
+/** Valid discount percent (0–5, two decimals) or null. */
+export function normalizeDiscountPct(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > MAX_BANK_DISCOUNT_PCT) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/** Cents off a bank payment of `balanceCents` (half-up, integer maths). */
+export function bankDiscountCents(balanceCents, pct) {
+  const amt = Number(balanceCents);
+  const p = normalizeDiscountPct(pct);
+  if (!validAmount(amt) || !p) return 0;
+  return Math.min(amt - 1, pctCents(amt, p));
+}
+
+/**
+ * What the customer pays for each method: the card price is the balance;
+ * bank is the balance minus the shop's discount.
+ */
+export function priceForMethod({ balanceCents, method, discountPct = 0 }) {
+  const m = normalizePayMethod(method);
+  const discount = m === "ach" ? bankDiscountCents(balanceCents, discountPct) : 0;
+  return { chargeCents: Number(balanceCents) - discount, discountCents: discount };
+}

@@ -694,3 +694,18 @@ Deno.test("payouts on a Stripe account no shop owns (a deleted shop) are ignored
   assertEquals(db.tables.processor_payouts.length, 0);
   assertEquals(db.tables.notifications.length, 0);
 });
+
+Deno.test("bank-transfer discount: customer pays less, QuickBooks shows the invoice paid IN FULL", async () => {
+  // Invoice $1,643.00, 2% bank discount = $32.86 → customer paid $1,610.14.
+  const { db, deps, posted } = setup({ balance: 1643 });
+  const md = { ...MD, bank_discount_cents: "3286" };
+  await handle(await request(evt("payment_intent.processing", bankPi({ status: "processing", amount: 161014, metadata: md }))), deps);
+  await handle(await request(evt("payment_intent.succeeded", bankPi({ amount: 161014, metadata: md }))), deps);
+  const row = db.tables.processor_payments[0];
+  assertEquals([row.amount_cents, row.discount_cents], [161014, 3286]);
+  assertEquals(posted.length, 1);
+  const body = posted[0] as Record<string, Any>;
+  assertEquals(body.TotalAmt, 1643);
+  assertEquals(body.Line, [{ Amount: 1643, LinkedTxn: [{ TxnId: "3815", TxnType: "Invoice" }] }]);
+  assert(String(body.PrivateNote).includes("bank transfer discount $32.86"));
+});
