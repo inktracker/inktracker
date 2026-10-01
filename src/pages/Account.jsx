@@ -18,6 +18,7 @@ import QuickBooksSection from "../components/account/QuickBooksSection";
 import BillingSection from "../components/account/BillingSection";
 import PricingConfigEditor from "../components/account/PricingConfigEditor";
 import ProductionTasksSection from "../components/account/ProductionTasksSection";
+import ArtApprovalSetting from "../components/account/ArtApprovalSetting";
 import OrderEditingSection from "../components/account/OrderEditingSection";
 import DeleteAccountSection from "../components/account/DeleteAccountSection";
 import ExportDataSection from "../components/account/ExportDataSection";
@@ -778,6 +779,7 @@ export default function Account() {
         </Section>
 
         <Section icon={CheckSquare} title="Production Tasks">
+          <ArtApprovalSetting user={user} />
           <ProductionTasksSection user={user} />
 
           <OrderEditingSection user={user} />

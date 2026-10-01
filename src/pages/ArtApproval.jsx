@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
-import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2, FileText } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2, FileText, MessageSquare } from "lucide-react";
 import { probeUrl } from "@/lib/artwork/urlReachable";
 import { anonEdgeResult } from "@/lib/anonEdge";
 import { fmtDate, getOrderDisplayClient } from "../components/shared/pricing";
@@ -215,6 +215,11 @@ export default function ArtApproval() {
   const [approveError, setApproveError] = useState("");
   const [checkedAll, setCheckedAll] = useState(false);
   const [preview, setPreview] = useState(null);
+  // Request changes (instead of approving)
+  const [mode, setMode] = useState("approve"); // "approve" | "changes"
+  const [changeComment, setChangeComment] = useState("");
+  const [changeLocation, setChangeLocation] = useState("");
+  const [changesSent, setChangesSent] = useState(false);
 
   const params = new URLSearchParams(window.location.search);
   const orderId = params.get("id");
@@ -239,6 +244,29 @@ export default function ArtApproval() {
     }).catch(() => setError("Couldn't load this order right now. Please refresh and try again."))
       .finally(() => setLoading(false));
   }, [orderId, publicToken]);
+
+  async function handleRequestChanges() {
+    if (!changeComment.trim()) { setApproveError("Tell the shop what you'd like changed."); return; }
+    setApproving(true);
+    setApproveError("");
+    try {
+      const res = await base44.functions.invoke("createCheckoutSession", {
+        action: "requestArtChanges",
+        orderId: order.id,
+        token: publicToken,
+        comment: changeComment.trim(),
+        location: changeLocation || undefined,
+        name: approverName.trim() || undefined,
+      });
+      if (res?.data?.error) { setApproveError(res.data.error); return; }
+      setOrder(res.data.order);
+      setChangesSent(true);
+    } catch {
+      setApproveError("Couldn't send your request. Please try again.");
+    } finally {
+      setApproving(false);
+    }
+  }
 
   async function handleApprove() {
     if (!checkedAll) { setApproveError("Please confirm you have reviewed all artwork above."); return; }
@@ -300,7 +328,12 @@ export default function ArtApproval() {
     const thumb2x = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback, width: 2048 });
     return { ...art, _src: src, _thumbSrc: thumb || src, _thumbSrc2x: thumb2x || null };
   });
-  const alreadyApproved = order?.art_approved;
+  // The server's view of "approved right now": an approval the art has since
+  // outgrown (file swapped, print details changed) asks again.
+  const alreadyApproved = order?.art_state ? order.art_state.approved : order?.art_approved;
+  const proofVersion = order?.art_state?.version || order?.art_proof_version || null;
+  const changesPending = !alreadyApproved && (changesSent || order?.art_state?.status === "changes_requested");
+  const printLocations = [...new Set((order?.line_items || []).flatMap((li) => (li.imprints || []).map((i) => i.location).filter(Boolean)))];
 
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4">
@@ -449,8 +482,62 @@ export default function ArtApproval() {
                 We'll begin production shortly. Contact {shop?.shop_name || "the shop"} with any changes.
               </div>
             </div>
+          ) : changesPending ? (
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <MessageSquare className="w-12 h-12 text-teal-500" />
+              <div className="font-bold text-xl text-slate-900">Changes requested</div>
+              <div className="text-sm text-slate-500 max-w-md">
+                Thanks. {shop?.shop_name || "The shop"} has your notes and will send a revised proof to approve.
+              </div>
+            </div>
           ) : (
             <>
+              <div className="flex items-center gap-2 mb-4">
+                <button type="button" onClick={() => { setMode("approve"); setApproveError(""); }}
+                  className={`text-sm font-semibold px-3 py-1.5 rounded-lg ${mode === "approve" ? "bg-teal-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+                  Approve
+                </button>
+                <button type="button" onClick={() => { setMode("changes"); setApproveError(""); }}
+                  className={`text-sm font-semibold px-3 py-1.5 rounded-lg ${mode === "changes" ? "bg-teal-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+                  Request changes
+                </button>
+                {proofVersion ? <span className="ml-auto text-xs text-slate-500">Proof version {proofVersion}</span> : null}
+              </div>
+              {mode === "changes" ? (
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-slate-700" htmlFor="changes-comment">What should we change?</label>
+                  <textarea id="changes-comment" rows={4} value={changeComment} onChange={(e) => setChangeComment(e.target.value)}
+                    placeholder="For example: make the front logo 1 inch bigger and use navy instead of black."
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                  {printLocations.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="changes-location">Which print location? (optional)</label>
+                      <select id="changes-location" value={changeLocation} onChange={(e) => setChangeLocation(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white">
+                        <option value="">All / not sure</option>
+                        {printLocations.map((l) => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="changes-name">Your name</label>
+                    <input id="changes-name" type="text" value={approverName} onChange={(e) => setApproverName(e.target.value)} placeholder="Full name"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                  </div>
+                  {approveError && (
+                    <div role="alert" className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                      <span className="text-sm text-red-700">{approveError}</span>
+                    </div>
+                  )}
+                  <button onClick={handleRequestChanges} disabled={approving}
+                    className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2">
+                    {approving ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-5 h-5" />}
+                    {approving ? "Sending…" : "Send change request"}
+                  </button>
+                </div>
+              ) : (
+              <>
               <h3 className="text-base font-bold text-slate-900 mb-4">Approve Artwork</h3>
               <p className="text-sm text-slate-500 mb-4 leading-relaxed">
                 By approving, you confirm that the artwork above is correct and ready for production.
@@ -497,6 +584,8 @@ export default function ArtApproval() {
                 {approving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
                 {approving ? "Submitting…" : "Approve Artwork & Begin Production"}
               </button>
+              </>
+              )}
             </>
           )}
         </div>

@@ -55,6 +55,7 @@ import OrderMessagesSection from "./orderDetail/OrderMessagesSection";
 import { useOrderShipping } from "./orderDetail/useOrderShipping";
 import { useOrderInvoice } from "./orderDetail/useOrderInvoice";
 import { getNextStatus, getPreviousStatus, getOrderArtwork } from "./orderDetail/orderDetailHelpers";
+import ArtProofPanel from "@/components/art/ArtProofPanel";
 
 export default function OrderDetailModal({
   order,
@@ -635,6 +636,12 @@ export default function OrderDetailModal({
                 <div className="text-sm text-slate-500 -mt-1 mb-3">
                   Files uploaded here appear on the customer art approval page.
                 </div>
+                <ArtProofPanel
+                  order={{ ...liveOrder, selected_artwork: localArtwork }}
+                  role={authUser?.role}
+                  readOnly={readOnly}
+                  onOrderUpdated={(updated) => setLiveOrder((prev) => ({ ...prev, ...updated }))}
+                />
                 {/* Read-only (lapsed subscription): drop the upload/remove
                     handlers so the gallery renders view-only — no "Add files"
                     tile, no per-tile ×. Reads/thumbnails stay intact. */}

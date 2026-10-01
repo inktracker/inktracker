@@ -36,6 +36,8 @@ import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
 import { shopScope } from "@/lib/shopScope";
 import { ensurePoDraftsForOrder } from "@/lib/orders/autoPoFromOrder";
 import { changeOrderStatus, prevStatusOf, nextStatusOf } from "@/lib/orders/changeOrderStatus";
+import ArtStatusBadge from "@/components/art/ArtStatusBadge";
+import { showArtBadgeInList } from "@/lib/art/artApproval";
 
 // Mirrors STATUS_COLORS in src/pages/Calendar.jsx — each step gets a
 // visually distinct hue so the production board reads as a progress
@@ -895,7 +897,7 @@ export default function Production() {
                             className="w-4 h-4 rounded border-slate-300 text-teal-600 cursor-pointer"
                           />
                         </td>
-                        <td className="px-3 py-3.5 font-mono text-xs text-slate-500">{o.order_id}</td>
+                        <td className="px-3 py-3.5 font-mono text-xs text-slate-500">{o.order_id}{showArtBadgeInList(o) && <ArtStatusBadge order={o} size="xs" className="ml-2" />}</td>
                         <td className="px-3 py-3.5">
                           <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                             {getOrderDisplayClient(o, customers[o.customer_id])}
@@ -944,7 +946,7 @@ export default function Production() {
                   <div key={o.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewing(o)}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <div className="font-mono text-xs text-slate-500">{o.order_id}</div>
+                        <div className="font-mono text-xs text-slate-500">{o.order_id}{showArtBadgeInList(o) && <ArtStatusBadge order={o} size="xs" className="ml-2" />}</div>
                         <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                           {getOrderDisplayClient(o, customers[o.customer_id])}
                           <OrderNotesIcon order={o} />
@@ -1636,6 +1638,7 @@ export default function Production() {
                               </div>
                               <div className="mt-1.5 flex flex-wrap items-center gap-1">
                                 <Badge s={o.status} /><NeedsInvoicingFlag order={o} className="ml-1.5" />
+                                {showArtBadgeInList(o) && <ArtStatusBadge order={o} size="xs" />}
                                 <OrderNotesIcon order={o} />
                                 {key === "overdue" && (
                                   <span className="text-[10px] font-semibold uppercase tracking-widest bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded">

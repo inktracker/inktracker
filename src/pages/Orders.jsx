@@ -20,6 +20,8 @@ import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete"
 import { changeOrderStatus, nextStatusOf, autoPoToast } from "@/lib/orders/changeOrderStatus";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { shopScope } from "@/lib/shopScope";
+import ArtStatusBadge from "@/components/art/ArtStatusBadge";
+import { showArtBadgeInList } from "@/lib/art/artApproval";
 
 function getOrderArtworkCount(order) {
   const keys = new Set();
@@ -358,7 +360,7 @@ export default function Orders() {
                     className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition"
                     onClick={() => setViewing(o)}
                   >
-                    <td className="px-3 py-3.5 font-mono text-xs text-slate-500">{o.order_id}</td>
+                    <td className="px-3 py-3.5 font-mono text-xs text-slate-500">{o.order_id}{showArtBadgeInList(o) && <ArtStatusBadge order={o} size="xs" className="ml-2" />}</td>
                     <td className="px-3 py-3.5">
                       <div className="font-semibold text-slate-800 dark:text-slate-200">
                         {getOrderDisplayClient(o, customers[o.customer_id])}
@@ -401,7 +403,7 @@ export default function Orders() {
               <div key={o.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewing(o)}>
                 <div className="flex justify-between items-start mb-2">
                   <div>
-                    <div className="font-mono text-xs text-slate-500">{o.order_id}</div>
+                    <div className="font-mono text-xs text-slate-500">{o.order_id}{showArtBadgeInList(o) && <ArtStatusBadge order={o} size="xs" className="ml-2" />}</div>
                     <div className="font-semibold text-slate-800 dark:text-slate-200">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
                     {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
                       <div className="text-xs text-slate-500 mt-0.5">

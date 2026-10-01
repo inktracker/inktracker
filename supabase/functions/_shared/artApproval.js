@@ -178,3 +178,13 @@ export function quoteProofApproval({ quote, order, proofUrls }) {
     art_approved_fingerprint: artFingerprint(order),
   };
 }
+
+/**
+ * Lists stay quiet: show the art badge on orders still in Art Approval, and
+ * on any order whose art changed after it was approved (a print risk).
+ */
+export function showArtBadgeInList(order) {
+  if (!order) return false;
+  if (String(order.status ?? ART_STAGE) === ART_STAGE || !order.status) return true;
+  return artApprovalState(order).changedSinceApproval;
+}

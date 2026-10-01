@@ -3,6 +3,7 @@ import { NeedsInvoicingFlag } from "@/components/shared/OrderFlags";
 import Badge from "../../shared/Badge";
 import { fmtDate, O_STATUSES } from "../../shared/pricing";
 import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
+import ArtStatusBadge from "@/components/art/ArtStatusBadge";
 
 // Header + production-progress pipeline for the Order Detail modal. Shows
 // the order id / client / job / dates / artwork + press chips, the paid
@@ -34,6 +35,7 @@ export default function OrderDetailHeader({
             {displayClient}
           </h2>
           <div className="flex flex-wrap items-center gap-2 mt-0.5">
+            <ArtStatusBadge order={order} size="xs" />
             {displayJobTitle && (
               <div className="text-sm text-slate-500">Job: {displayJobTitle}</div>
             )}
