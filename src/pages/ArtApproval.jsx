@@ -3,6 +3,7 @@ import { base44 } from "@/api/supabaseClient";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
 import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2, FileText } from "lucide-react";
 import { probeUrl } from "@/lib/artwork/urlReachable";
+import { anonEdgeResult } from "@/lib/anonEdge";
 import { fmtDate, getOrderDisplayClient } from "../components/shared/pricing";
 import { imprintCountText, imprintColorLabel } from "@/lib/quotes/imprintLabels";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
@@ -133,6 +134,13 @@ function getOrderArtwork(order) {
       id: art.id || key,
       name: art.name || "Artwork",
       url: art.url || art.file_url || "",
+      // Legacy inline uploads stored a bare storage `path` with NO url
+      // (OrderDetailModal docs this; artworkProof's authorizedPaths has a
+      // dedicated "path" regex to serve them). Dropping it here made those
+      // proofs render as a bare filename with no image — while the approval
+      // checkbox+signature still worked, producing sign-offs on artwork the
+      // customer never saw (audit 2026-09-30).
+      path: art.path || "",
       note: art.note || "",
       imprintDetails: [], // [{location, title, colors, technique, width, height, pantones, details, garmentLabel}]
     });
@@ -160,6 +168,7 @@ function getOrderArtwork(order) {
         id: artKey,
         name: imp.artwork_name || "Artwork",
         url: imp.artwork_url || "",
+        path: "", // imprint refs carry urls only; keep the shape uniform
         note: imp.artwork_note || "",
         imprintDetails: [],
       });
@@ -220,11 +229,14 @@ export default function ArtApproval() {
       orderId,
       token: publicToken,
     }).then((res) => {
-      if (res?.data?.error) { setError(res.data.error); return; }
-      if (!res?.data?.order) { setError("Order not found."); return; }
-      setOrder(res.data.order);
-      setShop(res.data.shop || null);
-    }).catch(() => setError("Failed to load order."))
+      // Read BOTH halves of the invoke result — a 429/500 (data:null) used to
+      // fall through to "Order not found." (anonEdgeResult; audit 2026-09-30).
+      const { data, message } = anonEdgeResult(res, "Couldn't load this order right now. Please refresh and try again.");
+      if (message) { setError(message); return; }
+      if (!data.order) { setError("Order not found."); return; }
+      setOrder(data.order);
+      setShop(data.shop || null);
+    }).catch(() => setError("Couldn't load this order right now. Please refresh and try again."))
       .finally(() => setLoading(false));
   }, [orderId, publicToken]);
 
@@ -240,10 +252,17 @@ export default function ArtApproval() {
         token: publicToken,
         approvedBy: approverName.trim(),
       });
-      if (res?.data?.error) { setApproveError(res.data.error); return; }
-      setOrder(res.data.order);
-    } catch (err) {
-      setApproveError(err?.message || "Failed to submit approval.");
+      // anonEdgeResult reads both halves; before this, res.data was null on
+      // any failure, `res.data.order` threw, and the catch rendered the raw
+      // TypeError ("Cannot read properties of null...") to the customer —
+      // the no-raw-errors rule, violated on the approval page itself.
+      const { data, message } = anonEdgeResult(res, "Couldn't submit your approval right now. Please try again.");
+      if (message) { setApproveError(message); return; }
+      if (!data.order) { setApproveError("Couldn't submit your approval right now. Please try again."); return; }
+      setOrder(data.order);
+    } catch {
+      // Designed copy only — never a raw JS error on the customer page.
+      setApproveError("Couldn't submit your approval right now. Please try again.");
     } finally {
       setApproving(false);
     }
@@ -345,7 +364,7 @@ export default function ArtApproval() {
                       customer can actually see what they're approving.
                       Click to enlarge full-screen. ProofPreviewBlock never
                       embeds an unverified URL (#681). */}
-                  {art.url ? (
+                  {(art.url || art.path) ? (
                     <ProofPreviewBlock
                       art={art}
                       onEnlarge={() => setPreview({ ...art, url: art._src, file_url: art._src, path: null })}
