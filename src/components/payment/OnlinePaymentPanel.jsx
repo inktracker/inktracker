@@ -1,128 +1,101 @@
-import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-import { loadRainforestScript } from "@/lib/payment/rainforestScript";
-import { readApproved, readMethodUpdated } from "@/lib/payment/rainforestEvents";
+import { useState } from "react";
+import { AlertCircle, CheckCircle2, CreditCard, Landmark, Loader2, Lock } from "lucide-react";
+import { base44 } from "@/api/supabaseClient";
 
-// The customer-facing card / bank form (Rainforest's payment component) for
-// one payin config. Card and bank details go straight to Rainforest; they
-// never touch InkTracker. `session` comes from the rainforest edge function's
-// payinSession action. After approval the webhook records the payment in
-// QuickBooks; this only shows the customer what happened.
+// The customer's "how would you like to pay?" step for a shop on InkTracker
+// payments. Each choice opens Stripe Checkout (on the shop's own Stripe
+// account) for the LIVE QuickBooks balance; card and bank details go straight
+// to Stripe and never touch InkTracker. Stripe sends the customer back to
+// this same page with ?paid=card|ach (see PaidNotice). The webhook records
+// the payment in QuickBooks; this only gets the customer there.
 
 const fmt = (cents) => `$${(Number(cents || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function OnlinePaymentPanel({ session, onPaid, quotedCents = null, onReopen = null }) {
-  const ref = useRef(null);
-  const [ready, setReady] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [declined, setDeclined] = useState("");
-  const [paid, setPaid] = useState(null); // { method }
-  // The method the customer picked, from the form's own method-updated
-  // event — the approved event's shape isn't documented, so this is the
-  // reliable signal for "card (done) vs bank (clears in days)".
-  const selectedMethod = useRef(null);
-
-  useEffect(() => {
-    let alive = true;
-    loadRainforestScript(session.scriptUrl)
-      .then(() => { if (alive) setReady(true); })
-      .catch(() => { if (alive) setLoadError("The payment form couldn't load. Check your connection and refresh the page."); });
-    return () => { alive = false; };
-  }, [session.scriptUrl]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!ready || !el) return undefined;
-    const onMethod = (e) => {
-      const m = readMethodUpdated(e.detail);
-      if (m) selectedMethod.current = m;
-    };
-    const onApproved = (e) => {
-      const r = readApproved(e.detail);
-      const method = r.method ?? selectedMethod.current;
-      setDeclined("");
-      setPaid({ method });
-      onPaid?.({ ...r, method });
-    };
-    const onDeclined = () => setDeclined("That payment was declined. Check the details or try a different card or account.");
-    // Most often an expired form (they last 30 minutes): offer a fresh one.
-    const onError = () => setDeclined(onReopen
-      ? "The payment form stopped working. It may have timed out. You haven't been charged. Reload it and try again."
-      : "Something went wrong with that payment. You haven't been charged. Refresh this page and try again.");
-    el.addEventListener("method-updated", onMethod);
-    el.addEventListener("approved", onApproved);
-    el.addEventListener("declined", onDeclined);
-    el.addEventListener("error", onError);
-    return () => {
-      el.removeEventListener("method-updated", onMethod);
-      el.removeEventListener("approved", onApproved);
-      el.removeEventListener("declined", onDeclined);
-      el.removeEventListener("error", onError);
-    };
-  }, [ready, onPaid, onReopen]);
-
-  if (paid) {
-    return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 flex items-start gap-3">
-        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-        <div className="text-sm text-emerald-900">
-          <div className="font-semibold">
-            {paid.method === "card" ? "Payment received" : paid.method === "ach" ? "Bank payment submitted" : "Payment submitted"}
-          </div>
-          <div className="mt-0.5 text-emerald-800">
-            {paid.method === "card"
-              ? `Thanks! ${fmt(session.amountCents)} was paid.`
-              : paid.method === "ach"
-                ? `Your bank payment of ${fmt(session.amountCents)} usually clears in a few business days. You don't need to do anything else.`
-                : `Thanks! Your payment of ${fmt(session.amountCents)} is on its way. Card payments are done now; bank payments take a few business days to clear.`}
-          </div>
+/** What the customer sees when Stripe sends them back after paying. */
+export function PaidNotice({ method }) {
+  const bank = method === "ach";
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 flex items-start gap-3">
+      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+      <div className="text-sm text-emerald-900">
+        <div className="font-semibold">{bank ? "Bank payment submitted" : "Payment received"}</div>
+        <div className="mt-0.5 text-emerald-800">
+          {bank
+            ? "Thanks! Bank payments usually clear in about 4 business days. You don't need to do anything else."
+            : "Thanks! Your card payment went through. A receipt is on its way to your email."}
         </div>
       </div>
-    );
+    </div>
+  );
+}
+
+/** ?paid=card|ach on a pay page after Stripe Checkout, else null. */
+export function readPaidReturn() {
+  try {
+    const v = new URLSearchParams(window.location.search).get("paid");
+    return v === "card" || v === "ach" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export default function OnlinePaymentPanel({ docType, id, token, kind = null, amountCents = null }) {
+  const [busy, setBusy] = useState("");
+  const [notice, setNotice] = useState("");
+
+  async function pay(method) {
+    setBusy(method);
+    setNotice("");
+    try {
+      const r = await base44.functions.invoke("stripePayments", { action: "payinSession", docType, id, token, method });
+      const d = r?.data;
+      if (d?.payable && d.checkoutUrl) {
+        // Stripe Checkout can't run inside a frame (an embedded preview);
+        // give it its own window there.
+        if (window.self !== window.top) window.open(d.checkoutUrl, "_blank", "noopener");
+        else window.location.assign(d.checkoutUrl);
+        return; // leaving the page; keep the spinner
+      }
+      setNotice(d?.message || "Online payment isn't available right now. Please contact the shop.");
+    } catch {
+      setNotice("Online payment isn't available right now. Please try again in a moment.");
+    }
+    setBusy("");
   }
 
+  const choice = "w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white hover:border-teal-400 hover:bg-teal-50/40 px-4 py-3 text-left transition disabled:opacity-60";
   return (
     <div className="space-y-3">
       <div className="flex items-baseline justify-between gap-3">
         <div className="text-sm font-semibold text-slate-800">
-          {session.kind === "deposit" ? "Deposit due" : session.kind === "balance" ? "Balance due" : "Amount due"}
+          {kind === "deposit" ? "Pay your deposit" : kind === "balance" ? "Pay the balance" : "How would you like to pay?"}
         </div>
-        <div className="text-xl font-bold text-slate-900 tabular-nums">{fmt(session.amountCents)}</div>
+        {Number.isInteger(amountCents) && amountCents > 0 && (
+          <div className="text-lg font-bold text-slate-900 tabular-nums">{fmt(amountCents)}</div>
+        )}
       </div>
-      {Number.isInteger(quotedCents) && quotedCents > 0 && quotedCents !== session.amountCents && (
-        <div className="text-xs text-slate-500">
-          This is the amount on your invoice, including sales tax and any credits. Your quote showed {fmt(quotedCents)}.
+      <button type="button" className={choice} disabled={!!busy} onClick={() => pay("card")}>
+        {busy === "card" ? <Loader2 className="w-5 h-5 animate-spin text-teal-600" /> : <CreditCard className="w-5 h-5 text-teal-600" />}
+        <span>
+          <span className="block text-sm font-semibold text-slate-900">Pay by card</span>
+          <span className="block text-xs text-slate-500">Credit or debit card</span>
+        </span>
+      </button>
+      <button type="button" className={choice} disabled={!!busy} onClick={() => pay("ach")}>
+        {busy === "ach" ? <Loader2 className="w-5 h-5 animate-spin text-teal-600" /> : <Landmark className="w-5 h-5 text-teal-600" />}
+        <span>
+          <span className="block text-sm font-semibold text-slate-900">Pay by bank transfer</span>
+          <span className="block text-xs text-slate-500">From your bank account. Clears in about 4 business days.</span>
+        </span>
+      </button>
+      {notice && (
+        <div className="flex items-start gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-slate-500" /> {notice}
         </div>
       )}
-      {loadError && (
-        <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /> {loadError}
-        </div>
-      )}
-      {!ready && !loadError && (
-        <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading secure payment form…</div>
-      )}
-      {ready && (
-        <rainforest-payment
-          ref={ref}
-          session-key={session.sessionKey}
-          payin-config-id={session.payinConfigId}
-          allowed-methods={session.allowedMethods || "CARD,ACH"}
-        />
-      )}
-      {declined && (
-        <div className="flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            {declined}
-            {onReopen && declined.startsWith("The payment form") && (
-              <button type="button" onClick={onReopen} className="ml-2 font-semibold text-teal-700 hover:text-teal-800 underline">Reload payment form</button>
-            )}
-          </div>
-        </div>
-      )}
-      <div className="text-xs text-slate-500">
-        Pay by card or bank account. Your payment details go straight to the payment processor.
+      <div className="text-xs text-slate-500">You'll see the exact amount, including sales tax, before you pay.</div>
+      <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500">
+        <Lock className="w-3 h-3" /> Secure checkout by Stripe. Your card and bank details go straight to Stripe.
       </div>
     </div>
   );

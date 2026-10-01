@@ -1,5 +1,5 @@
 // Shop-side rules for InkTracker payments (pure, unit-tested). The
-// `rainforest` edge function is a thin shell around these.
+// `stripePayments` edge function is a thin shell around these.
 //
 // Who can do what:
 //   - see the status (which way customers pay): anyone on the shop's team
@@ -10,7 +10,7 @@
 //     minus billing".
 
 import { resolvePaymentRail, RAIL, ACTIVE_MERCHANT_STATUSES, paymentsPauseDate, planGraceOver } from "./paymentRail.js";
-import { PLATFORM_PRICING, formatRatePct } from "./rainforestPricing.js";
+import { PLATFORM_PRICING, formatRatePct } from "./paymentsPricing.js";
 
 const OWNER_ROLES = ["admin", "shop"];
 const TEAM_ROLES = ["admin", "shop", "manager", "employee"];
@@ -20,9 +20,10 @@ export const canMapQbAccounts = (p) => OWNER_ROLES.includes(p?.role) || p?.role 
 export const canTogglePayments = (p) => OWNER_ROLES.includes(p?.role);
 
 /** Onboarding stage the Account → Payments card shows. */
-// Rainforest merchant statuses: pending | onboarding | active | suspended |
-// deactivated | canceled; application: created | in_progress | processing |
-// in_review | needs_information | completed | declined.
+// Statuses are derived from the Stripe account by
+// stripeWebhookAdapter.accountStatusFields: merchant pending | onboarding |
+// active | suspended | deactivated | canceled; sign-up in_progress |
+// needs_information | in_review | completed | declined.
 export function onboardingStage(account) {
   if (!account?.merchant_id) return "not_started";
   const s = String(account.merchant_status ?? "").toLowerCase();
@@ -39,33 +40,16 @@ export function onboardingStage(account) {
 }
 
 /**
- * A closed application (declined, or auto-canceled after 120 days unfinished)
- * can be replaced with a new one — otherwise the shop is locked out forever.
+ * A closed account (Stripe rejected it, or the shop disconnected it) can be
+ * replaced with a new one — otherwise the shop is locked out forever.
  */
 export function canStartOver(account) {
   return Boolean(account?.merchant_id) && onboardingStage(account) === "declined";
 }
 
 /**
- * Status columns from a Rainforest merchant object. GET /v1/merchants/{id}
- * returns `status` + `latest_merchant_application{merchant_application_id,
- * status}`; the create response uses merchant_status /
- * merchant_application_status. Accept both.
- */
-export function merchantStatusFields(m) {
-  const out = {};
-  const ms = m?.status ?? m?.merchant_status;
-  const app = m?.latest_merchant_application?.status ?? m?.merchant_application_status;
-  const appId = m?.latest_merchant_application?.merchant_application_id ?? m?.merchant_application_id;
-  if (ms) out.merchant_status = String(ms).toLowerCase();
-  if (app) out.merchant_application_status = String(app).toLowerCase();
-  if (appId) out.merchant_application_id = String(appId);
-  return out;
-}
-
-/**
- * What the frontend gets back from `status`. Never includes the merchant id
- * (nothing in the browser needs it), only whether one exists.
+ * What the frontend gets back from `status`. Never includes the Stripe
+ * account id (nothing in the browser needs it), only whether one exists.
  */
 export function buildStatusPayload({ envEnabled, account, viewer }) {
   const stage = onboardingStage(account);
@@ -105,10 +89,10 @@ export function checkCanEnable({ envEnabled, account, viewer, payingPlan = true 
   const stage = onboardingStage(account);
   if (stage === "not_started") return { ok: false, error: "Finish the payments sign-up first." };
   if (stage === "in_progress") return { ok: false, error: "Finish the payments sign-up first." };
-  if (stage === "needs_information") return { ok: false, error: "The payments team needs a little more information. Open the sign-up again to finish it." };
-  if (stage === "in_review") return { ok: false, error: "Your payments account is still being reviewed. You can turn this on once it's approved." };
-  if (stage === "suspended") return { ok: false, error: "Your payments account is on hold. Customers keep paying through QuickBooks until it's resolved." };
-  if (stage === "declined") return { ok: false, error: "Your payments account wasn't approved, so customers will keep paying through QuickBooks." };
+  if (stage === "needs_information") return { ok: false, error: "Stripe needs a little more information. Open the sign-up again to finish it." };
+  if (stage === "in_review") return { ok: false, error: "Stripe is still reviewing your account. You can turn this on once it's approved." };
+  if (stage === "suspended") return { ok: false, error: "Your Stripe account is on hold. Customers keep paying through QuickBooks until it's resolved in your Stripe dashboard." };
+  if (stage === "declined") return { ok: false, error: "Your Stripe account isn't available for InkTracker payments, so customers will keep paying through QuickBooks." };
   if (!account.qb_bank_account_id || !account.qb_fee_account_id) {
     return { ok: false, error: "Pick the QuickBooks bank account your payouts land in and the expense account for fees first." };
   }

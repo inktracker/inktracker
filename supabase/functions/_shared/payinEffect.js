@@ -1,10 +1,10 @@
-// What a Rainforest payment event DOES (pure, unit-tested). The webhook
-// handler maps Rainforest's own event names/fields into the neutral shape
-// below (see rainforestWebhook), loads the rows, and executes the plan.
+// What a Stripe payment event DOES (pure, unit-tested). The webhook handler
+// maps Stripe's own events into the neutral shape below
+// (stripeWebhookAdapter), loads the rows, and executes the plan.
 //
 // Design:
 //   - The processor event is only trusted for WHAT happened to the money. Who
-//     it belongs to is re-derived from our own rows: the merchant id → the
+//     it belongs to is re-derived from our own rows: the Stripe account → the
 //     shop that owns it, and the quote must belong to that same shop and still
 //     point at the invoice named in the metadata. Metadata is round-tripped
 //     through the processor, so it's a hint, never proof.
@@ -18,7 +18,7 @@
 //   - Statuses only move forward, so a late or replayed "processing" can't
 //     undo a "succeeded".
 
-import { planReversal } from "./rainforestQbBooks.js";
+import { planReversal } from "./paymentsQbBooks.js";
 
 /** Normalised event kinds the webhook adapter produces. */
 export const PAYIN_EVENT = Object.freeze({
@@ -86,7 +86,7 @@ export function statusAdvances(from, to) {
  *        a quotes row, or an invoices row when metadata.inktracker_doc_type
  *        is "invoice" (the handler loads from the matching table)
  * @param {object|null} a.ledger   existing processor_payments row for payinId
- * @param {number} a.platformFeeCents fee for this payin (from rainforestPricing)
+ * @param {number} a.platformFeeCents InkTracker's fee for this payin (paymentsPricing)
  * @returns {{
  *   ok: boolean,
  *   reject?: string,
@@ -103,6 +103,14 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     return { ok: false, reject: REJECT.BAD_EVENT, ledger: null, postQbPayment: false, notify: null, alertOps: `Unusable payment event: ${JSON.stringify({ kind, payinId: event?.payinId ?? null })}` };
   }
 
+  // A payment that failed or was canceled before we ever saw it start moved
+  // no money, and on Stripe the customer can retry the SAME payment (a bank
+  // login that didn't verify). Recording "failed" would outrank its later
+  // success, so there's nothing to write.
+  if ((kind === PAYIN_EVENT.FAILED || kind === PAYIN_EVENT.CANCELED) && !ledger) {
+    return { ok: true, ledger: null, postQbPayment: false, notify: null, alertOps: null };
+  }
+
   // 1. Whose money is this? Only our own merchant row can say.
   if (!account || account.merchant_id !== event.merchantId) {
     return { ok: false, reject: REJECT.UNKNOWN_MERCHANT, ledger: null, postQbPayment: false, notify: null,
@@ -110,10 +118,11 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
   }
   const shop = account.shop_owner;
   const md = event.metadata ?? {};
-  // When is the invoice paid? A CARD payin is captured at "processing"
-  // (Rainforest then settles T+1) — same moment QuickBooks Payments marks a
-  // card invoice paid, so quote→order isn't held a day. A BANK payment isn't
-  // money until "succeeded" (T+4 by default).
+  // When is the invoice paid? A CARD payment is "succeeded" the moment it's
+  // captured — same moment QuickBooks Payments marks a card invoice paid.
+  // A BANK payment is "processing" for about 4 business days and isn't
+  // money until "succeeded". (A card "processing" is accepted too, in case
+  // Stripe ever reports one.)
   const moneyIn = kind === PAYIN_EVENT.SUCCEEDED ||
     (kind === PAYIN_EVENT.PROCESSING && event.method === "card");
 
@@ -178,14 +187,14 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
       severity: "alert",
       title: `Payment canceled after it was recorded: ${label ?? "a payment"}`,
       body: `A $${(amt / 100).toFixed(2)} payment was canceled before it settled, but it was already recorded in QuickBooks (payment #${ledger.qb_payment_id}). Delete that payment in QuickBooks so the invoice shows as open again.`,
-      metadata: { processor: "rainforest", payin_id: event.payinId, qb_payment_id: ledger.qb_payment_id },
+      metadata: { processor: "stripe", payin_id: event.payinId, qb_payment_id: ledger.qb_payment_id },
     };
   } else if (advances && kind === PAYIN_EVENT.FAILED && event.method === "ach") {
     notify = {
       severity: "alert",
       title: `Bank payment didn't go through: ${label ?? "a payment"}`,
       body: `Your customer's bank payment of $${(amt / 100).toFixed(2)} failed. The invoice is still open; nothing was recorded in QuickBooks.`,
-      metadata: { processor: "rainforest", payin_id: event.payinId },
+      metadata: { processor: "stripe", payin_id: event.payinId },
     };
   } else if (isReversal) {
     // Every reversal event is news (a second partial refund, a chargeback
@@ -203,8 +212,8 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     notify = {
       severity: "alert",
       title: `Card payment disputed: ${label ?? "a payment"}`,
-      body: `Your customer disputed a $${(amt / 100).toFixed(2)} card payment. Respond with proof of the order (approval, proof, delivery) before the deadline: Account → Payments → Payments & payouts, open the payment, then Respond.`,
-      metadata: { processor: "rainforest", payin_id: event.payinId },
+      body: `Your customer disputed a $${(amt / 100).toFixed(2)} card payment. Respond with proof of the order (approval, proof, delivery) before the deadline in your Stripe dashboard (Payments → Disputes). InkTracker's art approval record and proof history are good evidence.`,
+      metadata: { processor: "stripe", payin_id: event.payinId },
     };
   } else if (!mismatch && advances && kind === PAYIN_EVENT.PROCESSING && event.method === "ach") {
     // A bank payment isn't booked in QuickBooks until it clears (about 4
@@ -214,14 +223,14 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
       severity: "info",
       title: `Bank payment started: $${(amt / 100).toFixed(2)}${label ? ` for ${label}` : ""}`,
       body: "Your customer paid by bank transfer. It usually clears in about 4 business days, then InkTracker records it in QuickBooks and marks the invoice paid. If it doesn't clear, you'll get an alert.",
-      metadata: { processor: "rainforest", payin_id: event.payinId },
+      metadata: { processor: "stripe", payin_id: event.payinId },
     };
   } else if (mismatch && moneyIn && ledgerRow) {
     notify = {
       severity: "alert",
       title: `Payment received that needs matching: $${(amt / 100).toFixed(2)}`,
-      body: `A customer paid $${(amt / 100).toFixed(2)} online${md.quote_number ? ` for ${md.quote_number}` : ""}, but it no longer matches an open invoice, so it was NOT recorded in QuickBooks. Record it on the right invoice in QuickBooks, or refund it from Account → Payments → Payments & payouts.`,
-      metadata: { processor: "rainforest", payin_id: event.payinId, reason: mismatch },
+      body: `A customer paid $${(amt / 100).toFixed(2)} online${md.quote_number ? ` for ${md.quote_number}` : ""}, but it no longer matches an open invoice, so it was NOT recorded in QuickBooks. Record it on the right invoice in QuickBooks, or refund it from your Stripe dashboard.`,
+      metadata: { processor: "stripe", payin_id: event.payinId, reason: mismatch },
     };
   }
 

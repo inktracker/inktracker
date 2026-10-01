@@ -133,8 +133,8 @@ verify_jwt = false
 [functions.artProof]
 verify_jwt = false
 
-[functions.rainforest]
+[functions.stripePayments]
 verify_jwt = false
 
-[functions.rainforestWebhook]
+[functions.stripeConnectWebhook]
 verify_jwt = false

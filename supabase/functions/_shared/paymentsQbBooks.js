@@ -1,4 +1,4 @@
-// QuickBooks bookkeeping for payments collected through Rainforest (pure).
+// QuickBooks bookkeeping for payments collected through Stripe (pure).
 //
 // Goal: each shop's QuickBooks matches its bank account without anyone
 // reconciling by hand. Two entries, the standard way QuickBooks models a
@@ -9,7 +9,7 @@
 //      That's exactly what QuickBooks Payments does today, so reports,
 //      A/R and "paid" all behave the same.
 //
-//   2. DEPOSIT, one per Rainforest payout to the shop's bank: pulls those
+//   2. DEPOSIT, one per Stripe payout to the shop's bank: pulls those
 //      payments out of Undeposited Funds, plus one negative line for the
 //      processing fees booked to an expense account. Its total equals the
 //      money that actually hit the bank, so the bank feed matches 1:1.
@@ -42,12 +42,12 @@ export function pickQbPaymentMethod(methods, method) {
 const refNum = (id) => String(id ?? "").slice(-21);
 
 /**
- * QB Payment body for one successful Rainforest payment.
+ * QB Payment body for one successful Stripe payment.
  * @param {object} a
  * @param {string} a.qbInvoiceId      invoice being paid
  * @param {string} a.customerRefValue the invoice's CustomerRef.value
  * @param {number} a.amountCents      GROSS amount the customer paid
- * @param {string} a.payinId          Rainforest payment id (dedupe + audit)
+ * @param {string} a.payinId          Stripe PaymentIntent id (dedupe + audit)
  * @param {string} a.txnDate          YYYY-MM-DD the payment succeeded
  * @param {{value:string}|null} [a.paymentMethodRef]
  * @param {number} [a.platformFeeCents] shown in the memo only
@@ -64,14 +64,15 @@ export function buildQbPaymentBody(a) {
   if (!Number.isInteger(apply) || apply < 0 || apply > amt) return { ok: false, reason: "invalid_apply_amount" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a?.txnDate ?? ""))) return { ok: false, reason: "invalid_date" };
 
-  const fee = Number(a?.platformFeeCents);
-  const feeNote = Number.isInteger(fee) && fee > 0 ? ` · processing fee $${dollars(fee).toFixed(2)} (booked on the deposit)` : "";
+  // Fees (Stripe's + InkTracker's) come off the payout, so they're booked
+  // on its Deposit, not here.
+  const feeNote = " · processing fees are on the payout deposit";
   const body = {
     CustomerRef: { value: String(a.customerRefValue) },
     TotalAmt: dollars(amt),
     TxnDate: a.txnDate,
     PaymentRefNum: refNum(a.payinId),
-    PrivateNote: `Paid online via InkTracker (Rainforest payment ${a.payinId})${feeNote}` +
+    PrivateNote: `Paid online via InkTracker (Stripe payment ${a.payinId})${feeNote}` +
       (apply < amt ? ` · OVERPAID $${dollars(amt - apply).toFixed(2)} left as customer credit — refund it` : ""),
     Line: apply > 0 ? [{
       Amount: dollars(apply),
@@ -101,17 +102,17 @@ export function findBookedPayment(payments, payinId) {
 }
 
 /**
- * QB Deposit body for one Rainforest payout to the shop's bank.
+ * QB Deposit body for one Stripe payout to the shop's bank.
  *
  * @param {object} a
  * @param {string} a.bankAccountId      shop's QB bank account the payout lands in
  * @param {string} a.feeAccountId       shop's QB expense account for processing fees
  * @param {string} a.txnDate            YYYY-MM-DD of the payout
- * @param {string} a.payoutId           Rainforest payout id (audit)
+ * @param {string} a.payoutId           Stripe payout id (audit)
  * @param {Array<{qbPaymentId:string, grossCents:number}>} a.payments
  *        payments in this payout, each already posted to QB
  * @param {number} a.feeCents           total fees withheld from this payout
- * @param {number} a.netCents           what Rainforest says hit the bank
+ * @param {number} a.netCents           what Stripe says hit the bank
  * @param {Array<{amountCents:number, accountId:string, memo:string}>} [a.adjustments]
  *        other signed movements in the payout (refunds, returns, disputes)
  */
@@ -165,7 +166,7 @@ export function buildQbDepositBody(a) {
     body: {
       DepositToAccountRef: { value: String(a.bankAccountId) },
       TxnDate: a.txnDate,
-      PrivateNote: `Rainforest payout ${a.payoutId ?? ""} via InkTracker`.trim(),
+      PrivateNote: `Stripe payout ${a.payoutId ?? ""} via InkTracker`.trim(),
       Line,
     },
   };
@@ -200,7 +201,7 @@ export function planReversal({ kind, amountCents, payinId, quoteNumber, booked =
         : !booked
           ? `Your customer's bank returned the payment before it cleared, so it was never recorded in QuickBooks and the invoice is still open. Ask the customer to pay another way. The bank's return fee comes out of your next payout.`
           : `Your customer's payment was reversed, so this invoice is effectively unpaid. It will come out of your next payout. Follow up with the customer and re-open the invoice in QuickBooks.`,
-      metadata: { processor: "rainforest", payin_id: payinId, kind, amount_cents: amt },
+      metadata: { processor: "stripe", payin_id: payinId, kind, amount_cents: amt },
     },
   };
 }

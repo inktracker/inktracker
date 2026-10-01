@@ -57,24 +57,25 @@ jobs:
             echo "::error::qbReconcile returned $code (401 = CRON_SECRET mismatch with Supabase)."
             exit 1
           fi
-      - name: Rainforest payments sweep
-        # Retries online payments/payouts that couldn't be recorded in
-        # QuickBooks at the time (docs/rainforest-payments.md). Off until the
-        # rainforestWebhook function is deployed: set the repo VARIABLE
-        #   gh variable set RAINFOREST_SWEEP --body true
-        if: ${{ always() && vars.RAINFOREST_SWEEP == 'true' }}
+      - name: Stripe payments sweep
+        # Replays payment events Stripe sent while we were down and retries
+        # payments/payouts that couldn't be recorded in QuickBooks at the time
+        # (docs/stripe-payments.md). Off until stripeConnectWebhook is
+        # deployed: set the repo VARIABLE
+        #   gh variable set STRIPE_PAYMENTS_SWEEP --body true
+        if: ${{ always() && vars.STRIPE_PAYMENTS_SWEEP == 'true' }}
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          code=$(curl -sS -o /tmp/rf-sweep.json -w "%{http_code}" -X POST \
-            "https://skmltfbibaqcjddmeqvi.supabase.co/functions/v1/rainforestWebhook" \
+          code=$(curl -sS -o /tmp/stripe-sweep.json -w "%{http_code}" -X POST \
+            "https://skmltfbibaqcjddmeqvi.supabase.co/functions/v1/stripeConnectWebhook" \
             -H "Authorization: Bearer $CRON_SECRET" \
             -H "Content-Type: application/json" \
             --data "{}")
           echo "HTTP $code"
-          cat /tmp/rf-sweep.json | head -c 2000; echo
+          cat /tmp/stripe-sweep.json | head -c 2000; echo
           if [ "$code" != "200" ]; then
-            echo "::error::rainforestWebhook sweep returned $code."
+            echo "::error::stripeConnectWebhook sweep returned $code."
             exit 1
           fi
       - name: Heartbeat (dead-man's-switch)

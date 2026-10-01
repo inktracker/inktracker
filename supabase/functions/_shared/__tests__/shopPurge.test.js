@@ -93,11 +93,10 @@ describe("purge vs InkTracker payments", () => {
     const names = SHOP_PURGE_TABLES.map((t) => t.table);
     for (const t of ["processor_accounts", "processor_payments", "processor_payouts"]) expect(names).toContain(t);
   });
-  it("refuses while the Rainforest merchant is open; allows once closed or never started", () => {
+  it("refuses while InkTracker payments are switched on; the shop's Stripe account never blocks", () => {
     expect(purgeBlockedByPayments(null)).toBeNull();
-    expect(purgeBlockedByPayments({ merchant_id: null })).toBeNull();
-    expect(purgeBlockedByPayments({ merchant_id: "m", merchant_status: "active" })).toMatch(/still open/);
-    expect(purgeBlockedByPayments({ merchant_id: "m", merchant_status: "pending" })).toMatch(/still open/);
-    expect(purgeBlockedByPayments({ merchant_id: "m", merchant_status: "canceled" })).toBeNull();
+    expect(purgeBlockedByPayments({ merchant_id: null, enabled: false })).toBeNull();
+    expect(purgeBlockedByPayments({ merchant_id: "acct_1", enabled: true })).toMatch(/still switched on/);
+    expect(purgeBlockedByPayments({ merchant_id: "acct_1", enabled: false })).toBeNull();
   });
 });

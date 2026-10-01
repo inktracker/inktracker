@@ -3,7 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 
 // Which way this shop's customers pay: "qb" (the QuickBooks invoice link —
 // every shop today) or "processor" (InkTracker's own payment page). Read from
-// the `rainforest` edge function's status action, which applies the platform
+// the `stripePayments` edge function's status action, which applies the platform
 // kill switch + onboarding state server-side.
 //
 // Fails to "qb" on any error (function not deployed, signed out, network): the
@@ -19,7 +19,7 @@ export function fetchPaymentStatus({ fresh = false } = {}) {
   _cache = (async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return QB_STATUS;
-    const { data, error } = await base44.functions.invoke("rainforest", {
+    const { data, error } = await base44.functions.invoke("stripePayments", {
       action: "status",
       accessToken: session.access_token,
     });

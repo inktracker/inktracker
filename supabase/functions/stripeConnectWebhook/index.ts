@@ -1,45 +1,49 @@
-// Rainforest webhook — Supabase Edge Function (public, no JWT).
+// Stripe Connect webhook — Supabase Edge Function (public, no JWT).
 //
-// Records every payment event in processor_payments and books successful
-// payments into the shop's QuickBooks as a Payment against the invoice.
-// QuickBooks' own webhook then runs the existing paid pipeline (qbWebhook).
+// A CONNECT endpoint: events from every shop's own Stripe account. Records
+// InkTracker's payments in processor_payments and books successful ones into
+// the shop's QuickBooks as a Payment against the invoice. QuickBooks' own
+// webhook then runs the existing paid pipeline (qbWebhook). Payments the shop
+// took in Stripe outside InkTracker (no InkTracker metadata) are ignored.
 //
 // Order of operations, each step fail-safe:
-//   1. Verify the signature on the RAW body (Svix scheme) → else 401.
-//   2. Route the event (rainforestWebhookAdapter). Non-actionable → 200.
-//   3. Claim it in processed_webhook_events (source 'rainforest', key =
-//      resource id + event type). Duplicate → 200. DB unhealthy → 503.
-//   4. Apply: merchant status, or planPayinEffect → ledger, notification,
-//      QB post. Any throw → release the claim and 500 so Rainforest retries
-//      (≈28h schedule).
+//   1. Verify Stripe-Signature on the RAW body → else 401.
+//   2. Route the event (stripeWebhookAdapter). Non-actionable → 200.
+//   3. Claim it in processed_webhook_events (source 'stripe_connect', key =
+//      event id). Duplicate → 200. DB unhealthy → 503.
+//   4. Apply: account status, or planPayinEffect → ledger, notification,
+//      QB post. Any throw → release the claim and 500 so Stripe retries
+//      (up to 3 days).
 //
-// Runs even with RAINFOREST_ENABLED off: that switch stops NEW payments;
-// money already taken must still be recorded and booked.
+// Runs even with STRIPE_PAYMENTS_ENABLED off: that switch stops NEW
+// payments; money already taken must still be recorded and booked.
 //
-// Payouts: deposit.succeeded → one QuickBooks Deposit (clean payouts only;
-// anything with refunds/returns/chargebacks → the shop records it, told once).
+// Payouts: payout.paid → one QuickBooks Deposit (clean payouts only;
+// anything with refunds/returns/disputes or non-InkTracker sales → the shop
+// records it, told once).
 //
 // Nightly sweep (POST with `Authorization: Bearer CRON_SECRET`, from the
-// qb-reconcile GitHub workflow): retries payments and payouts that couldn't
-// be booked at the time (QuickBooks disconnected/down past Rainforest's ≈28h
-// of retries, or a payout that arrived before its payments were booked).
+// qb-reconcile GitHub workflow): replays anything missed and retries what
+// couldn't be booked at the time.
 //
-// Secrets: RAINFOREST_WEBHOOK_SECRET (whsec_… from the Portal endpoint),
-// RAINFOREST_API_KEY, RAINFOREST_API_BASE (sandbox/prod), CRON_SECRET.
+// Secrets: STRIPE_CONNECT_WEBHOOK_SECRET (whsec_… of the Connect endpoint),
+// STRIPE_CONNECT_SECRET_KEY, CRON_SECRET.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import {
-  verifyWebhookSignature,
-  routeWebhook,
-  webhookDedupeKey,
-  payinToEvent,
-  refundKind,
-  kindForPayinStatus,
-  readListPage,
-} from "../_shared/rainforestWebhookAdapter.js";
-import { planPayinEffect, planQbApplication, statusesBelow, statusAdvances, BOOKABLE_STATUSES, PAYIN_EVENT } from "../_shared/rainforestPayinEffect.js";
-import { platformFeeCents } from "../_shared/rainforestPricing.js";
-import { buildQbPaymentBody, pickQbPaymentMethod, findBookedPayment } from "../_shared/rainforestQbBooks.js";
+  verifyStripeSignature,
+  routeStripeEvent,
+  paymentIntentToEvent,
+  kindForPaymentIntentStatus,
+  methodOfPaymentIntent,
+  isOurs,
+  accountStatusFields,
+  payoutItemsFromBalanceTransactions,
+  readStripeList,
+} from "../_shared/stripeWebhookAdapter.js";
+import { planPayinEffect, planQbApplication, statusesBelow, statusAdvances, BOOKABLE_STATUSES, PAYIN_EVENT } from "../_shared/payinEffect.js";
+import { platformFeeCents } from "../_shared/paymentsPricing.js";
+import { buildQbPaymentBody, pickQbPaymentMethod, findBookedPayment } from "../_shared/paymentsQbBooks.js";
 import {
   claimWebhookEventDetailed,
   releaseWebhookEvent,
@@ -50,10 +54,10 @@ import { sendResendEmail } from "../_shared/resendClient.js";
 import { escapeHtml } from "../_shared/emailSanitize.js";
 import { renderEmailLayout } from "../_shared/emailLayout.ts";
 import { captureError } from "../_shared/observability.ts";
-import { planPayoutDeposit, PAYOUT_PLAN } from "../_shared/rainforestPayout.js";
+import { planPayoutDeposit, PAYOUT_PLAN } from "../_shared/payoutPlan.js";
 import { shopTimezone, localDate } from "../_shared/shopDate.js";
-import { merchantStatusFields } from "../_shared/rainforestAccount.js";
-import { isPayingShop } from "../_shared/rainforestRequests.js";
+import { isPayingShop } from "../_shared/stripeRequests.js";
+import { stripeApi, type StripeApi } from "../_shared/stripeApi.ts";
 import { paymentsPauseDate, planGraceOver } from "../_shared/paymentRail.js";
 import {
   getShopQb,
@@ -64,7 +68,7 @@ import {
   type QbConn,
 } from "../_shared/qbShopClient.ts";
 
-const SOURCE = "rainforest";
+const SOURCE = "stripe_connect";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STALE_POST_CLAIM_MS = 10 * 60 * 1000;
 
@@ -74,7 +78,7 @@ type Any = any;
 export type Deps = {
   admin: Any;
   env: (k: string) => string | undefined;
-  rainforestGet: (path: string) => Promise<Any>;
+  stripe: StripeApi;
   qb: {
     connect: (shopOwner: string) => Promise<QbConn | null>;
     getInvoice: (c: QbConn, id: string) => Promise<Any | null>;
@@ -114,16 +118,16 @@ async function notifyShop(deps: Deps, n: Any) {
       html,
       text: `${n.title}\n\n${n.body ?? ""}`,
     });
-    if (r && r.ok === false) console.error(`[rainforestWebhook] alert email not sent: ${r.reason ?? r.status}`);
+    if (r && r.ok === false) console.error(`[stripeConnectWebhook] alert email not sent: ${r.reason ?? r.status}`);
   } catch (err) {
-    console.error(`[rainforestWebhook] alert email threw: ${err}`);
+    console.error(`[stripeConnectWebhook] alert email threw: ${err}`);
   }
 }
 
 // deno-lint-ignore no-explicit-any
 function opsAlert(message: string, context: Record<string, unknown> = {}) {
-  console.error(`[rainforestWebhook] ${message}`, context);
-  captureError(new Error(message), { fn: "rainforestWebhook", ...context }).catch(() => {});
+  console.error(`[stripeConnectWebhook] ${message}`, context);
+  captureError(new Error(message), { fn: "stripeConnectWebhook", ...context }).catch(() => {});
 }
 
 /** The shop's timezone, for QuickBooks transaction dates. */
@@ -264,7 +268,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
         eventType: "payment_overpaid",
         severity: "alert",
         title: `Customer overpaid by $${(app.unappliedCents / 100).toFixed(2)}`,
-        body: "This invoice was already paid when another payment came in. The extra is sitting as a customer credit in QuickBooks. Refund it to the customer from Account → Payments → Payments & payouts (open the payment, then Refund).",
+        body: "This invoice was already paid when another payment came in. The extra is sitting as a customer credit in QuickBooks. Refund it to the customer from your Stripe dashboard (open the payment, then Refund), then record the refund against the credit in QuickBooks.",
         metadata: { processor: SOURCE, payin_id: payinId, qb_payment_id: qbPaymentId },
       });
     }
@@ -275,43 +279,58 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
   }
 }
 
-/** Book one Rainforest payout into QuickBooks, exactly once. */
-export async function processPayout(deps: Deps, depositId: string): Promise<string> {
+/** Book one Stripe payout into QuickBooks, exactly once. */
+export async function processPayout(deps: Deps, accountId: string, payoutId: string): Promise<string> {
   const { admin } = deps;
   const now = (deps.now ?? (() => new Date()))();
-  const deposit = await deps.rainforestGet(`/v1/deposits/${encodeURIComponent(depositId)}`);
-  if (!deposit?.merchant_id) return "no_deposit";
   const { data: account } = await admin.from("processor_accounts")
     .select("shop_owner, merchant_id, qb_bank_account_id, qb_fee_account_id")
-    .eq("merchant_id", deposit.merchant_id).maybeSingle();
-  if (!account) { opsAlert(`payout ${depositId} for merchant ${deposit.merchant_id} that no shop owns`); return "unknown_merchant"; }
+    .eq("merchant_id", accountId).maybeSingle();
+  if (!account) { opsAlert(`payout ${payoutId} for Stripe account ${accountId} that no shop owns`); return "unknown_merchant"; }
+  const po = await deps.stripe.get(`/v1/payouts/${encodeURIComponent(payoutId)}`, undefined, { account: accountId });
+  if (!po?.id) return "no_payout";
+  const payout = {
+    id: String(po.id),
+    status: String(po.status ?? ""),
+    amountCents: Number(po.amount),
+    createdAt: po.created ? new Date(Number(po.created) * 1000).toISOString() : undefined,
+  };
 
   const tz = await loadShopTz(admin, account.shop_owner);
-  const payoutDate = localDate(deposit.created_at ?? now.toISOString(), tz);
+  // The day it reaches the bank — what the bank feed shows.
+  const payoutDate = localDate(po.arrival_date ? new Date(Number(po.arrival_date) * 1000).toISOString() : (payout.createdAt ?? now.toISOString()), tz);
   const { data: existing } = await admin.from("processor_payouts")
-    .select("qb_deposit_id, review_notified_at").eq("processor_payout_id", depositId).maybeSingle();
+    .select("qb_deposit_id, review_notified_at").eq("processor_payout_id", payoutId).maybeSingle();
   if (existing?.qb_deposit_id) return "already_booked";
   if (!existing) {
     const { error } = await admin.from("processor_payouts").upsert({
-      processor_payout_id: depositId,
+      processor_payout_id: payoutId,
       shop_owner: account.shop_owner,
-      merchant_id: deposit.merchant_id,
-      net_cents: Number(deposit.amount) || 0,
+      merchant_id: accountId,
+      net_cents: Number.isInteger(payout.amountCents) ? payout.amountCents : 0,
       payout_date: payoutDate,
-      status: String(deposit.status ?? "").toLowerCase(),
+      status: payout.status,
     }, { onConflict: "processor_payout_id" });
     if (error) throw new Error(`payout row write failed: ${error.message}`);
   }
 
-  // All activity, paged.
-  const activities: Any[] = [];
-  for (let offset = 0; offset < 5000; offset += 100) {
-    const page = await deps.rainforestGet(`/v1/deposits/${encodeURIComponent(depositId)}/activity?limit=100&offset=${offset}`);
-    const rows = page?.activities ?? [];
-    activities.push(...rows);
-    if (rows.length < 100) break;
+  // Everything in the payout, paged. The PaymentIntent is expanded so a sale
+  // the shop took outside InkTracker is recognised straight away.
+  const bts: Any[] = [];
+  let startingAfter: string | null = null;
+  for (let page = 0; page < 50; page++) {
+    const list = readStripeList(await deps.stripe.get("/v1/balance_transactions", {
+      payout: payoutId,
+      limit: 100,
+      expand: ["data.source", "data.source.payment_intent"],
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    }, { account: accountId }));
+    bts.push(...list.items);
+    if (!list.hasMore || !list.lastId) break;
+    startingAfter = list.lastId;
   }
-  const payinIds = activities.filter((a) => String(a?.type).toUpperCase() === "PAYIN").map((a) => String(a.id ?? a.payin_id));
+  const items = payoutItemsFromBalanceTransactions(bts);
+  const payinIds = items.filter((i: Any) => i.type === "payment" && i.payinId).map((i: Any) => String(i.payinId));
   const ledgerByPayin = new Map<string, Any>();
   // Chunked (long payouts would overflow the URL); a read error must retry,
   // never read as "not our payments".
@@ -324,10 +343,10 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
     for (const r of rows ?? []) ledgerByPayin.set(String(r.processor_payin_id), r);
   }
 
-  const plan: Any = planPayoutDeposit({ deposit, activities, ledgerByPayin, account, txnDate: payoutDate, now });
+  const plan: Any = planPayoutDeposit({ payout, items, ledgerByPayin, account, txnDate: payoutDate, now });
   if (plan.plan === PAYOUT_PLAN.SKIP) return `skip:${plan.reason}`;
   if (plan.plan === PAYOUT_PLAN.WAIT) {
-    await admin.from("processor_payouts").update({ qb_post_error: "waiting: payments not yet in QuickBooks", updated_at: now.toISOString() }).eq("processor_payout_id", depositId);
+    await admin.from("processor_payouts").update({ qb_post_error: "waiting: payments not yet in QuickBooks", updated_at: now.toISOString() }).eq("processor_payout_id", payoutId);
     return "wait";
   }
   if (plan.plan === PAYOUT_PLAN.MANUAL) {
@@ -335,7 +354,7 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
       qb_post_error: `needs_review: ${plan.problems.join(" ")}`.slice(0, 1000),
       review_notified_at: existing?.review_notified_at ?? now.toISOString(),
       updated_at: now.toISOString(),
-    }).eq("processor_payout_id", depositId);
+    }).eq("processor_payout_id", payoutId);
     if (!existing?.review_notified_at) {
       await notifyShop(deps, <Any>{
         shopOwner: account.shop_owner,
@@ -355,7 +374,7 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
   // for a person (sweep) instead of risking a second Deposit.
   const { data: claimed, error: claimErr } = await admin.from("processor_payouts")
     .update({ qb_posting_at: now.toISOString() })
-    .eq("processor_payout_id", depositId)
+    .eq("processor_payout_id", payoutId)
     .is("qb_deposit_id", null)
     .is("qb_posting_at", null)
     .select("processor_payout_id");
@@ -366,7 +385,7 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
   try {
     const conn = await deps.qb.connect(account.shop_owner);
     if (!conn) {
-      await admin.from("processor_payouts").update({ qb_posting_at: null, qb_post_error: "QuickBooks not connected" }).eq("processor_payout_id", depositId);
+      await admin.from("processor_payouts").update({ qb_posting_at: null, qb_post_error: "QuickBooks not connected" }).eq("processor_payout_id", payoutId);
       return "no_qb_connection";
     }
     const res = await deps.qb.postDeposit(conn, plan.body);
@@ -384,10 +403,10 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
     try {
       await admin.from("processor_payouts").update(definitelyRejected
         ? { qb_posting_at: null, qb_post_error: msg, updated_at: now.toISOString() }
-        : { qb_post_error: `check_quickbooks: ${msg}` }).eq("processor_payout_id", depositId);
+        : { qb_post_error: `check_quickbooks: ${msg}` }).eq("processor_payout_id", payoutId);
     } catch { /* surfaced below */ }
     if (!definitelyRejected) {
-      opsAlert(`payout ${depositId}: QuickBooks Deposit may have been created (${msg}) — check QuickBooks before retrying`, { depositId });
+      opsAlert(`payout ${payoutId}: QuickBooks Deposit may have been created (${msg}) — check QuickBooks before retrying`, { payoutId });
       return "check_quickbooks";
     }
     throw err;
@@ -408,26 +427,52 @@ export async function processPayout(deps: Deps, depositId: string): Promise<stri
   let recorded = false;
   for (let i = 0; i < 3 && !recorded; i++) {
     try {
-      const { error } = await admin.from("processor_payouts").update(patch).eq("processor_payout_id", depositId);
+      const { error } = await admin.from("processor_payouts").update(patch).eq("processor_payout_id", payoutId);
       recorded = !error;
     } catch { /* retry */ }
   }
   if (!recorded) {
-    opsAlert(`payout ${depositId} POSTED as QuickBooks deposit ${qbDepositId} but not recorded — set processor_payouts.qb_deposit_id by hand`, { depositId, qbDepositId });
+    opsAlert(`payout ${payoutId} POSTED as QuickBooks deposit ${qbDepositId} but not recorded — set processor_payouts.qb_deposit_id by hand`, { payoutId, qbDepositId });
     return "booked_unrecorded";
   }
-  await admin.from("processor_payments").update({ processor_payout_id: depositId })
+  await admin.from("processor_payments").update({ processor_payout_id: payoutId })
     .eq("shop_owner", account.shop_owner).in("processor_payin_id", plan.payinIds);
   return "booked";
 }
 
 /**
- * Bring our copy of a merchant's status up to date. The webhook body is a
- * snapshot from when the event fired, and Rainforest retries for ~28h with
- * no ordering guarantee — a retried old "active" landing after "suspended"
- * would put a suspended shop back on InkTracker payments. So the event is
- * only a trigger: read the merchant's CURRENT state and store that. Also
- * used by the nightly sweep. Tells the owner about changes that matter.
+ * The shop disconnected InkTracker from its Stripe account (or the account
+ * is gone). Payments switch back to QuickBooks at once; the owner is told.
+ */
+export async function markDisconnected(deps: Deps, merchantId: string): Promise<string> {
+  const { admin } = deps;
+  const { data: before } = await admin.from("processor_accounts")
+    .select("shop_owner, merchant_status, enabled").eq("merchant_id", merchantId).maybeSingle();
+  if (!before) return "unknown_merchant";
+  if (before.merchant_status === "canceled" && !before.enabled) return "already_disconnected";
+  const now = new Date().toISOString();
+  const { error } = await admin.from("processor_accounts").update({
+    merchant_status: "canceled", merchant_application_status: "declined", enabled: false, enabled_at: null, updated_at: now,
+  }).eq("merchant_id", merchantId);
+  if (error) throw new Error(`account update failed: ${error.message}`);
+  await notifyShop(deps, <Any>{
+    shopOwner: before.shop_owner,
+    eventType: "payments_account_on_hold",
+    severity: "alert",
+    title: "Your Stripe account was disconnected from InkTracker",
+    body: "Customers pay through QuickBooks again. Re-send any open quotes or invoices from InkTracker so they get a QuickBooks pay link. To use InkTracker payments again, connect a Stripe account in Account → Payments.",
+    metadata: { processor: "stripe" },
+  });
+  return "disconnected";
+}
+
+/**
+ * Bring our copy of a shop's Stripe account status up to date. The event
+ * body is a snapshot from when it fired, and Stripe retries for days with
+ * no ordering guarantee — a retried old "active" landing after a pause
+ * would put a paused shop back on InkTracker payments. So the event is only
+ * a trigger: read the account's CURRENT state and store that. Also used by
+ * the nightly sweep. Tells the owner about changes that matter.
  */
 export async function syncMerchant(deps: Deps, merchantId: string): Promise<string> {
   const { admin } = deps;
@@ -435,8 +480,17 @@ export async function syncMerchant(deps: Deps, merchantId: string): Promise<stri
     .select("shop_owner, merchant_status, merchant_application_status, enabled, onboarded_at")
     .eq("merchant_id", merchantId).maybeSingle();
   if (!before) return "unknown_merchant";
-  const current = await deps.rainforestGet(`/v1/merchants/${encodeURIComponent(merchantId)}`);
-  const fields = merchantStatusFields(current);
+  let current: Any;
+  try {
+    current = await deps.stripe.get(`/v1/accounts/${encodeURIComponent(merchantId)}`);
+  } catch (err) {
+    // The shop disconnected InkTracker (or deleted the account): Stripe no
+    // longer lets us read it.
+    const st = Number((err as Any)?.status);
+    if (st === 403 || st === 404 || (err as Any)?.code === "account_invalid") return await markDisconnected(deps, merchantId);
+    throw err;
+  }
+  const fields: Any = accountStatusFields(current);
   if (!fields.merchant_status && !fields.merchant_application_status) return "no_status";
   const now = new Date().toISOString();
   const becameActive = fields.merchant_status === "active" && before.merchant_status !== "active";
@@ -457,7 +511,7 @@ export async function syncMerchant(deps: Deps, merchantId: string): Promise<stri
       eventType: "payments_account_on_hold",
       severity: "alert",
       title: ms === "suspended" ? "Your payments account is on hold" : "Your payments account was closed",
-      body: "Customers pay through QuickBooks again. Quotes and invoices you already sent with an InkTracker pay link can't be paid online until you re-send them from InkTracker, which adds a QuickBooks pay link. Check your email from Rainforest for details.",
+      body: "Customers pay through QuickBooks again. Quotes and invoices you already sent with an InkTracker pay link can't be paid online until you re-send them from InkTracker, which adds a QuickBooks pay link. Check your Stripe dashboard and your email from Stripe for details.",
       metadata: { processor: SOURCE, merchant_status: ms },
     });
   } else if (app === "needs_information" && before.merchant_application_status !== "needs_information") {
@@ -467,7 +521,7 @@ export async function syncMerchant(deps: Deps, merchantId: string): Promise<stri
       eventType: "payments_needs_information",
       severity: "alert",
       title: "Your payments sign-up needs more information",
-      body: "Rainforest needs a bit more information to approve your payments account. Open Account → Payments and click Continue sign-up.",
+      body: "Stripe needs a bit more information about your business. Open Account → Payments and click Continue sign-up.",
       metadata: { processor: SOURCE },
     });
   } else if (becameActive) {
@@ -487,7 +541,7 @@ export async function syncMerchant(deps: Deps, merchantId: string): Promise<stri
 
 /**
  * Apply one neutral payment event: ledger (forward-only), shop notice, QB
- * booking. Shared by the webhook and the nightly Rainforest backstop, so a
+ * booking. Shared by the webhook and the nightly Stripe backstop, so a
  * payment is handled identically however we learn about it. Idempotent.
  */
 export async function applyPayinEvent(deps: Deps, event: Any): Promise<{ kind: string; reject: string | null; posted: string | null }> {
@@ -538,86 +592,99 @@ export async function applyPayinEvent(deps: Deps, event: Any): Promise<{ kind: s
   return { kind: event.kind, reject: plan.reject ?? null, posted };
 }
 
-/**
- * Backstop against Rainforest itself. The webhook claims an event before
- * processing it; if the function is killed mid-way (timeout, deploy) the
- * claim stays and Rainforest's retries are dropped as duplicates, so a
- * payment could exist at Rainforest with no ledger row — never recorded,
- * never booked. Each night, list the last few days of payins and replay any
- * we're missing or behind on through the same code path. Idempotent.
- */
-export async function reconcileRecentPayins(deps: Deps, sinceIso: string): Promise<{ checked: number; replayed: number }> {
-  const { admin } = deps;
-  const { data: accounts } = await admin.from("processor_accounts").select("merchant_id").not("merchant_id", "is", null);
-  const ours = new Set((accounts ?? []).map((a: Any) => String(a.merchant_id)));
-  const out = { checked: 0, replayed: 0 };
-  if (!ours.size) return out;
-  let key: string | null = null;
-  for (let page = 0; page < 20; page++) {
-    const qs = `created_at.start=${encodeURIComponent(sinceIso)}&limit=200&sort_by=created_at&sort_order=asc${key ? `&start_key=${encodeURIComponent(key)}` : ""}`;
-    const { items, nextKey } = readListPage(await deps.rainforestGet(`/v1/payins?${qs}`));
-    for (const p of items) {
-      if (!ours.has(String(p?.merchant_id ?? ""))) continue;
-      const kind = kindForPayinStatus(p?.status);
-      if (!kind || !p?.payin_id) continue;
-      out.checked++;
-      const { data: row } = await admin.from("processor_payments").select("status").eq("processor_payin_id", String(p.payin_id)).maybeSingle();
-      if (row && !statusAdvances(row.status, kind)) continue;
-      await applyPayinEvent(deps, payinToEvent(kind, p));
-      out.replayed++;
-      if (!row) opsAlert(`backstop recorded payin ${p.payin_id} that the webhook never did`, { kind });
-    }
-    if (!nextKey || items.length === 0) break;
-    key = nextKey;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Connected accounts InkTracker knows, for the per-account backstops. */
+async function ourAccounts(admin: Any): Promise<string[]> {
+  const { data } = await admin.from("processor_accounts")
+    .select("merchant_id, merchant_status").not("merchant_id", "is", null).limit(1000);
+  return (data ?? []).filter((a: Any) => a.merchant_status !== "canceled").map((a: Any) => String(a.merchant_id));
+}
+
+/** Every page of a list on a connected account (starting_after paging). */
+async function listAll(deps: Deps, path: string, query: Record<string, unknown>, accountId: string, maxPages = 20): Promise<Any[]> {
+  const out: Any[] = [];
+  let startingAfter: string | null = null;
+  for (let page = 0; page < maxPages; page++) {
+    const list = readStripeList(await deps.stripe.get(path, { limit: 100, ...query, ...(startingAfter ? { starting_after: startingAfter } : {}) }, { account: accountId }));
+    out.push(...list.items);
+    if (!list.hasMore || !list.lastId) break;
+    startingAfter = list.lastId;
   }
   return out;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * Backstop against lost events. The webhook claims an event before
+ * processing it; if the function is killed mid-way (timeout, deploy) the
+ * claim stays and Stripe's retries are dropped as duplicates, so a payment
+ * could exist in Stripe with no ledger row — never recorded, never booked.
+ * Each night, list each shop's recent InkTracker PaymentIntents and replay
+ * any we're missing or behind on through the same code path. Idempotent.
+ */
+export async function reconcileRecentPayins(deps: Deps, sinceIso: string): Promise<{ checked: number; replayed: number }> {
+  const { admin } = deps;
+  const out = { checked: 0, replayed: 0 };
+  const since = Math.floor(new Date(sinceIso).getTime() / 1000);
+  for (const accountId of await ourAccounts(admin)) {
+    const pis = await listAll(deps, "/v1/payment_intents", { "created[gte]": since }, accountId);
+    for (const pi of pis) {
+      if (!isOurs(pi?.metadata)) continue; // the shop's own non-InkTracker sales
+      const kind = kindForPaymentIntentStatus(pi?.status);
+      if (!kind || !pi?.id) continue;
+      out.checked++;
+      const { data: row } = await admin.from("processor_payments").select("status").eq("processor_payin_id", String(pi.id)).maybeSingle();
+      if (row && !statusAdvances(row.status, kind)) continue;
+      await applyPayinEvent(deps, paymentIntentToEvent(kind, pi, accountId));
+      out.replayed++;
+      if (!row) opsAlert(`backstop recorded payment ${pi.id} that the webhook never did`, { kind });
+    }
+  }
+  return out;
+}
 
 /**
- * Reversals Rainforest has that our ledger hasn't caught up with (a lost
- * chargeback / ACH-return event). Applied only when the ledger is BEHIND, so
- * the shop is told once — not every night.
+ * Disputes Stripe has that our ledger hasn't caught up with (a lost
+ * dispute event). Applied only when the ledger is BEHIND, so the shop is
+ * told once — not every night.
  */
-async function reconcileRecentReversals(deps: Deps): Promise<number> {
+async function reconcileRecentDisputes(deps: Deps, sinceIso: string): Promise<number> {
   const { admin } = deps;
-  const { items } = readListPage(await deps.rainforestGet(`/v1/payments?payment_type=CHARGEBACK&payment_type=ACH_RETURN&sort_by=created_at&sort_order=desc&limit=200`));
+  const since = Math.floor(new Date(sinceIso).getTime() / 1000);
   let replayed = 0;
-  for (const it of items) {
-    const payinId = String(it?.payin_id ?? it?.parent_id ?? "");
-    if (!payinId) continue;
-    const type = String(it?.type ?? it?.payment_type ?? "").toUpperCase();
-    const st = String(it?.status ?? "").toUpperCase();
-    const kind = type === "ACH_RETURN" ? PAYIN_EVENT.RETURNED
-      : st === "LOST" ? PAYIN_EVENT.CHARGED_BACK
-      : ["DISPUTE_ACTION_REQUIRED", "INQUIRY_ACTION_REQUIRED", "CHARGEBACK_PROCESSING"].includes(st) ? PAYIN_EVENT.DISPUTED
-      : null;
-    if (!kind) continue;
-    const { data: row } = await admin.from("processor_payments").select("status").eq("processor_payin_id", payinId).maybeSingle();
-    if (!row || !statusAdvances(row.status, kind)) continue; // not ours, or already known
-    const payin = await deps.rainforestGet(`/v1/payins/${encodeURIComponent(payinId)}`);
-    const amt = Number(it?.amount?.amount ?? it?.amount);
-    await applyPayinEvent(deps, payinToEvent(kind, payin, { reversalCents: Number.isInteger(amt) ? Math.abs(amt) : undefined }));
-    replayed++;
+  for (const accountId of await ourAccounts(admin)) {
+    for (const d of await listAll(deps, "/v1/disputes", { "created[gte]": since }, accountId, 5)) {
+      const payinId = typeof d?.payment_intent === "string" ? d.payment_intent : d?.payment_intent?.id;
+      if (!payinId) continue;
+      const { data: row } = await admin.from("processor_payments").select("status, method").eq("processor_payin_id", String(payinId)).maybeSingle();
+      if (!row) continue; // not an InkTracker payment
+      const kind = d.status === "lost" ? PAYIN_EVENT.CHARGED_BACK
+        : row.method === "ach" ? PAYIN_EVENT.RETURNED
+        : ["won", "warning_closed"].includes(d.status) ? null
+        : PAYIN_EVENT.DISPUTED;
+      if (!kind || !statusAdvances(row.status, kind)) continue;
+      const pi = await deps.stripe.get(`/v1/payment_intents/${encodeURIComponent(payinId)}`, { expand: ["latest_charge"] }, { account: accountId });
+      const amt = Number(d.amount);
+      await applyPayinEvent(deps, paymentIntentToEvent(kind, pi, accountId, { reversalCents: Number.isInteger(amt) ? amt : undefined }));
+      replayed++;
+    }
   }
   return replayed;
 }
 
-/** Payouts Rainforest made that we have no row for (a lost deposit event). */
-async function reconcileRecentDeposits(deps: Deps, sinceIso: string): Promise<number> {
+/** Payouts Stripe made that we have no row for (a lost payout event). */
+async function reconcileRecentPayouts(deps: Deps, sinceIso: string): Promise<number> {
   const { admin } = deps;
-  const { data: accounts } = await admin.from("processor_accounts").select("merchant_id").not("merchant_id", "is", null);
-  const ours = new Set((accounts ?? []).map((a: Any) => String(a.merchant_id)));
-  if (!ours.size) return 0;
-  const { items } = readListPage(await deps.rainforestGet(`/v1/deposits?created_at.start=${encodeURIComponent(sinceIso)}&status=SUCCEEDED&limit=1000`));
+  const since = Math.floor(new Date(sinceIso).getTime() / 1000);
   let found = 0;
-  for (const d of items) {
-    if (!ours.has(String(d?.merchant_id ?? "")) || !d?.deposit_id) continue;
-    const { data: row } = await admin.from("processor_payouts").select("processor_payout_id").eq("processor_payout_id", String(d.deposit_id)).maybeSingle();
-    if (row) continue;
-    await processPayout(deps, String(d.deposit_id));
-    found++;
+  for (const accountId of await ourAccounts(admin)) {
+    for (const po of await listAll(deps, "/v1/payouts", { status: "paid", "created[gte]": since }, accountId, 5)) {
+      if (!po?.id) continue;
+      const { data: row } = await admin.from("processor_payouts").select("processor_payout_id").eq("processor_payout_id", String(po.id)).maybeSingle();
+      if (row) continue;
+      await processPayout(deps, accountId, String(po.id));
+      found++;
+    }
   }
   return found;
 }
@@ -625,19 +692,19 @@ async function reconcileRecentDeposits(deps: Deps, sinceIso: string): Promise<nu
 /**
  * A payout the shop's bank returned (wrong account, closed account). If it
  * was already booked in QuickBooks, that Deposit is now money that never
- * arrived — tell the shop exactly which one to void. Rainforest re-sends the
- * funds once the bank details are fixed.
+ * arrived — tell the shop exactly which one to void. Stripe sends the money
+ * again once the bank details are fixed.
  */
-export async function payoutFailed(deps: Deps, depositId: string): Promise<string> {
+export async function payoutFailed(deps: Deps, accountId: string, payoutId: string): Promise<string> {
   const { admin } = deps;
-  const deposit = await deps.rainforestGet(`/v1/deposits/${encodeURIComponent(depositId)}`);
-  const { data: account } = await admin.from("processor_accounts").select("shop_owner").eq("merchant_id", String(deposit?.merchant_id ?? "")).maybeSingle();
+  const { data: account } = await admin.from("processor_accounts").select("shop_owner").eq("merchant_id", accountId).maybeSingle();
   if (!account) return "unknown_merchant";
-  const { data: row } = await admin.from("processor_payouts").select("qb_deposit_id").eq("processor_payout_id", depositId).maybeSingle();
+  const po = await deps.stripe.get(`/v1/payouts/${encodeURIComponent(payoutId)}`, undefined, { account: accountId });
+  const { data: row } = await admin.from("processor_payouts").select("qb_deposit_id").eq("processor_payout_id", payoutId).maybeSingle();
   if (row) {
-    await admin.from("processor_payouts").update({ status: "failed", updated_at: new Date().toISOString() }).eq("processor_payout_id", depositId);
+    await admin.from("processor_payouts").update({ status: "failed", updated_at: new Date().toISOString() }).eq("processor_payout_id", payoutId);
   }
-  const amt = Number(deposit?.amount);
+  const amt = Number(po?.amount);
   const money = Number.isInteger(amt) ? `$${(amt / 100).toFixed(2)}` : "A payout";
   await notifyShop(deps, <Any>{
     shopOwner: account.shop_owner,
@@ -647,10 +714,10 @@ export async function payoutFailed(deps: Deps, depositId: string): Promise<strin
     body: (row?.qb_deposit_id
       ? `InkTracker had recorded it in QuickBooks as deposit #${row.qb_deposit_id}, but the money didn't arrive. Delete or void that deposit in QuickBooks. `
       : "It wasn't recorded in QuickBooks, so there's nothing to change there. ") +
-      "Check the bank account in your payments settings; Rainforest sends the money again once it's fixed.",
-    metadata: { processor: SOURCE, deposit_id: depositId, failure: deposit?.failure_code ?? null },
+      "Check your bank account in your Stripe dashboard; Stripe sends the money again once it's fixed.",
+    metadata: { processor: "stripe", payout_id: payoutId, failure: po?.failure_code ?? null },
   });
-  opsAlert(`payout ${depositId} failed (${deposit?.failure_code ?? "?"})`, { shop: account.shop_owner });
+  opsAlert(`payout ${payoutId} failed (${po?.failure_code ?? "?"})`, { shop: account.shop_owner });
   return "failed_notified";
 }
 
@@ -700,7 +767,7 @@ export async function checkPlanLapses(deps: Deps): Promise<{ lapsed: number; pau
       await notifyShop(deps, <Any>{
         shopOwner: a.shop_owner, eventType: "payments_plan_paused", severity: "alert",
         title: "InkTracker payments are paused",
-        body: "New quotes and invoices you send now use QuickBooks pay links. Re-send any open ones from InkTracker so customers get a QuickBooks link. Payouts, refunds and disputes still work in Account → Payments. Renew your plan to switch InkTracker payments back on.",
+        body: "New quotes and invoices you send now use QuickBooks pay links. Re-send any open ones from InkTracker so customers get a QuickBooks link. Payouts, refunds and disputes keep working in your Stripe dashboard. Renew your plan to switch InkTracker payments back on.",
         metadata: { processor: SOURCE },
       });
       out.paused++;
@@ -725,7 +792,7 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
   // 0a. InkTracker plan lapses (grace, pause, renewal).
   await step("plan lapse check", async () => { await checkPlanLapses(deps); });
 
-  // 0. Merchant status, in case a merchant event was lost.
+  // 0. Account status, in case an account event was lost.
   await step("merchant sync", async () => {
     const { data: accts } = await admin.from("processor_accounts")
       .select("merchant_id, merchant_status").not("merchant_id", "is", null).limit(500);
@@ -735,38 +802,40 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
     }
   });
 
-  // 1. Payins Rainforest has that we don't. 10 days: a bank payment's
-  //    clearing (T+4 business days) plus a weekend and slack.
+  // 1. InkTracker payments Stripe has that we don't. 10 days: a bank
+  //    payment's clearing (~4 business days) plus a weekend and slack.
   await step("payin backstop", async () => {
     const r = await reconcileRecentPayins(deps, new Date(now.getTime() - 10 * DAY_MS).toISOString());
     out.backstopChecked = r.checked;
     out.backstopReplayed = r.replayed;
   });
 
-  // 1b. Bank payments still "processing" after 4+ days: ask Rainforest for
-  //     the payin directly (its "succeeded" event may have been lost, and it
-  //     can fall outside any list window).
+  // 1b. Bank payments still "processing" after 4+ days: ask Stripe for the
+  //     PaymentIntent directly (its "succeeded" event may have been lost,
+  //     and it can fall outside any list window).
   await step("stuck bank payments", async () => {
     const { data: stale } = await admin.from("processor_payments")
-      .select("processor_payin_id")
+      .select("processor_payin_id, merchant_id")
       .eq("status", "processing")
       .eq("method", "ach")
       .lt("created_at", new Date(now.getTime() - 4 * DAY_MS).toISOString())
       .order("created_at", { ascending: true })
       .limit(100);
     for (const r of stale ?? []) {
-      const payin = await deps.rainforestGet(`/v1/payins/${encodeURIComponent(String(r.processor_payin_id))}`);
-      const kind = kindForPayinStatus(payin?.status);
+      const pi = await deps.stripe.get(`/v1/payment_intents/${encodeURIComponent(String(r.processor_payin_id))}`, { expand: ["latest_charge"] }, { account: String(r.merchant_id) });
+      // Stripe puts a failed bank payment back to requires_payment_method.
+      const kind = kindForPaymentIntentStatus(pi?.status) ??
+        (pi?.status === "requires_payment_method" && pi?.last_payment_error ? PAYIN_EVENT.FAILED : null);
       if (kind && kind !== PAYIN_EVENT.PROCESSING) {
-        await applyPayinEvent(deps, payinToEvent(kind, payin));
+        await applyPayinEvent(deps, paymentIntentToEvent(kind, pi, String(r.merchant_id)));
         out.backstopReplayed++;
       }
     }
   });
 
-  // 1c. Lost chargeback / return events, and lost payouts.
-  await step("reversal backstop", async () => { out.backstopReplayed += await reconcileRecentReversals(deps); });
-  await step("payout backstop", async () => { await reconcileRecentDeposits(deps, new Date(now.getTime() - 10 * DAY_MS).toISOString()); });
+  // 1c. Lost dispute events, and lost payouts.
+  await step("dispute backstop", async () => { out.backstopReplayed += await reconcileRecentDisputes(deps, new Date(now.getTime() - 30 * DAY_MS).toISOString()); });
+  await step("payout backstop", async () => { await reconcileRecentPayouts(deps, new Date(now.getTime() - 10 * DAY_MS).toISOString()); });
 
   // 2. Book payments that came in but aren't in QuickBooks yet. Ordered by
   //    last attempt (each attempt bumps updated_at) so one stuck row can't
@@ -792,7 +861,7 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
 
   // 3. Payouts still to book: not sent to the shop for review, not mid-post.
   const { data: payouts } = await admin.from("processor_payouts")
-    .select("processor_payout_id, qb_post_error")
+    .select("processor_payout_id, merchant_id, qb_post_error")
     .is("qb_deposit_id", null)
     .is("review_notified_at", null)
     .is("qb_posting_at", null)
@@ -811,7 +880,7 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
   for (const p of payouts ?? []) {
     out.payouts++;
     try {
-      if ((await processPayout(deps, String(p.processor_payout_id))) === "booked") out.payoutsBooked++;
+      if ((await processPayout(deps, String(p.merchant_id), String(p.processor_payout_id))) === "booked") out.payoutsBooked++;
     } catch (err) {
       out.errors++;
       opsAlert(`sweep: payout ${p.processor_payout_id} still not booked: ${(err as Error)?.message ?? err}`);
@@ -833,7 +902,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
   // Nightly sweep — authenticated by CRON_SECRET, not a webhook signature.
   const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  if (bearer && !req.headers.get("svix-signature") && !req.headers.get("webhook-signature")) {
+  if (bearer && !req.headers.get("stripe-signature")) {
     if (!sameSecret(bearer, deps.env("CRON_SECRET") ?? "")) return ok({ error: "unauthorized" }, 401);
     try {
       return ok({ ok: true, sweep: await sweep(deps) });
@@ -845,73 +914,72 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
   const rawBody = await req.text();
 
-  const sig = await verifyWebhookSignature({
-    secret: deps.env("RAINFOREST_WEBHOOK_SECRET") ?? "",
+  const sig = await verifyStripeSignature({
+    secret: deps.env("STRIPE_CONNECT_WEBHOOK_SECRET") ?? "",
     rawBody,
-    id: req.headers.get("svix-id") ?? req.headers.get("webhook-id"),
-    timestamp: req.headers.get("svix-timestamp") ?? req.headers.get("webhook-timestamp"),
-    signature: req.headers.get("svix-signature") ?? req.headers.get("webhook-signature"),
+    header: req.headers.get("stripe-signature"),
     nowSeconds: Math.floor(((deps.now ?? (() => new Date()))()).getTime() / 1000),
   });
   if (!sig.ok) {
-    console.error(`[rainforestWebhook] rejected: ${sig.reason}`);
+    console.error(`[stripeConnectWebhook] rejected: ${sig.reason}`);
     return ok({ error: "invalid signature" }, 401);
   }
 
-  let body: Any;
-  try { body = JSON.parse(rawBody); } catch { return ok({ error: "bad json" }, 400); }
+  let evt: Any;
+  try { evt = JSON.parse(rawBody); } catch { return ok({ error: "bad json" }, 400); }
 
-  const route = routeWebhook(body);
+  const route: Any = routeStripeEvent(evt);
   if (route.route === "ignore") return ok({ ok: true, ignored: route.reason });
-  if (route.route === "deposit" && (!["succeeded", "failed"].includes(String(route.status)) || !route.depositId)) {
-    return ok({ ok: true, ignored: `deposit.${route.status}` });
-  }
+  if (!evt?.id) return ok({ ok: true, ignored: "no event id" });
 
-  // One Svix message id per event (stable across Rainforest's retries), so a
-  // merchant that goes active → suspended → active → suspended isn't
-  // mistaken for a duplicate. Resource key only as a fallback.
-  const msgId = req.headers.get("svix-id") ?? req.headers.get("webhook-id");
-  const key = (msgId ? `msg:${msgId}` : webhookDedupeKey(body)) ?? "";
-  const claim = await claimWebhookEventDetailed(admin, SOURCE, key, { event_type: body?.event_type });
+  // Stripe's event id is stable across its retries.
+  const key = `evt:${evt.id}`;
+  const claim = await claimWebhookEventDetailed(admin, SOURCE, key, { event_type: evt?.type });
   if (claim.status === CLAIM_OUTCOMES.DUPLICATE) return ok({ ok: true, duplicate: true });
   if (claim.status === CLAIM_OUTCOMES.ERROR) return ok({ error: "try again" }, 503);
 
   try {
-    if (route.route === "deposit") {
+    if (route.route === "payout") {
+      if (!route.payoutId) return ok({ ok: true, ignored: "no payout id" });
       return ok({ ok: true, payout: route.status === "failed"
-        ? await payoutFailed(deps, String(route.depositId))
-        : await processPayout(deps, String(route.depositId)) });
+        ? await payoutFailed(deps, String(route.merchantId), String(route.payoutId))
+        : await processPayout(deps, String(route.merchantId), String(route.payoutId)) });
+    }
+
+    if (route.route === "merchant") {
+      return ok({ ok: true, merchant: await syncMerchant(deps, String(route.merchantId)) });
+    }
+    if (route.route === "deauthorized") {
+      return ok({ ok: true, merchant: await markDisconnected(deps, String(route.merchantId)) });
     }
 
     if (route.route === "dispute_won") {
-      if (!route.payinId) return ok({ ok: true, ignored: "no payin id" });
-      const payin = await deps.rainforestGet(`/v1/payins/${encodeURIComponent(route.payinId)}`);
-      const { data: account } = await admin.from("processor_accounts").select("shop_owner").eq("merchant_id", String(payin?.merchant_id ?? "")).maybeSingle();
-      if (account?.shop_owner) {
-        const label = payin?.metadata?.quote_number;
+      if (!route.payinId) return ok({ ok: true, ignored: "no payment id" });
+      const { data: row } = await admin.from("processor_payments").select("shop_owner").eq("processor_payin_id", String(route.payinId)).maybeSingle();
+      if (row?.shop_owner) {
         await notifyShop(deps, <Any>{
-          shopOwner: account.shop_owner,
+          shopOwner: row.shop_owner,
           eventType: "payment_dispute_won",
           severity: "info",
-          title: `Dispute won${label ? `: ${label}` : ""}`,
+          title: "Dispute won",
           body: "The card network ruled in your favour. The disputed money comes back in a coming payout. Nothing to change in QuickBooks.",
-          metadata: { processor: SOURCE, payin_id: route.payinId },
+          metadata: { processor: "stripe", payin_id: route.payinId },
         });
       }
       return ok({ ok: true, disputeWon: true });
     }
 
-    if (route.route === "merchant") {
-      if (!route.merchantId) return ok({ ok: true, ignored: "no merchant id" });
-      return ok({ ok: true, merchant: await syncMerchant(deps, route.merchantId) });
-    }
-
     let event: Any;
     if (route.route === "fetch_payin") {
-      if (!route.payinId) return ok({ ok: true, ignored: "no payin id" });
-      const payin = await deps.rainforestGet(`/v1/payins/${encodeURIComponent(route.payinId)}`);
-      const kind = route.kind === "refund" ? refundKind(payin) : String(route.kind);
-      event = payinToEvent(kind, payin, { reversalCents: route.reversalCents });
+      if (!route.payinId) return ok({ ok: true, ignored: "no payment id" });
+      const pi = await deps.stripe.get(`/v1/payment_intents/${encodeURIComponent(String(route.payinId))}`, { expand: ["latest_charge"] }, { account: String(route.merchantId) });
+      if (!isOurs(pi?.metadata)) return ok({ ok: true, ignored: "not_inktracker" });
+      // A dispute on a bank payment is a return (the customer's bank pulled
+      // it back; there's no evidence process). On a card it's a dispute.
+      const kind = route.kind === "dispute_opened"
+        ? (methodOfPaymentIntent(pi) === "ach" ? PAYIN_EVENT.RETURNED : PAYIN_EVENT.DISPUTED)
+        : String(route.kind);
+      event = paymentIntentToEvent(kind, pi, String(route.merchantId), { reversalCents: route.reversalCents });
     } else {
       event = route.event;
     }
@@ -920,29 +988,18 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     return ok({ ok: true, ...applied });
   } catch (err) {
     await releaseWebhookEvent(admin, SOURCE, key);
-    opsAlert(`processing failed: ${(err as Error)?.message ?? err}`, { event_type: body?.event_type });
+    opsAlert(`processing failed: ${(err as Error)?.message ?? err}`, { event_type: evt?.type });
     return ok({ error: "processing failed" }, 500);
   }
 }
 
 if (import.meta.main) {
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const apiBase = (Deno.env.get("RAINFOREST_API_BASE") ?? "https://api.sandbox.rainforestpay.com").replace(/\/$/, "");
+  const env = (k: string) => Deno.env.get(k);
   Deno.serve((req) => handle(req, {
     admin,
-    env: (k) => Deno.env.get(k),
-    rainforestGet: async (path) => {
-      const res = await fetch(`${apiBase}${path}`, {
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("RAINFOREST_API_KEY") ?? ""}`,
-          "Rainforest-Api-Version": "2024-10-16",
-          Accept: "application/json",
-        },
-      });
-      if (!res.ok) throw new Error(`Rainforest GET ${path} → ${res.status}`);
-      const j = await res.json();
-      return j?.data ?? j;
-    },
+    env,
+    stripe: stripeApi(env),
     qb: {
       connect: (shop) => getShopQb(admin, shop),
       getInvoice: qbGetInvoice,

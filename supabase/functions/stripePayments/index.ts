@@ -1,22 +1,25 @@
-// InkTracker payments (Rainforest). Supabase Edge Function.
+// InkTracker payments (Stripe Connect). Supabase Edge Function.
 //
 // Signed-in shop actions (acts on the SHOP OWNER's row; brokers refused):
 //   status           → which way this shop's customers pay + setup progress
-//   startOnboarding  → OWNER, paying plan only: create the Rainforest merchant
-//                      (prefilled) once, then a short-lived onboarding session
-//                      for the sign-up component
-//   refreshStatus    → re-read merchant/application status from Rainforest
+//   startOnboarding  → OWNER, paying plan only: create the shop's Stripe
+//                      account (Standard, prefilled) once, then a
+//                      Stripe-hosted sign-up link
+//   refreshStatus    → re-read the account from Stripe (after sign-up returns)
 //   qbAccounts       → the shop's QuickBooks bank / expense accounts to pick from
 //   saveQbAccounts   → map payout bank account + fee expense account (owner/manager)
 //   setEnabled       → switch InkTracker payments on/off (OWNER only)
 //
 // Public (customer) action, no sign-in, token-gated like the quote page:
 //   payRail          → { docType, id, token } → { rail } only (page load)
-//   payinSession     → { docType: "quote"|"invoice", id, token } → a payment
-//                      session for the LIVE QuickBooks balance, or a reason
-//                      it can't be paid here
+//   payinSession     → { docType: "quote"|"invoice", id, token, method:
+//                      "card"|"ach" } → a Stripe Checkout URL for the LIVE
+//                      QuickBooks balance, or a reason it can't be paid here
 //
-// Dormant by default: with RAINFOREST_ENABLED unset, status reports the
+// Refunds and disputes happen in the shop's own Stripe dashboard (Standard
+// accounts have the full dashboard), so there's nothing to embed here.
+//
+// Dormant by default: with STRIPE_PAYMENTS_ENABLED unset, status reports the
 // QuickBooks rail, startOnboarding/setEnabled refuse, and payinSession
 // answers { rail: "qb" } so the page keeps using QuickBooks.
 
@@ -34,20 +37,13 @@ import {
   qbAccountChoices,
   onboardingStage,
   canStartOver,
-  merchantStatusFields,
-} from "../_shared/rainforestAccount.js";
-import {
-  isPayingShop,
-  buildMerchantCreate,
-  buildOnboardingSession,
-  buildPaymentSession,
-  buildPayinConfig,
-  buildActivitySession,
-} from "../_shared/rainforestRequests.js";
-import { choosePayTarget, NOT_PAYABLE } from "../_shared/rainforestPayinPlan.js";
-import { formatRatePct } from "../_shared/rainforestPricing.js";
+} from "../_shared/paymentsAccount.js";
+import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession } from "../_shared/stripeRequests.js";
+import { accountStatusFields, readStripeList } from "../_shared/stripeWebhookAdapter.js";
+import { choosePayTarget, NOT_PAYABLE } from "../_shared/payinPlan.js";
+import { formatRatePct, normalizePayMethod } from "../_shared/paymentsPricing.js";
 import { getShopQb, qbListAccounts, qbGetInvoice, type QbConn } from "../_shared/qbShopClient.ts";
-import { rainforestApi, componentScripts, type RainforestApi } from "../_shared/rainforestApi.ts";
+import { stripeApi, type StripeApi } from "../_shared/stripeApi.ts";
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
@@ -75,7 +71,7 @@ export type Deps = {
   admin: Any;
   getUser: (token: string) => Promise<Any>;
   env: (k: string) => string | undefined;
-  rf: RainforestApi;
+  stripe: StripeApi;
   qb: {
     connect: (shopOwner: string) => Promise<QbConn | null>;
     listAccounts: (c: QbConn) => Promise<Any[]>;
@@ -103,6 +99,7 @@ const CUSTOMER_REASON: Record<string, string> = {
   [NOT_PAYABLE.BAD_AMOUNT]: "Online payment isn't available right now. Please contact the shop.",
   in_flight: "A payment is already being processed for this invoice. Bank payments take a few business days to clear.",
   tax_hold: "The shop is updating the sales tax on this invoice. Please check back soon or contact the shop.",
+  no_bank: "Bank payment isn't available for this shop right now. Please pay by card, or contact the shop.",
 };
 
 /** Load a quote/invoice for the public pay page, token-checked. */
@@ -136,7 +133,7 @@ async function loadDisplay(admin: Any, doc: Any, docType: string) {
 
 /**
  * Public: which way this document is paid, plus what the page shows.
- * Database reads only — no Rainforest or QuickBooks calls — because email
+ * Database reads only — no Stripe or QuickBooks calls — because email
  * link scanners prefetch these pages; the payment session is only opened
  * when a person clicks Pay (payinSession).
  */
@@ -145,7 +142,7 @@ async function payRail(body: Any, deps: Deps) {
   if (!found) return json({ error: "Not found" }, 404);
   const { doc, docType } = found;
   const rail = await loadPaymentRail(deps.admin, doc.shop_owner, {
-    envEnabled: flagOn(deps.env("RAINFOREST_ENABLED")),
+    envEnabled: flagOn(deps.env("STRIPE_PAYMENTS_ENABLED")),
     broker: Boolean(doc.broker_id || doc.broker_email),
   });
   if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
@@ -154,40 +151,40 @@ async function payRail(body: Any, deps: Deps) {
 }
 
 /**
- * An existing Rainforest merchant for this shop (from an attempt whose save
- * failed). Merchants have no metadata and can't be filtered by it, so search
- * by name and match the email we created it with. Closed ones don't count.
+ * A Stripe account we created for this shop in an earlier attempt whose save
+ * failed (found by our metadata). Never create a second one.
  */
-async function findOurMerchant(deps: Deps, name: string, shopOwner: string) {
-  const list = await deps.rf.get(`/v1/merchants?name=${encodeURIComponent(name)}`);
-  const items = Array.isArray(list) ? list : (list?.results ?? list?.merchants ?? []);
-  const hit = items.find((m: Any) =>
-    String(m?.email ?? "").toLowerCase() === shopOwner.toLowerCase() &&
-    String(m?.name ?? "") === name &&
-    !["CANCELED", "DEACTIVATED"].includes(String(m?.merchant_status ?? m?.status ?? "").toUpperCase()));
-  if (!hit?.merchant_id) return null;
-  let applicationId = hit.merchant_application_id ?? hit.latest_merchant_application?.merchant_application_id ?? null;
-  if (!applicationId) {
-    const apps = await deps.rf.get(`/v1/merchants/${encodeURIComponent(hit.merchant_id)}/applications`);
-    const appList = Array.isArray(apps) ? apps : (apps?.results ?? apps?.applications ?? []);
-    applicationId = appList.at(-1)?.merchant_application_id ?? null;
+async function findOurAccount(deps: Deps, shopOwner: string) {
+  let startingAfter: string | null = null;
+  for (let page = 0; page < 20; page++) {
+    const { items, hasMore, lastId } = readStripeList(await deps.stripe.get("/v1/accounts", { limit: 100, ...(startingAfter ? { starting_after: startingAfter } : {}) }));
+    const hit = items.find((a: Any) => String(a?.metadata?.inktracker_shop_owner ?? "").toLowerCase() === shopOwner.toLowerCase());
+    if (hit?.id) return hit;
+    if (!hasMore || !lastId) return null;
+    startingAfter = lastId;
   }
-  return {
-    merchant_id: hit.merchant_id,
-    merchant_application_id: applicationId,
-    merchant_status: hit.merchant_status ?? hit.status,
-    merchant_application_status: hit.merchant_application_status ?? hit.latest_merchant_application?.status,
-  };
+  return null;
 }
 
-/** Public: build a payment session for a quote or invoice. */
+const appUrl = (deps: Deps) => (deps.env("PUBLIC_APP_URL") ?? "https://www.inktracker.app").replace(/\/$/, "");
+
+/** Where the customer comes back to after Checkout (the same pay page). */
+function payPageUrl(deps: Deps, doc: Any, docType: string) {
+  const base = appUrl(deps);
+  return docType === "invoice"
+    ? `${base}/invoicepayment?id=${encodeURIComponent(doc.id)}&token=${encodeURIComponent(doc.public_token)}`
+    : `${base}/QuotePayment?id=${encodeURIComponent(doc.id)}&token=${encodeURIComponent(doc.public_token)}`;
+}
+
+/** Public: a Stripe Checkout for a quote or invoice, in the chosen method. */
 async function payinSession(body: Any, deps: Deps) {
   const { admin } = deps;
   const found = await loadPublicDoc(admin, body);
   if (!found) return json({ error: "Not found" }, 404);
   const { doc, docType } = found;
+  const method = normalizePayMethod(body.method) ?? "card";
 
-  const envEnabled = flagOn(deps.env("RAINFOREST_ENABLED"));
+  const envEnabled = flagOn(deps.env("STRIPE_PAYMENTS_ENABLED"));
   const broker = Boolean(doc.broker_id || doc.broker_email);
   const rail = await loadPaymentRail(admin, doc.shop_owner, { envEnabled, broker });
   if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
@@ -203,7 +200,7 @@ async function payinSession(body: Any, deps: Deps) {
   const account = await loadAccount(admin, doc.shop_owner);
   if (!account?.merchant_id) return json({ rail: "qb" });
 
-  const { display, shopZip } = await loadDisplay(admin, doc, docType);
+  const { display } = await loadDisplay(admin, doc, docType);
 
   // A payment already in flight for this document (bank payment clearing, or
   // a card payment not yet in QuickBooks) → don't open a second one.
@@ -218,11 +215,11 @@ async function payinSession(body: Any, deps: Deps) {
     if (inflight?.length) return json({ rail: "processor", payable: false, reason: "in_flight", message: CUSTOMER_REASON.in_flight, display });
   }
 
-  // Throttle: the same document asked again within 90s gets the session we
-  // just made (still ~28 min of life) — no QuickBooks or Rainforest calls.
+  // Throttle: the same document + method asked again within 90s gets the
+  // checkout we just made — no QuickBooks or Stripe calls.
   const { data: recent } = await admin.from("processor_pay_sessions")
     .select("response, created_at").eq("doc_id", doc.id).maybeSingle();
-  if (recent?.response && Date.now() - new Date(recent.created_at).getTime() < PAY_SESSION_REUSE_MS) {
+  if (recent?.response?.method === method && Date.now() - new Date(recent.created_at).getTime() < PAY_SESSION_REUSE_MS) {
     return json(recent.response);
   }
 
@@ -237,48 +234,47 @@ async function payinSession(body: Any, deps: Deps) {
   const target = choosePayTarget({ quote: doc, depositsEnabled: true, liveFinal, liveDeposit });
   if (!target.ok) return json({ rail: "processor", payable: false, reason: target.reason, message: CUSTOMER_REASON[target.reason] ?? CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT], display });
 
-  const liveInvoice = target.kind === "deposit" ? liveDeposit : liveFinal;
-
-  // One Rainforest payin config allows one successful payment and caches
-  // its first answer forever. Key it by the attempts already made against
-  // this QB invoice, so a refunded-and-reopened balance gets a fresh config.
+  // Payments already made against this QB invoice: a balance reopened by a
+  // refund or return must get a fresh Checkout, not the old one.
   const { data: prior } = await admin.from("processor_payments")
     .select("processor_payin_id")
     .eq("shop_owner", doc.shop_owner)
     .eq("qb_invoice_id", String(target.qbInvoiceId));
-  const attempt = prior?.length ?? 0;
-  const configBody = buildPayinConfig({
-    merchantId: account.merchant_id,
+  const built = buildCheckoutSession({
     doc,
     docType,
     target,
-    liveInvoice,
-    customer: { name: doc.customer_name, email: doc.customer_email },
-    shopPostalCode: shopZip,
-    attempt,
+    method,
+    shopName: display.shopName,
+    customer: { email: doc.customer_email },
+    payPageUrl: payPageUrl(deps, doc, docType),
+    attempt: prior?.length ?? 0,
   });
-  let config;
+  let session: Any;
   try {
-    config = await deps.rf.post("/v1/payin_configs", configBody);
+    session = await deps.stripe.post("/v1/checkout/sessions", built.params, { account: account.merchant_id, idempotencyKey: built.idempotencyKey });
   } catch (err) {
-    // A rejected first request would be replayed forever under the same
-    // key; retry once under a fresh one (e.g. after fixing invoice data).
-    const status = (err as Any)?.status;
-    if (!(status >= 400 && status < 500)) throw err;
-    console.error(`[rainforest] payin config rejected (${status}); retrying with a fresh key: ${(err as Error).message}`);
-    config = await deps.rf.post("/v1/payin_configs", { ...configBody, idempotency_key: `${configBody.idempotency_key}:r${Date.now()}` });
+    const e = err as Any;
+    // The shop's Stripe account hasn't turned on bank (ACH) payments.
+    if (method === "ach" && e?.status === 400 && /us_bank_account|payment method type/i.test(String(e?.message))) {
+      return json({ rail: "processor", payable: false, reason: "no_bank", message: CUSTOMER_REASON.no_bank, display });
+    }
+    // A key reused with different params (e.g. the shop changed the
+    // customer's email mid-window) → once more under a fresh key.
+    if (e?.status === 400 && /idempotent|idempotency/i.test(String(e?.message))) {
+      session = await deps.stripe.post("/v1/checkout/sessions", built.params, { account: account.merchant_id, idempotencyKey: `${built.idempotencyKey}:r${Date.now()}` });
+    } else {
+      throw err;
+    }
   }
-  const session = await deps.rf.post("/v1/sessions", buildPaymentSession(account.merchant_id));
+  if (!session?.url) throw new Error("Stripe returned no checkout URL");
   const response = {
     rail: "processor",
     payable: true,
+    method,
     kind: target.kind,
     amountCents: target.amountCents,
-    payinConfigId: config?.payin_config_id,
-    sessionKey: session?.session_key,
-    allowedMethods: "CARD,ACH",
-    scriptUrl: componentScripts(deps.rf.base).payment,
-    pricing: { card: formatRatePct("card"), ach: formatRatePct("ach") },
+    checkoutUrl: session.url,
     display,
   };
   await admin.from("processor_pay_sessions")
@@ -305,11 +301,13 @@ export async function handle(req: Request, deps: Deps) {
   const { profile: shop } = await loadShopProfileForUser(admin, user.id);
   if (!shop?.email) return json({ error: "Shop not found" }, 404);
   const shopOwner = String(shop.email);
-  const envEnabled = flagOn(deps.env("RAINFOREST_ENABLED"));
+  const envEnabled = flagOn(deps.env("STRIPE_PAYMENTS_ENABLED"));
   const account = await loadAccount(admin, shopOwner);
   const status = async () => json({
     ...buildStatusPayload({ envEnabled, account: await loadAccount(admin, shopOwner), viewer }),
     payingPlan: isPayingShop(shop),
+    // Test-mode key: the card says so, so nobody mistakes test payments for real ones.
+    testMode: !deps.stripe.live,
   });
 
   if (action === "status") return status();
@@ -318,14 +316,13 @@ export async function handle(req: Request, deps: Deps) {
     if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can sign up for payments." }, 403);
     if (!envEnabled) return json({ error: "InkTracker payments aren't available yet." }, 400);
     if (!isPayingShop(shop)) return json({ error: "InkTracker payments are available on a paid plan." }, 403);
-    // A closed application is replaced with a new one (below, as if new).
+    // A closed account (rejected / disconnected) is replaced with a new one.
     const startOver = canStartOver(account);
-    let merchantId = startOver ? null : (account?.merchant_id ?? null);
-    let applicationId = startOver ? null : (account?.merchant_application_id ?? null);
-    if (onboardingStage(account) === "active") return json({ error: "Your payments account is already approved." }, 400);
-    if (!merchantId) {
-      // One merchant per shop: claim creation first so two clicks (or two
-      // tabs) can't create two merchants.
+    let accountId = startOver ? null : (account?.merchant_id ?? null);
+    if (onboardingStage(account) === "active") return json({ error: "Your Stripe account is already set up." }, 400);
+    if (!accountId) {
+      // One account per shop: claim creation first so two clicks (or two
+      // tabs) can't create two accounts.
       const nowIso = new Date().toISOString();
       if (!account) {
         await admin.from("processor_accounts").upsert({ shop_owner: shopOwner }, { onConflict: "shop_owner", ignoreDuplicates: true });
@@ -336,34 +333,38 @@ export async function handle(req: Request, deps: Deps) {
         .or(`merchant_creating_at.is.null,merchant_creating_at.lt."${new Date(Date.now() - 2 * 60 * 1000).toISOString()}"`)
         .select("shop_owner, merchant_id");
       if (!claimed?.length) return json({ error: "Sign-up is already opening. Try again in a moment." }, 409);
-      // Claimed, but another request saved a merchant meanwhile (and it isn't
-      // a closed one we're replacing) → use it.
       if (claimed[0].merchant_id && !startOver) {
         await admin.from("processor_accounts").update({ merchant_creating_at: null }).eq("shop_owner", shopOwner);
         return json({ error: "Sign-up is ready. Click Continue sign-up." }, 409);
       }
-      const createBody = buildMerchantCreate(shop);
-      // A merchant from an earlier attempt whose save failed? Adopt it —
-      // never create a second merchant for the same shop.
-      let m;
+      // An account from an earlier attempt whose save failed? Adopt it —
+      // never create a second account for the same shop. (Not when starting
+      // over: the old one is the closed account being replaced.)
+      let acct: Any;
       try {
-        m = await findOurMerchant(deps, createBody.name, shopOwner);
-        if (!m) m = await deps.rf.post("/v1/merchants", createBody);
+        acct = startOver ? null : await findOurAccount(deps, shopOwner);
+        if (!acct) {
+          // Keyed per 10 minutes: a double-click gets the same account, but a
+          // create that FAILED (e.g. Connect not switched on yet) isn't
+          // replayed for 24h once it's fixed. Older orphans are adopted above.
+          const windowKey = Math.floor(Date.now() / (10 * 60 * 1000));
+          acct = await deps.stripe.post("/v1/accounts", buildAccountCreate(shop, shopOwner), {
+            idempotencyKey: `it-acct:${shopOwner}:${startOver ? "new" : "first"}:${windowKey}`,
+          });
+        }
       } catch (err) {
         // Nothing was saved: release the claim so the owner can retry now.
         await admin.from("processor_accounts").update({ merchant_creating_at: null }).eq("shop_owner", shopOwner);
         throw err;
       }
-      merchantId = m?.merchant_id;
-      applicationId = m?.merchant_application_id;
-      if (!merchantId || !applicationId) throw new Error("Rainforest returned no merchant id");
+      accountId = acct?.id;
+      if (!accountId) throw new Error("Stripe returned no account id");
       const patch = {
         shop_owner: shopOwner,
         ...(startOver ? { enabled: false, enabled_at: null, onboarded_at: null } : {}),
-        merchant_id: merchantId,
-        merchant_application_id: applicationId,
-        merchant_status: String(m?.merchant_status ?? "pending").toLowerCase(),
-        merchant_application_status: String(m?.merchant_application_status ?? "created").toLowerCase(),
+        merchant_id: accountId,
+        merchant_application_id: null,
+        ...accountStatusFields(acct),
         merchant_creating_at: null,
         updated_at: new Date().toISOString(),
       };
@@ -373,40 +374,21 @@ export async function handle(req: Request, deps: Deps) {
         saved = !error;
       }
       // Claim stays set; the next attempt (after it goes stale) adopts this
-      // merchant via findOurMerchant instead of creating another.
-      if (!saved) throw new Error(`Couldn't save the new merchant ${merchantId}; the next sign-up attempt will pick it up`);
+      // account via findOurAccount instead of creating another.
+      if (!saved) throw new Error(`Couldn't save the new Stripe account ${accountId}; the next sign-up attempt will pick it up`);
     }
-    const session = await deps.rf.post("/v1/sessions", buildOnboardingSession(merchantId));
-    return json({
-      sessionKey: session?.session_key,
-      merchantId,
-      merchantApplicationId: applicationId,
-      scriptUrl: componentScripts(deps.rf.base).merchant,
-      termsUrl: deps.env("RAINFOREST_TERMS_URL") ?? "https://www.inktracker.app/payment-processing-agreement",
-    });
-  }
-
-  // The shop's payments and payouts (Rainforest's report components): refund
-  // a customer, answer a dispute, see what each payout contained. Owner and
-  // managers view; only the owner can refund or respond to disputes.
-  if (action === "activitySession") {
-    if (!canMapQbAccounts(viewer)) return json({ error: "Only the owner or a manager can see payments." }, 403);
-    if (!account?.merchant_id) return json({ error: "No payments account yet." }, 400);
-    const canAct = canTogglePayments(viewer);
-    const session = await deps.rf.post("/v1/sessions", buildActivitySession(account.merchant_id, { canAct }));
-    return json({
-      sessionKey: session?.session_key,
-      merchantId: account.merchant_id,
-      canAct,
-      scriptUrl: componentScripts(deps.rf.base).merchant,
-    });
+    const link = await deps.stripe.post("/v1/account_links", buildAccountLink(accountId, appUrl(deps)));
+    if (!link?.url) throw new Error("Stripe returned no sign-up link");
+    return json({ url: link.url });
   }
 
   if (action === "refreshStatus") {
     if (!account?.merchant_id) return status();
-    const m = await deps.rf.get(`/v1/merchants/${encodeURIComponent(account.merchant_id)}`);
+    const acct = await deps.stripe.get(`/v1/accounts/${encodeURIComponent(account.merchant_id)}`);
+    const fields = accountStatusFields(acct);
+    const becameActive = fields.merchant_status === "active" && account.merchant_status !== "active";
     await admin.from("processor_accounts")
-      .update({ ...merchantStatusFields(m), updated_at: new Date().toISOString() })
+      .update({ ...fields, ...(becameActive ? { onboarded_at: new Date().toISOString() } : {}), updated_at: new Date().toISOString() })
       .eq("shop_owner", shopOwner);
     return status();
   }
@@ -476,7 +458,7 @@ if (import.meta.main) {
           return user ?? null;
         },
         env,
-        rf: rainforestApi(env),
+        stripe: stripeApi(env),
         qb: {
           connect: (shop) => getShopQb(admin, shop),
           listAccounts: qbListAccounts,
@@ -484,7 +466,7 @@ if (import.meta.main) {
         },
       });
     } catch (err) {
-      console.error("[rainforest]", err);
+      console.error("[stripePayments]", err);
       return json({ error: "Something went wrong. Try again in a moment." }, 500);
     }
   });

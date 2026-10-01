@@ -596,10 +596,11 @@ serve(async (req) => {
       }
       const target = String(shopOwner).trim();
 
-      // An open Rainforest merchant blocks deletion (money may be in flight).
-      // A missing table (payments migration not applied) is simply no merchant.
+      // InkTracker payments switched on block deletion (customers may be
+      // mid-payment). A missing table (payments migration not applied) is
+      // simply no account.
       const { data: payAcct } = await adminClient.from("processor_accounts")
-        .select("merchant_id, merchant_status").eq("shop_owner", target).maybeSingle();
+        .select("merchant_id, enabled").eq("shop_owner", target).maybeSingle();
       const paymentsBlock = purgeBlockedByPayments(payAcct ?? null);
       // 200 + error (not 409) so the delete screen shows this message instead
       // of a generic "non-2xx" failure.

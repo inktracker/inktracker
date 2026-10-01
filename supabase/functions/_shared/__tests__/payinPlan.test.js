@@ -1,53 +1,73 @@
 import { describe, it, expect } from "vitest";
 import {
   PLATFORM_PRICING,
+  STRIPE_COST,
   platformFeeCents,
+  stripeCostCents,
+  quickbooksPriceCents,
+  shopTotalFeeCents,
   shopNetCents,
   normalizePayMethod,
   formatRatePct,
-} from "../rainforestPricing.js";
+} from "../paymentsPricing.js";
 import {
   choosePayTarget,
   liveInvoiceIsStale,
   payinIdempotencyKey,
   buildPayinMetadata,
-  buildLevel23,
+  previewFee,
   NOT_PAYABLE,
-} from "../rainforestPayinPlan.js";
+  CHECKOUT_WINDOW_MS,
+} from "../payinPlan.js";
 
-// ── Pricing: match QuickBooks (Joe, 2026-09-30) ─────────────────────────
-describe("platform pricing matches QuickBooks", () => {
-  it("is 2.99% on cards and 1% on bank, no fixed fee, no cap", () => {
+// ── Pricing: the shop pays what QuickBooks charges (Joe, 2026-09-30) ────
+describe("pricing: shop's all-in cost matches QuickBooks; InkTracker gets what Stripe leaves", () => {
+  it("QuickBooks price is 2.99% card / 1% bank; Stripe is 2.9% + 30¢ / 0.8% capped $5 + $1.50 verification", () => {
     expect(PLATFORM_PRICING.card).toEqual({ ratePct: 2.99, fixedCents: 0, capCents: null });
     expect(PLATFORM_PRICING.ach).toEqual({ ratePct: 1.0, fixedCents: 0, capCents: null });
+    expect(STRIPE_COST.card).toMatchObject({ ratePct: 2.9, fixedCents: 30 });
+    expect(STRIPE_COST.ach).toMatchObject({ ratePct: 0.8, capCents: 500, verifyCents: 150 });
     expect(formatRatePct("card")).toBe("2.99%");
     expect(formatRatePct("ach")).toBe("1%");
   });
 
-  it("computes the fee in exact integer cents, rounded half-up once", () => {
-    expect(platformFeeCents("card", 104000)).toBe(3110); // $1,040 → $31.10
-    expect(platformFeeCents("card", 228482)).toBe(6832); // Tahoe Gift $2,284.82 → $68.32
-    expect(platformFeeCents("ach", 129700)).toBe(1297);  // $1,297 → $12.97
-    expect(platformFeeCents("card", 100)).toBe(3);       // $1 → 2.99¢ rounds to 3
-    expect(platformFeeCents("ach", 50)).toBe(1);         // 0.5¢ rounds half-up
-    expect(platformFeeCents("ach", 49)).toBe(0);
+  it("Biota's average card payment ($1,126.48): InkTracker earns ~72¢, shop pays exactly the QuickBooks price", () => {
+    expect(quickbooksPriceCents("card", 112648)).toBe(3368);
+    expect(stripeCostCents("card", 112648)).toBe(3297); // 3267 + 30
+    expect(platformFeeCents("card", 112648)).toBe(71);
+    expect(shopTotalFeeCents("card", 112648)).toBe(3368);
   });
 
-  it("never returns NaN or charges on junk amounts", () => {
+  it("Biota's average bank payment ($1,297): Stripe capped at $5 + $1.50, InkTracker earns $6.47", () => {
+    expect(quickbooksPriceCents("ach", 129700)).toBe(1297);
+    expect(stripeCostCents("ach", 129700)).toBe(650);
+    expect(platformFeeCents("ach", 129700)).toBe(647);
+    expect(shopTotalFeeCents("ach", 129700)).toBe(1297);
+  });
+
+  it("small card payments: Stripe's 30¢ is more than 2.99%, so InkTracker takes nothing (never negative)", () => {
+    expect(platformFeeCents("card", 5000)).toBe(0);
+    expect(shopTotalFeeCents("card", 5000)).toBe(175); // Stripe's price, not below
+    expect(platformFeeCents("ach", 10000)).toBe(0);     // $100 bank: 1% = $1 < 80¢ + $1.50
+  });
+
+  it("integer cents, half-up once; never NaN or a fee on junk", () => {
+    expect(quickbooksPriceCents("card", 104000)).toBe(3110);
     for (const bad of [0, -100, null, undefined, "abc", NaN, 12.5]) {
       expect(platformFeeCents("card", bad)).toBe(0);
+      expect(shopNetCents("card", bad)).toBe(0);
     }
     expect(platformFeeCents("paypal", 10000)).toBe(0);
   });
 
-  it("shop net is amount minus fee", () => {
-    expect(shopNetCents("card", 104000)).toBe(100890);
-    expect(shopNetCents("ach", 104000)).toBe(102960);
+  it("shop net is the amount minus everything it pays", () => {
+    expect(shopNetCents("card", 112648)).toBe(112648 - 3368);
+    expect(previewFee({ method: "ach", amountCents: 129700 })).toEqual({ method: "ach", feeCents: 1297, platformFeeCents: 647, netCents: 128403 });
   });
 
-  it("normalises processor method names", () => {
-    expect(normalizePayMethod("CARD")).toBe("card");
-    expect(normalizePayMethod("bank_account")).toBe("ach");
+  it("normalises Stripe and other method names", () => {
+    expect(normalizePayMethod("card")).toBe("card");
+    expect(normalizePayMethod("us_bank_account")).toBe("ach");
     expect(normalizePayMethod("ACH")).toBe("ach");
     expect(normalizePayMethod("venmo")).toBeNull();
   });
@@ -148,10 +168,21 @@ describe("choosePayTarget", () => {
 });
 
 describe("idempotency + metadata", () => {
-  it("same quote/invoice/amount → same key; a new balance → new key", () => {
-    const a = payinIdempotencyKey({ quoteId: "q", qbInvoiceId: "1", amountCents: 100 });
-    expect(a).toBe(payinIdempotencyKey({ quoteId: "q", qbInvoiceId: "1", amountCents: 100 }));
-    expect(a).not.toBe(payinIdempotencyKey({ quoteId: "q", qbInvoiceId: "1", amountCents: 99 }));
+  const t0 = Date.UTC(2026, 9, 1, 15, 5);
+  const k = (o = {}) => payinIdempotencyKey({ quoteId: "q", qbInvoiceId: "1", amountCents: 100, method: "card", nowMs: t0, ...o });
+  it("same doc/invoice/amount/method in the same 30-min window → same key AND same expiry", () => {
+    expect(k()).toEqual(k({ nowMs: t0 + 10 * 60 * 1000 }));
+    expect(k().key).not.toBe(k({ amountCents: 99 }).key);
+    expect(k().key).not.toBe(k({ method: "ach" }).key);
+    expect(k().key).not.toBe(k({ attempt: 1 }).key);
+    expect(k().key).not.toBe(k({ nowMs: t0 + CHECKOUT_WINDOW_MS }).key);
+  });
+  it("the checkout lives at least an hour from any request in its window (Stripe needs ≥ 30 min)", () => {
+    const windowStart = Math.floor(t0 / CHECKOUT_WINDOW_MS) * CHECKOUT_WINDOW_MS;
+    for (const now of [windowStart, windowStart + CHECKOUT_WINDOW_MS - 1]) {
+      const { expiresAt } = k({ nowMs: now });
+      expect(expiresAt * 1000 - now).toBeGreaterThanOrEqual(60 * 60 * 1000);
+    }
   });
 
   it("metadata carries the ids the webhook needs, as strings", () => {
@@ -176,68 +207,5 @@ describe("invoices (order-then-invoice flow) pay the same way", () => {
       inktracker_quote_id: "inv-uuid",
       quote_number: "INV-2026-0042",
     });
-  });
-});
-
-// ── Invoice detail for business cards (Rainforest level_2_3) ────────────
-const salesLine = (desc, qty, amount, tax = "TAX", itemId = "21") => ({
-  DetailType: "SalesItemLineDetail", Description: desc, Amount: amount,
-  SalesItemLineDetail: { Qty: qty, ItemRef: { value: itemId }, TaxCodeRef: { value: tax } },
-});
-
-describe("buildLevel23", () => {
-  const live = inv({
-    TotalAmt: 1100, Balance: 1100, TxnTaxDetail: { TotalTax: 100 }, ShipAddr: { PostalCode: "89501" },
-    Line: [salesLine("Comfort Colors 1717 White | S:100 | Front 1 color", 100, 1000), { DetailType: "SubTotalLineDetail", Amount: 1000 }],
-  });
-  const sumCheck = (l) => l.line_items.reduce((a, li) => a + li.quantity * li.unit_amount, 0) + l.tax_amount + l.shipping_amount;
-
-  it("full payment: Level 3 lines that add up exactly to the charge", () => {
-    const l = buildLevel23({ docNumber: "Q-2026-HKSO", target: { kind: "full", amountCents: 110000 }, liveInvoice: live, shopPostalCode: "89502" });
-    expect(l).toMatchObject({ tax_amount: 10000, shipping_amount: 0, order_number: "Q-2026-HKSO", commodity_code: "8212", shipping_postal_code: "89501", shipping_from_postal_code: "89502" });
-    expect(l.line_items).toEqual([{
-      product_code: "21", commodity_code: "8212", description: "Comfort Colors 1717 White | S:100 |",
-      quantity: 100, unit_amount: 1000, unit_of_measure: "EACH", total_amount: 100000, tax_amount: 10000, tax_rate: 10000,
-    }]);
-    expect(sumCheck(l)).toBe(110000);
-  });
-
-  it("tax is split across taxable lines to the exact cent; untaxed lines carry none", () => {
-    const three = inv({
-      TotalAmt: 111.01, TxnTaxDetail: { TotalTax: 11.01 },
-      Line: [salesLine("Tees", 3, 33.34), salesLine("Hoodies", 3, 33.33), salesLine("Screen setup", 1, 33.33, "NON")],
-    });
-    const l = buildLevel23({ docNumber: "Q-1", target: { kind: "full", amountCents: 11101 }, liveInvoice: three });
-    expect(l.line_items.map((li) => li.tax_amount).reduce((a, b) => a + b)).toBe(1101);
-    expect(l.line_items[2].tax_amount).toBe(0);
-    expect(sumCheck(l)).toBe(11101);
-  });
-
-  it("a line that doesn't divide by its quantity goes as 1 × total, qty kept in the description", () => {
-    const odd = inv({ TotalAmt: 100, TxnTaxDetail: { TotalTax: 0 }, Line: [salesLine("Tees", 3, 100)] });
-    const l = buildLevel23({ docNumber: "Q-1", target: { kind: "full", amountCents: 10000 }, liveInvoice: odd });
-    expect(l.line_items[0]).toMatchObject({ quantity: 1, unit_amount: 10000, description: "3 x Tees" });
-  });
-
-  it("deposit / balance: Level 2 only, with a unique order number per payment", () => {
-    const dep = buildLevel23({ docNumber: "Q-2026-HKSO", target: { kind: "deposit", amountCents: 50000 }, liveInvoice: live });
-    expect(dep).toMatchObject({ order_number: "Q-2026-HKSO-DEP", tax_amount: 0 });
-    expect(dep.line_items).toBeUndefined();
-    const bal = buildLevel23({ docNumber: "Q-2026-HKSO", target: { kind: "balance", amountCents: 60000 }, liveInvoice: live });
-    expect(bal.order_number).toBe("Q-2026-HKSO-BAL");
-    expect(bal.line_items).toBeUndefined();
-  });
-
-  it("a balance payment on the final invoice reports the invoice's tax (not 0)", () => {
-    // $1,100 invoice with $100 tax, $500 deposit already applied → $600 balance carries all $100 tax.
-    expect(buildLevel23({ docNumber: "Q-1", target: { kind: "balance", amountCents: 60000 }, liveInvoice: live }).tax_amount).toBe(10000);
-    // Tiny remaining balance: tax reported can't exceed the charge.
-    expect(buildLevel23({ docNumber: "Q-1", target: { kind: "balance", amountCents: 4000 }, liveInvoice: live }).tax_amount).toBe(4000);
-  });
-
-  it("discounted or non-reconciling invoices send Level 2 only", () => {
-    const disc = inv({ TotalAmt: 900, TxnTaxDetail: { TotalTax: 0 }, Line: [salesLine("Tee", 10, 1000), { DetailType: "DiscountLineDetail", Amount: 100 }] });
-    expect(buildLevel23({ docNumber: "Q-1", target: { kind: "full", amountCents: 90000 }, liveInvoice: disc }).line_items).toBeUndefined();
-    expect(buildLevel23({ docNumber: "Q-1", target: { kind: "full", amountCents: 999999 }, liveInvoice: live }).line_items).toBeUndefined();
   });
 });

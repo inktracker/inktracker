@@ -1,9 +1,9 @@
 // Which way a shop's customers pay: the QuickBooks invoice link (default,
-// every shop today) or InkTracker's own payment page (Rainforest, opt-in).
+// every shop today) or Stripe Checkout through InkTracker (opt-in).
 //
 // The processor rail applies only when ALL of these hold, so a half-set-up
 // shop can never end up with no way to be paid:
-//   - the platform kill switch RAINFOREST_ENABLED is on
+//   - the platform kill switch STRIPE_PAYMENTS_ENABLED is on
 //   - the shop finished onboarding (merchant exists and is active)
 //   - the shop turned it on
 // Anything unknown or unreadable resolves to the QuickBooks rail — the worst
@@ -39,7 +39,7 @@ export function planGraceOver(account, now = Date.now()) {
   return Number.isFinite(t) && now - t > PLAN_GRACE_DAYS * 24 * 60 * 60 * 1000;
 }
 
-/** Merchant statuses (normalised by the Rainforest adapter) that can take payments. */
+/** Account statuses (stripeWebhookAdapter.accountStatusFields) that can take payments. */
 export const ACTIVE_MERCHANT_STATUSES = Object.freeze(["active"]);
 
 export function flagOn(raw) {
@@ -49,7 +49,7 @@ export function flagOn(raw) {
 
 /**
  * @param {object} a
- * @param {boolean} a.envEnabled   RAINFOREST_ENABLED
+ * @param {boolean} a.envEnabled   STRIPE_PAYMENTS_ENABLED
  * @param {object|null} a.account  processor_accounts row
  * @param {boolean} [a.broker]     broker invoice/quote → always QB
  */

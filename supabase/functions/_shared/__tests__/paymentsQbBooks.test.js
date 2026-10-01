@@ -5,7 +5,7 @@ import {
   buildQbDepositBody,
   planReversal,
   findBookedPayment,
-} from "../rainforestQbBooks.js";
+} from "../paymentsQbBooks.js";
 
 // Biota's real QuickBooks payment methods (pulled 2026-09-30).
 const BIOTA_METHODS = [
@@ -57,7 +57,7 @@ describe("buildQbPaymentBody", () => {
     expect(r.body.PaymentRefNum.length).toBeLessThanOrEqual(21);
     expect(base.payinId.endsWith(r.body.PaymentRefNum)).toBe(true);
     expect(r.body.PrivateNote).toContain(base.payinId);
-    expect(r.body.PrivateNote).toContain("$68.32");
+    expect(r.body.PrivateNote).toContain("fees are on the payout deposit");
   });
 
   it("refuses rather than posting something wrong", () => {

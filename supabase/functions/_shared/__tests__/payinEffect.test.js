@@ -6,8 +6,8 @@ import {
   statusesBelow,
   PAYIN_EVENT,
   REJECT,
-} from "../rainforestPayinEffect.js";
-import { buildQbPaymentBody } from "../rainforestQbBooks.js";
+} from "../payinEffect.js";
+import { buildQbPaymentBody } from "../paymentsQbBooks.js";
 
 const account = { shop_owner: "joe@biotamfg.co", merchant_id: "mid_biota", enabled: true };
 const quote = {
@@ -125,8 +125,18 @@ describe("planPayinEffect — invoice documents", () => {
     const r = plan({ quote: invoiceRow, event: ev({ metadata: { ...ev().metadata, inktracker_doc_type: "invoice", inktracker_quote_id: "inv-uuid" } }) });
     expect(r.ok).toBe(true);
     expect(r.ledger).toMatchObject({ invoice_id: "inv-uuid", quote_id: null });
-    const fail = plan({ quote: invoiceRow, event: ev({ kind: "failed", method: "ach", metadata: { ...ev().metadata, inktracker_doc_type: "invoice" } }) });
+    // A bank payment that started (ledger "processing") and then failed.
+    const fail = plan({ quote: invoiceRow, ledger: { status: "processing", method: "ach" }, event: ev({ kind: "failed", method: "ach", metadata: { ...ev().metadata, inktracker_doc_type: "invoice" } }) });
     expect(fail.notify.title).toBe("Bank payment didn't go through: INV-2026-0042");
+  });
+
+  it("a failure or cancel we never saw start writes nothing (Stripe lets the customer retry the same payment)", () => {
+    for (const kind of ["failed", "canceled"]) {
+      const r = plan({ ledger: null, event: ev({ kind, method: "ach" }) });
+      expect(r).toMatchObject({ ok: true, ledger: null, postQbPayment: false, notify: null });
+    }
+    // …so the retry's success still books.
+    expect(plan({ ledger: null, event: ev({ kind: "succeeded" }) }).postQbPayment).toBe(true);
   });
 });
 

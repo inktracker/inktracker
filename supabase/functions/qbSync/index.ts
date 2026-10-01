@@ -3873,7 +3873,7 @@ Deno.serve(async (req) => {
         // Payment rail from the AUTHENTICATED shop, never the request body.
         // Brokers invoice in their own QuickBooks — always the QB rail.
         const railState = await loadPaymentRailState(adminClient, shopOwnerEmail, {
-          envEnabled: flagOn(Deno.env.get("RAINFOREST_ENABLED")),
+          envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
           broker: Boolean(params?.billBroker || params?.brokerClientInvoice),
         });
         const invoiceRail = railState.rail;
@@ -3948,7 +3948,7 @@ Deno.serve(async (req) => {
         const depQuote = params?.quote ?? {};
         const depShop = depQuote?.shop_owner || shopOwnerEmail;
         const depRailState = await loadPaymentRailState(depAdmin, shopOwnerEmail, {
-          envEnabled: flagOn(Deno.env.get("RAINFOREST_ENABLED")),
+          envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
         });
         const depRail = depRailState.rail;
         const depIdempKey = params?.idempotencyKey ?? (depQuote?.id ? `createDepositInvoice:${depQuote.id}` : null);

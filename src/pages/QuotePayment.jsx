@@ -32,7 +32,7 @@ import { isQuoteDateExpired } from "@/lib/quotes/quoteExpiry";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
-import OnlinePaymentPanel from "@/components/payment/OnlinePaymentPanel";
+import OnlinePaymentPanel, { PaidNotice, readPaidReturn } from "@/components/payment/OnlinePaymentPanel";
 import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { cardSurchargeNote } from "@/lib/payment/cardSurcharge";
@@ -215,20 +215,24 @@ export default function QuotePayment() {
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  // True while an InkTracker payment session is being opened (the QuickBooks
-  // path redirects immediately, so it never sets this).
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  // checkoutLoading was used by the removed Stripe path. Keeping the
+  // variable name in the JSX (alongside approveLoading) — always false
+  // now so the button disable state degrades to "while approving" only.
+  const checkoutLoading = false;
   const [checkoutError, setCheckoutError] = useState("");
   const [recaptchaReady, setRecaptchaReady] = useState(false);
   const [approveLoading, setApproveLoading] = useState(false);
   const [approveError, setApproveError] = useState("");
   const [approveSuccess, setApproveSuccess] = useState(false);
   const [previewArt, setPreviewArt] = useState(null);
-  // InkTracker payments (Rainforest): "processor" when this shop takes
-  // payment on InkTracker instead of a QuickBooks link. Asked once per load;
+  // InkTracker payments (Stripe): "processor" when this shop takes payment
+  // through Stripe instead of a QuickBooks link. Asked once per load;
   // anything but a clear "processor" keeps the QuickBooks flow.
   const [payRail, setPayRail] = useState("qb");
-  const [paySession, setPaySession] = useState(null);
+  // After Approve: show the card / bank choice (each opens Stripe Checkout).
+  const [showPayChoice, setShowPayChoice] = useState(false);
+  // Back from Stripe Checkout (?paid=card|ach).
+  const [paidReturn] = useState(() => readPaidReturn());
 
   const RECAPTCHA_SITE_KEY = "6LdFgbIsAAAAAKlrO8Sv9y-3HUJv4f-1hjHEjsi9";
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -299,7 +303,7 @@ export default function QuotePayment() {
   useEffect(() => {
     if (!quoteDbId || !publicToken) return undefined;
     let alive = true;
-    base44.functions.invoke("rainforest", { action: "payRail", docType: "quote", id: quoteDbId, token: publicToken })
+    base44.functions.invoke("stripePayments", { action: "payRail", docType: "quote", id: quoteDbId, token: publicToken })
       .then((r) => { if (alive && r?.data?.rail === "processor") setPayRail("processor"); })
       .catch(() => {});
     return () => { alive = false; };
@@ -455,17 +459,8 @@ export default function QuotePayment() {
     }
 
     if (onlinePay) {
-      setCheckoutLoading(true);
-      try {
-        const r = await base44.functions.invoke("rainforest", { action: "payinSession", docType: "quote", id: quote.id, token: publicToken });
-        const d = r?.data;
-        if (d?.payable && d.sessionKey && d.payinConfigId) setPaySession(d);
-        else setCheckoutError(d?.message || "Online payment isn't available right now. Please contact the shop.");
-      } catch {
-        setCheckoutError("Online payment isn't available right now. Please try again in a moment.");
-      } finally {
-        setCheckoutLoading(false);
-      }
+      // Approved (above); now card or bank → Stripe Checkout.
+      setShowPayChoice(true);
       return;
     }
 
@@ -1083,7 +1078,7 @@ export default function QuotePayment() {
 
             // QuickBooks is the only live payment rail (Stripe removed at
             // launch, PR #201) — no state should claim otherwise.
-            const securityLabel = onlinePay ? "Secure payment powered by Rainforest" : "Secure payment powered by QuickBooks";
+            const securityLabel = onlinePay ? "Secure payment powered by Stripe" : "Secure payment powered by QuickBooks";
 
             // InkTracker payments charge what QuickBooks says is owed — the
             // invoice's own sales tax and any credits — which can differ
@@ -1095,13 +1090,14 @@ export default function QuotePayment() {
               subLabel = "You'll see the exact amount due, including sales tax, before you pay.";
             }
 
-            if (paySession) {
+            if (onlinePay && paidReturn) return <PaidNotice method={paidReturn} />;
+            if (showPayChoice) {
               return (
                 <OnlinePaymentPanel
-                  key={paySession.sessionKey}
-                  session={paySession}
-                  quotedCents={Math.round(chargeAmount * 100)}
-                  onReopen={() => { setPaySession(null); handleCheckout(); }}
+                  docType="quote"
+                  id={quote.id}
+                  token={publicToken}
+                  kind={depositRoute && !depositPaid ? "deposit" : hasDeposit && depositPaid ? "balance" : null}
                 />
               );
             }

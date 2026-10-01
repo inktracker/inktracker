@@ -7,7 +7,7 @@ import {
   canTogglePayments,
   canMapQbAccounts,
   canViewPayments,
-} from "../rainforestAccount.js";
+} from "../paymentsAccount.js";
 
 const ACCTS = [
   { Id: "35", Name: "Checking", FullyQualifiedName: "Checking", AccountType: "Bank" },
@@ -79,7 +79,7 @@ describe("checkCanEnable", () => {
     expect(checkCanEnable({ envEnabled: true, account: acct, viewer: { role: "manager" } }).error).toMatch(/Only the shop owner/);
     expect(checkCanEnable({ envEnabled: false, account: acct, viewer: owner }).error).toMatch(/aren't available/);
     expect(checkCanEnable({ envEnabled: true, account: null, viewer: owner }).error).toMatch(/sign-up/);
-    expect(checkCanEnable({ envEnabled: true, account: { ...acct, merchant_status: "canceled" }, viewer: owner }).error).toMatch(/wasn't approved/);
+    expect(checkCanEnable({ envEnabled: true, account: { ...acct, merchant_status: "canceled" }, viewer: owner }).error).toMatch(/isn't available for InkTracker payments/);
     expect(checkCanEnable({ envEnabled: true, account: { ...acct, qb_bank_account_id: null }, viewer: owner }).error).toMatch(/QuickBooks bank account/);
   });
 });

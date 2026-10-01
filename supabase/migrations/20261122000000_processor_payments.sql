@@ -1,11 +1,14 @@
--- InkTracker-run payment processing through Rainforest (2026-09-30).
+-- InkTracker payments through Stripe Connect (2026-10-01; first designed
+-- for Rainforest, switched to Stripe after Rainforest quoted a $20k
+-- onboarding fee).
 --
--- Joe chose Rainforest so customers can pay on InkTracker's own payment page
--- instead of a QuickBooks link, with InkTracker setting the shop's price
--- (matched to QuickBooks: 2.99% card, 1% bank — see
--- supabase/functions/_shared/rainforestPricing.js). Opt-in per shop;
+-- Customers of an opted-in shop pay on Stripe Checkout instead of a
+-- QuickBooks link. Each shop has its OWN Stripe account (Connect Standard:
+-- the shop is merchant of record and owns its disputes); InkTracker takes an
+-- application fee so the shop's all-in cost matches QuickBooks (2.99% card,
+-- 1% bank — supabase/functions/_shared/paymentsPricing.js). Opt-in per shop;
 -- QuickBooks stays the default and nothing changes for a shop until it both
--- finishes Rainforest onboarding AND turns this on.
+-- finishes Stripe onboarding AND turns this on.
 --
 -- NAMING: `payment_accounts` already exists — it's the Expenses feature's
 -- list of accounts a shop pays bills from (8 rows in prod). These tables are
@@ -15,30 +18,30 @@
 -- shops row from the browser, and a merchant id there could be pointed at a
 -- different merchant. These tables are SELECT-only for the shop's owner and
 -- managers; every write goes through the service-role edge functions
--- (rainforest, rainforestWebhook), which verify ownership first.
+-- (stripePayments, stripeConnectWebhook), which verify ownership first.
 --
 -- DEPLOY ORDER: this migration first, then the edge functions, then the
--- frontend. Everything is inert until the RAINFOREST_ENABLED secret is set
+-- frontend. Everything is inert until the STRIPE_PAYMENTS_ENABLED secret is set
 -- and a shop is enabled.
 
--- ── One row per shop that has started Rainforest onboarding ─────────────
+-- ── One row per shop that has started Stripe onboarding ─────────────────
 create table if not exists public.processor_accounts (
   shop_owner          text primary key,
-  processor           text not null default 'rainforest' check (processor in ('rainforest')),
+  processor           text not null default 'stripe' check (processor in ('stripe')),
+  -- The shop's connected Stripe account id (acct_…).
   merchant_id         text unique,
-  -- Rainforest's merchant lifecycle, mirrored (lowercased) from its webhooks:
+  -- Account state derived from the Stripe account (paymentsAccount.js):
   -- pending | onboarding | active | suspended | deactivated | canceled.
   merchant_status     text,
-  -- The underwriting application the onboarding component needs, and its
-  -- state (created | in_progress | processing | in_review |
-  -- needs_information | completed | declined).
+  -- Sign-up progress: in_progress | needs_information | in_review |
+  -- completed | declined. (application_id is unused with Stripe.)
   merchant_application_id     text,
   merchant_application_status text,
   -- The shop's choice to collect through InkTracker. Only takes effect
   -- when merchant_status is active (enforced in the edge functions).
   enabled             boolean not null default false,
   -- The shop's QuickBooks accounts for payout bookkeeping:
-  -- the bank account Rainforest pays into, and the expense account for fees.
+  -- the bank account Stripe pays out to, and the expense account for fees.
   qb_bank_account_id  text,
   qb_fee_account_id   text,
   onboarded_at        timestamptz,
@@ -47,8 +50,8 @@ create table if not exists public.processor_accounts (
   -- cleared. qbSync uses it to turn QuickBooks online payment back ON for
   -- invoices InkTracker turned off, once the shop is back on QuickBooks.
   processor_used_at   timestamptz,
-  -- Claim while the Rainforest merchant is being created, so two clicks
-  -- can't create two merchants.
+  -- Claim while the Stripe account is being created, so two clicks
+  -- can't create two accounts.
   merchant_creating_at timestamptz,
   -- When the shop's InkTracker plan was found lapsed (nightly sweep);
   -- cleared on renewal. NEW payments move back to QuickBooks 14 days after
@@ -63,7 +66,8 @@ create table if not exists public.processor_accounts (
 create table if not exists public.processor_payments (
   id                    uuid primary key default gen_random_uuid(),
   shop_owner            text not null,
-  processor             text not null default 'rainforest',
+  processor             text not null default 'stripe',
+  -- Stripe PaymentIntent id (pi_…).
   processor_payin_id    text not null unique,
   merchant_id           text not null,
   quote_id              uuid references public.quotes(id) on delete set null,
@@ -72,7 +76,7 @@ create table if not exists public.processor_payments (
   pay_kind              text check (pay_kind in ('full', 'balance', 'deposit')),
   method                text check (method in ('card', 'ach')),
   amount_cents          integer not null check (amount_cents > 0),
-  -- When the customer paid (Rainforest payin created_at): the QuickBooks
+  -- When the customer paid (PaymentIntent created): the QuickBooks
   -- payment date, even when a bank payment is booked days later on clearing.
   paid_at               timestamptz,
   platform_fee_cents    integer check (platform_fee_cents >= 0),
@@ -83,7 +87,7 @@ create table if not exists public.processor_payments (
   qb_payment_id         text,
   qb_payment_posted_at  timestamptz,
   -- Claim taken before posting the QB Payment, so two concurrent webhooks
-  -- (card "processing" + "succeeded" can arrive together) can't both post.
+  -- (an event and the nightly backstop) can't both post.
   -- A stale claim (> 10 min, e.g. the function died mid-post) may be retaken.
   qb_posting_at         timestamptz,
   qb_post_error         text,
@@ -100,11 +104,11 @@ create index if not exists processor_payments_shop_idx   on public.processor_pay
 create index if not exists processor_payments_quote_idx  on public.processor_payments (quote_id) where quote_id is not null;
 create index if not exists processor_payments_payout_idx on public.processor_payments (processor_payout_id) where processor_payout_id is not null;
 
--- ── Payouts: money Rainforest sent to the shop's bank ──────────────────
+-- ── Payouts: money Stripe sent to the shop's bank ──────────────────────
 create table if not exists public.processor_payouts (
   id                    uuid primary key default gen_random_uuid(),
   shop_owner            text not null,
-  processor             text not null default 'rainforest',
+  processor             text not null default 'stripe',
   processor_payout_id   text not null unique,
   merchant_id           text not null,
   net_cents             integer not null,
@@ -126,9 +130,9 @@ create index if not exists processor_payouts_shop_idx on public.processor_payout
 
 -- ── Recent customer payment sessions (throttle) ─────────────────────────
 -- One row per paid document: the last payment session handed out. A repeat
--- request within ~90s reuses it instead of calling QuickBooks + Rainforest
+-- request within ~90s reuses it instead of calling QuickBooks + Stripe
 -- again, so a looped or hammered pay link can't burn the shop's QuickBooks
--- rate limit or our Rainforest quota. Service role only (holds session keys).
+-- rate limit. Service role only.
 create table if not exists public.processor_pay_sessions (
   doc_id      uuid primary key,
   response    jsonb not null,
@@ -182,8 +186,8 @@ end $$;
 -- No INSERT/UPDATE/DELETE policies: service role only.
 
 comment on table public.processor_accounts is
-  'Rainforest merchant per shop. Service-role writes only (edge fn rainforest). enabled=true AND merchant active → customers pay on InkTracker instead of the QuickBooks link.';
+  'Connected Stripe account per shop. Service-role writes only (edge fn stripePayments). enabled=true AND account active → customers pay on Stripe Checkout instead of the QuickBooks link.';
 comment on table public.processor_payments is
-  'Ledger of customer payments collected through Rainforest, with the QuickBooks Payment each one posted. Service-role writes only (rainforestWebhook).';
+  'Ledger of customer payments collected through Stripe, with the QuickBooks Payment each one posted. Service-role writes only (stripeConnectWebhook).';
 comment on table public.processor_payouts is
-  'Rainforest payouts to the shop bank, with the QuickBooks Deposit that matches each one. Service-role writes only.';
+  'Stripe payouts to the shop bank, with the QuickBooks Deposit that matches each one. Service-role writes only.';
