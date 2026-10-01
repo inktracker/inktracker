@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { withMockupProof, countMockupProofs, proofRecipientEmail } from "../mockupProof";
+import { withMockupProof, countMockupProofs, proofRecipientEmail, latestMockupDesign } from "../mockupProof";
 import { artFingerprint } from "../artApproval";
 
 const art = { id: "a1", name: "Logo.ai", url: "https://x/logo.ai" };
@@ -32,5 +32,20 @@ describe("countMockupProofs / proofRecipientEmail", () => {
     expect(proofRecipientEmail({ broker_id: "broker@x.com", customer_email: "end@client.com" })).toBe("broker@x.com");
     expect(proofRecipientEmail({ customer_email: " buyer@tahoegift.com " })).toBe("buyer@tahoegift.com");
     expect(proofRecipientEmail({})).toBe("");
+  });
+});
+
+describe("latestMockupDesign", () => {
+  it("returns the newest mockup that saved its design", () => {
+    const d1 = { ...oldMock, design: { v: 1, views: ["Front"] } };
+    const d2 = { ...newMock, design: { v: 1, views: ["Front", "Back"] } };
+    expect(latestMockupDesign([art, d1, d2])).toBe(d2);
+    expect(latestMockupDesign([art, oldMock])).toBeNull();
+    expect(latestMockupDesign([{ ...art, design: { v: 1 } }])).toBeNull(); // not a mockup
+  });
+  it("a saved design doesn't change the approved-art fingerprint", () => {
+    const plain = { selected_artwork: [art, newMock] };
+    const withDesign = { selected_artwork: [art, { ...newMock, design: { v: 1, art: { Front: { path: "1700000000009-zzz999.png" } } }, preview: { path: "1700000000008-yyy888.png" } }] };
+    expect(artFingerprint(withDesign)).toBe(artFingerprint(plain));
   });
 });

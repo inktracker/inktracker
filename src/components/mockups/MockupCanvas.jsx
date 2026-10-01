@@ -131,6 +131,8 @@ const MockupCanvas = forwardRef(function MockupCanvas({
   garmentImageUrl,
   artworkUrl: artworkUrlProp,
   initialPosition,
+  // Restoring a saved mockup: { pos, rotation, flipH, flipV }.
+  initialDesign = null,
   location = "Front",
   caption,
   captionColor,
@@ -142,15 +144,18 @@ const MockupCanvas = forwardRef(function MockupCanvas({
 }, ref) {
   const area = PRINT_AREAS[location] || PRINT_AREAS.Front;
   const [artworkPos, setArtworkPos] = useState(
-    initialPosition || { x: area.x, y: area.y, w: area.w, h: area.h * 0.7 }
+    initialPosition || initialDesign?.pos || { x: area.x, y: area.y, w: area.w, h: area.h * 0.7 }
   );
+  // A restored placement survives the first art load (which otherwise
+  // re-centers the art); later art swaps re-center as usual.
+  const restorePosRef = useRef(initialDesign?.pos || null);
   const [artworkSize, setArtworkSize] = useState(null);
   const [processedArtwork, setProcessedArtwork] = useState(null);
   const [dragging, setDragging] = useState(null);
   const [resizing, setResizing] = useState(null);
-  const [rotation, setRotation] = useState(0);
-  const [flipH, setFlipH] = useState(false);
-  const [flipV, setFlipV] = useState(false);
+  const [rotation, setRotation] = useState(Number(initialDesign?.rotation) || 0);
+  const [flipH, setFlipH] = useState(Boolean(initialDesign?.flipH));
+  const [flipV, setFlipV] = useState(Boolean(initialDesign?.flipV));
   const [oneColor, setOneColor] = useState(false);
   const [inkColor, setInkColor] = useState("#000000");
   const [inkThreshold, setInkThreshold] = useState(128);
@@ -178,7 +183,9 @@ const MockupCanvas = forwardRef(function MockupCanvas({
       const aspect = img.width / img.height;
       const w = area.w;
       const h = Math.min(w / aspect, area.h);
-      setArtworkPos(prev => initialPosition || { x: area.x, y: area.y, w, h });
+      const restored = restorePosRef.current;
+      restorePosRef.current = null;
+      setArtworkPos(() => initialPosition || restored || { x: area.x, y: area.y, w, h });
     };
     img.src = artworkUrlProp;
   }, [artworkUrlProp]);
@@ -213,6 +220,12 @@ const MockupCanvas = forwardRef(function MockupCanvas({
 
   // Expose exportPng via ref
   useImperativeHandle(ref, () => ({
+    // What's on the canvas now, so the mockup can be saved and reopened:
+    // placement + the art as shown (after background removal / one-color).
+    getDesign: () => ({
+      pos: artworkPos, rotation, flipH, flipV,
+      artSrc: processedArtwork || artworkUrlProp || null,
+    }),
     exportPng: () => {
       return new Promise((resolve) => {
         const canvas = canvasRef.current || document.createElement("canvas");
