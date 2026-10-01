@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { todayInShopTz } from "@/lib/shopTimezone";
 import { supabase } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 import { CheckSquare, CalendarDays, Loader2 } from "lucide-react";
@@ -48,7 +49,9 @@ export default function MyTasksCard({ user, onSelectOrder }) {
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Shop-local "today" — the UTC slice flagged tasks due TODAY as overdue
+  // from ~5pm Pacific on (audit 2026-09-30).
+  const today = todayInShopTz();
   if (!tasks || tasks.length === 0) return null;
 
   return (

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isQuoteDateExpired } from "@/lib/quotes/quoteExpiry";
 import { defaultExtrasList } from "@/lib/pricing/extrasDefaults";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
@@ -1058,7 +1059,7 @@ export default function QuoteEditorModal({
                   onChange={(e) => setQ({ ...q, expires_date: e.target.value })}
                   className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
-                {q.expires_date && new Date(q.expires_date) < new Date() && (
+                {isQuoteDateExpired(q.expires_date) && (
                   <div className="text-xs text-rose-500 font-semibold mt-1">
                     This quote has expired
                   </div>

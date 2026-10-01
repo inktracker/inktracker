@@ -112,8 +112,18 @@ async function downscaleLogoIfNeeded(file, ext) {
   }
 }
 
+// Logos live in the raster-only `logos` bucket (allowed_mime_types locked by
+// 20260814000000_logos_drop_svg_xss) — but validateUploadCandidate advertises
+// the ARTWORK allowlist ("Use AI, EPS, PDF…"), so an AI/EPS/PDF/PSD logo
+// passed the client check and then died on the storage API's raw error
+// (audit 2026-09-30). Validate against the bucket's real contract instead.
+const LOGO_EXTS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+
 export async function uploadLogo(file, ownerId = "") {
   const ext = validateUploadCandidate(file);
+  if (!LOGO_EXTS.has(ext)) {
+    throw new Error(`Logos need to be an image file — PNG, JPG, WEBP, or GIF (".${ext}" isn't supported for logos).`);
+  }
   await rejectDangerousSvg(file, ext);
   file = await downscaleLogoIfNeeded(file, ext);
   const safeId = String(ownerId || "logo").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || "logo";

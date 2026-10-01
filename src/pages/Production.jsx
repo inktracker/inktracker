@@ -627,19 +627,23 @@ export default function Production() {
     }
   }
 
+  // Date-only day arithmetic in UTC. The old local setDate + toISOString
+  // round-trip canceled out EXCEPT across a DST boundary, where "next week"
+  // landed on Sunday instead of Monday and the schedule strip stayed
+  // off-anchor until remount (audit 2026-09-30).
+  function addDaysYMD(ymd, days) {
+    const [y, m, d] = String(ymd).split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d + days)).toISOString().split("T")[0];
+  }
+
   function shiftScheduleWeek(deltaDays) {
-    const d = new Date(scheduleWeekStart);
-    d.setDate(d.getDate() + deltaDays);
-    setScheduleWeekStart(d.toISOString().split("T")[0]);
+    setScheduleWeekStart(addDaysYMD(scheduleWeekStart, deltaDays));
   }
 
   function scheduleWeekDays() {
     const days = [];
-    const base = new Date(scheduleWeekStart);
     for (let i = 0; i < 7; i++) {
-      const d = new Date(base);
-      d.setDate(base.getDate() + i);
-      days.push(d.toISOString().split("T")[0]);
+      days.push(addDaysYMD(scheduleWeekStart, i));
     }
     return days;
   }

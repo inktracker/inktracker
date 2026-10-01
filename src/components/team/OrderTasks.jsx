@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { todayInShopTz } from "@/lib/shopTimezone";
 import { supabase } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 import { CheckSquare, Loader2, Plus, Trash2, CalendarDays } from "lucide-react";
@@ -8,7 +9,8 @@ import { CheckSquare, Loader2, Plus, Trash2, CalendarDays } from "lucide-react";
 // assignment pings ride the notification rails; reads are direct under RLS.
 
 function isOverdue(t) {
-  return t.status === "open" && t.due_date && t.due_date < new Date().toISOString().slice(0, 10);
+  // Shop-local "today" (UTC slice marked due-today tasks overdue in the evening).
+  return t.status === "open" && t.due_date && t.due_date < todayInShopTz();
 }
 
 export default function OrderTasks({ order, user }) {

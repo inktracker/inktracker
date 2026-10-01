@@ -535,9 +535,22 @@ export default function Dashboard() {
       });
       return unsub;
     }
+    // Cancel-token teardown. ensureSub awaits auth.me() BEFORE subscribing,
+    // and this effect re-runs when `brokers` loads ([] → real list), so the
+    // first run's teardown ALWAYS raced its own in-flight me(): cleanup ran
+    // while still undefined, then the subscription landed with nothing to
+    // remove it — a leaked channel whose stale closure kept double-counting
+    // unread badges (audit 2026-09-30).
+    let cancelled = false;
     let cleanup;
-    ensureSub().then((fn) => { cleanup = fn; });
-    return () => { if (typeof cleanup === "function") cleanup(); };
+    ensureSub().then((fn) => {
+      if (cancelled) { fn?.(); return; }
+      cleanup = fn;
+    });
+    return () => {
+      cancelled = true;
+      if (typeof cleanup === "function") cleanup();
+    };
   }, [brokers]);
 
   // Same-tab decrement when BrokerMessaging marks messages as read on view.
