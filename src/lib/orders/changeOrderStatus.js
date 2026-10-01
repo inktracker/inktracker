@@ -106,16 +106,44 @@ export function buildStatusPayload(order, newStatus) {
  *        floor_completed_at and leave invoicing to the office
  * @returns {Promise<object>} updated order
  */
+/**
+ * Throw the plain "art not approved" error when the gate says no. For the
+ * few completion paths that call runOrderCompletion directly (Complete
+ * buttons, bulk complete) so the gate can't be skipped through them.
+ */
+export function assertArtGate(order, newStatus, requireArtApproval = shopRequiresArtApproval()) {
+  const gate = checkArtGate(order, newStatus, requireArtApproval);
+  if (gate.ok) return;
+  const err = new Error(gate.reason);
+  err.code = "ART_NOT_APPROVED";
+  throw err;
+}
+
+/**
+ * The gate, on FRESH data: re-reads the order when the gate could block, so
+ * a list row loaded before an override (or before someone sent a new proof
+ * or changed the art) can't decide either way.
+ */
+export async function assertArtGateFresh(order, newStatus, base44, requireArtApproval = shopRequiresArtApproval()) {
+  if (!requireArtApproval) return order;
+  const artIdx = O_STATUSES.indexOf("Art Approval");
+  const leavingForward = O_STATUSES.indexOf(effectiveStatus(order)) <= artIdx && O_STATUSES.indexOf(newStatus) > artIdx;
+  if (!leavingForward) return order; // the gate can't apply — no extra read
+  let fresh = order;
+  try {
+    fresh = (await base44.entities.Order.get(order.id)) || order;
+  } catch {
+    fresh = order;
+  }
+  assertArtGate(fresh, newStatus, requireArtApproval);
+  return fresh;
+}
+
 export async function changeOrderStatus({ order, newStatus, user, base44, onAutoPo, autoPoOptions, completionMode = "full", requireArtApproval = shopRequiresArtApproval() }) {
   if (!order?.id) throw new Error("changeOrderStatus: order required");
   if (!O_STATUSES.includes(newStatus)) throw new Error(`changeOrderStatus: unknown status "${newStatus}"`);
 
-  const gate = checkArtGate(order, newStatus, requireArtApproval);
-  if (!gate.ok) {
-    const err = new Error(gate.reason);
-    err.code = "ART_NOT_APPROVED";
-    throw err;
-  }
+  await assertArtGateFresh(order, newStatus, base44, requireArtApproval);
 
   if (newStatus === "Completed") {
     if (order.status === "Completed") return order;

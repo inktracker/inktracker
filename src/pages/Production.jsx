@@ -35,7 +35,7 @@ import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink
 import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
 import { shopScope } from "@/lib/shopScope";
 import { ensurePoDraftsForOrder } from "@/lib/orders/autoPoFromOrder";
-import { changeOrderStatus, prevStatusOf, nextStatusOf } from "@/lib/orders/changeOrderStatus";
+import { changeOrderStatus, prevStatusOf, nextStatusOf, assertArtGateFresh } from "@/lib/orders/changeOrderStatus";
 import ArtStatusBadge from "@/components/art/ArtStatusBadge";
 import { showArtBadgeInList } from "@/lib/art/artApproval";
 
@@ -485,6 +485,7 @@ export default function Production() {
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
     try {
+      await assertArtGateFresh(order, "Completed", base44);
       const updated = await runOrderCompletion({ order, user, base44 });
       setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
       // Keep the modal open on the just-completed order so its action bar can
@@ -653,11 +654,13 @@ export default function Production() {
     const ids = [...selectedIds];
     const updatedById = {};
     const failed = [];
+    const artBlocked = [];
     for (const id of ids) {
       const order = orders.find((o) => o.id === id);
       if (!order) continue;
       try {
         if (bulkStatus === "Completed") {
+          if (order.status !== "Completed") await assertArtGateFresh(order, "Completed", base44);
           updatedById[id] = order.status === "Completed"
             ? order
             : await runOrderCompletion({ order, user, base44 });
@@ -667,6 +670,7 @@ export default function Production() {
       } catch (e) {
         console.error("Bulk status update failed:", e);
         failed.push(order.order_id || order.customer_name || id);
+        if (e?.code === "ART_NOT_APPROVED") artBlocked.push(order.order_id || id);
       }
     }
     setOrders((prev) => prev.map((o) => updatedById[o.id] || o));
@@ -675,7 +679,9 @@ export default function Production() {
     if (failed.length > 0) {
       notify.error(
         `Updated ${ids.length - failed.length} of ${ids.length} orders`,
-        `These didn't update: ${failed.join(", ")}. They were left unchanged — try them individually.`,
+        artBlocked.length
+          ? `These didn't update: ${failed.join(", ")}. ${artBlocked.join(", ")} still need${artBlocked.length === 1 ? "s" : ""} the customer's art approval.`
+          : `These didn't update: ${failed.join(", ")}. They were left unchanged — try them individually.`,
       );
     }
   }

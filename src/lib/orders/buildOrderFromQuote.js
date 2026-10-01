@@ -1,4 +1,4 @@
-import { quoteProofApproval, artFiles } from "@/lib/art/artApproval";
+import { quoteProofApproval } from "@/lib/art/artApproval";
 // Pure builder for the quote→order conversion. Used by Quotes.jsx handleConvert.
 //
 // Carries forward fields that the order downstream needs (especially
@@ -174,7 +174,6 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
     ...(quoteProofApproval({
       quote: q,
       order: { selected_artwork: q.selected_artwork, line_items: q.line_items },
-      proofUrls: artFiles(q).map((f) => f.url || f.key),
     }) ?? {}),
   };
 }

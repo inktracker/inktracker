@@ -6,17 +6,40 @@
 //   planChangeRequest    customer asks for changes
 //   planOverride         owner/manager marks art approved (e.g. by phone)
 
-import { ART_STATUS, proofSnapshot } from "./artApproval.js";
+import { ART_STATUS, proofSnapshot, artFingerprint } from "./artApproval.js";
+
+/**
+ * The customer must be answering the art that's current NOW. Their page
+ * sends back the fingerprint + version it showed; if the shop changed the
+ * art or sent a newer version since, refuse and ask them to reload.
+ */
+export function staleProofCheck(order, seen) {
+  const fp = String(seen?.fingerprint ?? "");
+  if (!fp || fp !== artFingerprint(order)) return STALE;
+  const cur = Number(order?.art_proof_version) || 0;
+  const v = Number(seen?.version) || 0;
+  if (cur && v !== cur) return STALE;
+  return null;
+}
+const STALE = { ok: false, stale: true, error: "This proof was just updated. Reload the page to see the latest version, then approve or request changes." };
 
 const clip = (v, n) => {
   const s = String(v ?? "").trim();
   return s ? s.slice(0, n) : null;
 };
 
-/** Highest version among the order's proofs (0 when none). */
-export function latestVersion(proofs) {
-  return (Array.isArray(proofs) ? proofs : []).reduce((m, p) => Math.max(m, Number(p?.version) || 0), 0);
+/**
+ * Highest version used so far (0 when none). Includes the order's own
+ * pointer: a quote-carried approval is "v1" with no proof row, and the next
+ * send must be v2, not a second v1.
+ */
+export function latestVersion(proofs, order = null) {
+  const fromRows = (Array.isArray(proofs) ? proofs : []).reduce((m, p) => Math.max(m, Number(p?.version) || 0), 0);
+  return Math.max(fromRows, Number(order?.art_proof_version) || 0);
 }
+
+/** Customer-facing wording for a shop-recorded approval (no staff names or notes). */
+export const SHOP_RECORDED_APPROVER = "The shop, on your behalf";
 
 /** The proof row the order's current state refers to, if any. */
 export function currentProof(order, proofs) {
@@ -38,7 +61,7 @@ export function planSendProof({ order, proofs, sentBy, sentTo, message, now = ne
   if (!String(sentTo ?? "").includes("@")) {
     return { ok: false, error: "Add the customer's email to the order (or type one) to send the proof." };
   }
-  const version = latestVersion(proofs) + 1;
+  const version = latestVersion(proofs, order) + 1;
   return {
     ok: true,
     version,
@@ -72,7 +95,9 @@ export function planSendProof({ order, proofs, sentBy, sentTo, message, now = ne
  * a version is created on the spot so the record still shows exactly what
  * was approved.
  */
-export function planCustomerApproval({ order, proofs, name, ip, userAgent, now = new Date().toISOString() }) {
+export function planCustomerApproval({ order, proofs, name, ip, userAgent, seen, now = new Date().toISOString() }) {
+  const stale = staleProofCheck(order, seen);
+  if (stale) return stale;
   const approver = clip(name, 120) || "Customer";
   const snap = proofSnapshot(order);
   const cur = currentProof(order, proofs);
@@ -86,8 +111,9 @@ export function planCustomerApproval({ order, proofs, name, ip, userAgent, now =
     snapshot: snap,
   };
   const reuse = cur && ["sent", "changes_requested"].includes(cur.status);
-  const version = reuse ? cur.version : latestVersion(proofs) + 1;
+  const version = reuse ? cur.version : latestVersion(proofs, order) + 1;
   return {
+    ok: true,
     version,
     proofUpdate: reuse ? { id: cur.id, patch: proofFields } : null,
     proofInsert: reuse ? null : {
@@ -105,12 +131,14 @@ export function planCustomerApproval({ order, proofs, name, ip, userAgent, now =
 }
 
 /** Customer asks for changes. Clears any approval; the shop sends a revision. */
-export function planChangeRequest({ order, proofs, name, comment, location, ip, userAgent, now = new Date().toISOString() }) {
+export function planChangeRequest({ order, proofs, name, comment, location, ip, userAgent, seen, now = new Date().toISOString() }) {
   const text = clip(comment, 2000);
   if (!text) return { ok: false, error: "Tell the shop what you'd like changed." };
+  const stale = staleProofCheck(order, seen);
+  if (stale) return stale;
   const cur = currentProof(order, proofs);
   const reuse = cur && ["sent", "approved"].includes(cur.status);
-  const version = reuse ? cur.version : latestVersion(proofs) + 1;
+  const version = reuse ? cur.version : latestVersion(proofs, order) + 1;
   const proofFields = {
     status: "changes_requested",
     responded_at: now,
@@ -144,7 +172,7 @@ export function planOverride({ order, proofs, byName, note, now = new Date().toI
   const why = clip(note, 1000);
   if (!why) return { ok: false, error: "Add a note saying how the customer approved (for example, “approved by phone”)." };
   const snap = proofSnapshot(order);
-  const version = latestVersion(proofs) + 1;
+  const version = latestVersion(proofs, order) + 1;
   const by = clip(byName, 120) || "Shop";
   return {
     ok: true,
@@ -158,7 +186,9 @@ export function planOverride({ order, proofs, byName, note, now = new Date().toI
       art_status: ART_STATUS.APPROVED,
       art_approved: true,
       art_approved_at: now,
-      art_approved_by: `${by} (override: ${why.slice(0, 80)})`,
+      // Shown on the customer's page: never the staff name or the internal
+      // note (both live on the proof row: override_by / override_note).
+      art_approved_by: SHOP_RECORDED_APPROVER,
       art_proof_version: version,
       art_approved_fingerprint: snap.fingerprint,
     },

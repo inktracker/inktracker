@@ -640,7 +640,7 @@ export default function OrderDetailModal({
                   order={{ ...liveOrder, selected_artwork: localArtwork }}
                   role={authUser?.role}
                   readOnly={readOnly}
-                  onOrderUpdated={(updated) => setLiveOrder((prev) => ({ ...prev, ...updated }))}
+                  onOrderUpdated={(updated) => { setLiveOrder((prev) => ({ ...prev, ...updated })); onUpdated?.(updated); }}
                 />
                 {/* Read-only (lapsed subscription): drop the upload/remove
                     handlers so the gallery renders view-only — no "Add files"

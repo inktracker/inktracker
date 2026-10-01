@@ -74,6 +74,13 @@ export default function ArtProofPanel({ order, role, readOnly = false, onOrderUp
     }
   };
 
+  // A quote approved with proofs is "version 1" with no proof row of its
+  // own — show it so the history starts where the approval did.
+  const quoteApproved = String(order?.art_approved_by || "").endsWith("(approved with quote)");
+  const history = quoteApproved && !proofs.some((p) => Number(p.version) === 1)
+    ? [...proofs, { id: "quote-v1", version: 1, status: "approved", source: "quote", responded_at: order.art_approved_at, approved_by_name: String(order.art_approved_by).replace(/ \(approved with quote\)$/, "") }]
+    : proofs;
+
   if (isBroker) return null;
 
   return (
@@ -158,11 +165,11 @@ export default function ArtProofPanel({ order, role, readOnly = false, onOrderUp
         </div>
       )}
 
-      {proofs.length > 0 && (
+      {history.length > 0 && (
         <details>
-          <summary className="text-xs font-semibold text-slate-700 cursor-pointer">Proof history ({proofs.length})</summary>
+          <summary className="text-xs font-semibold text-slate-700 cursor-pointer">Proof history ({history.length})</summary>
           <ol className="mt-2 space-y-2">
-            {proofs.map((p) => (
+            {history.map((p) => (
               <li key={p.id} className="text-xs border border-slate-100 rounded-lg px-3 py-2">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="font-semibold text-slate-800">Version {p.version}</span>

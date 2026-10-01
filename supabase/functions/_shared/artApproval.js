@@ -163,19 +163,24 @@ export function proofReminderDue(proof, now = Date.now()) {
 }
 
 /**
- * Quote-stage proofs count as approval: the customer approved the quote with
- * proof images attached. Returns the order fields to set at conversion, or
- * null. `proofUrls` = proof images that were on the approved quote.
+ * Quote-stage proofs count as approval: the CUSTOMER approved the quote on
+ * its public page while it showed artwork (customer_approved_art_fp, written
+ * only by that approval), and the order's art is still exactly that art.
+ * The shop's own Approve button never qualifies. Returns the order fields
+ * to set at conversion, or null.
  */
-export function quoteProofApproval({ quote, order, proofUrls }) {
-  if (!quote?.client_approved_at || !Array.isArray(proofUrls) || proofUrls.length === 0) return null;
+export function quoteProofApproval({ quote, order }) {
+  const seen = str(quote?.customer_approved_art_fp);
+  if (!seen || artFiles(order).length === 0) return null;
+  const fp = artFingerprint(order);
+  if (fp !== seen) return null;
   return {
     art_status: ART_STATUS.APPROVED,
     art_approved: true,
-    art_approved_at: quote.client_approved_at,
+    art_approved_at: quote.client_approved_at || quote.updated_at || null,
     art_approved_by: str(quote.customer_name) ? `${str(quote.customer_name)} (approved with quote)` : "Customer (approved with quote)",
     art_proof_version: 1,
-    art_approved_fingerprint: artFingerprint(order),
+    art_approved_fingerprint: fp,
   };
 }
 

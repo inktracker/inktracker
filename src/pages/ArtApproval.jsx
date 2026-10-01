@@ -257,9 +257,14 @@ export default function ArtApproval() {
         comment: changeComment.trim(),
         location: changeLocation || undefined,
         name: approverName.trim() || undefined,
+        // What this page showed — the server refuses if the proof moved on.
+        fingerprint: order?.art_state?.fingerprint,
+        version: order?.art_state?.version,
       });
-      if (res?.data?.error) { setApproveError(res.data.error); return; }
-      setOrder(res.data.order);
+      if (res?.data?.stale && res.data.order) setOrder(res.data.order); // show the latest proof
+      const { data, message } = anonEdgeResult(res, "Couldn't send your request. Please try again.");
+      if (message) { setApproveError(message); return; }
+      if (data.order) setOrder(data.order);
       setChangesSent(true);
     } catch {
       setApproveError("Couldn't send your request. Please try again.");
@@ -279,7 +284,11 @@ export default function ArtApproval() {
         orderId: order.id,
         token: publicToken,
         approvedBy: approverName.trim(),
+        fingerprint: order?.art_state?.fingerprint,
+        version: order?.art_state?.version,
       });
+      // Proof moved on since this page loaded → show the latest one.
+      if (res?.data?.stale && res.data.order) { setOrder(res.data.order); setCheckedAll(false); }
       // anonEdgeResult reads both halves; before this, res.data was null on
       // any failure, `res.data.order` threw, and the catch rendered the raw
       // TypeError ("Cannot read properties of null...") to the customer —

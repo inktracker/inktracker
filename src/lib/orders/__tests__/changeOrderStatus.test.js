@@ -104,7 +104,7 @@ describe("art approval derives from the customer's approval, never a floor tap",
 
 describe("art approval gate", () => {
   const order = { id: "o1", status: "Art Approval", selected_artwork: [{ id: "a", url: "u" }], line_items: [] };
-  const base44 = { entities: { Order: { update: vi.fn((id, patch) => Promise.resolve({ ...order, ...patch })) } } };
+  const base44 = { entities: { Order: { get: vi.fn(() => Promise.resolve(order)), update: vi.fn((id, patch) => Promise.resolve({ ...order, ...patch })) } } };
 
   it("checkArtGate: blocks leaving Art Approval without approval only when the shop requires it", () => {
     expect(checkArtGate(order, "Order Goods", false)).toEqual({ ok: true });
@@ -119,6 +119,14 @@ describe("art approval gate", () => {
     const approved = { ...order, art_status: "approved", art_approved: true, art_approved_fingerprint: artFingerprint(order) };
     expect(checkArtGate(approved, "Order Goods", true).ok).toBe(true);
     expect(checkArtGate({ ...approved, selected_artwork: [{ id: "a", url: "u2" }] }, "Order Goods", true).reason).toMatch(/changed after the customer approved/);
+  });
+
+  it("judges FRESH data: an override saved after the list loaded lets the move through", async () => {
+    const approvedNow = { ...order, art_status: "approved", art_approved: true, art_approved_fingerprint: artFingerprint(order) };
+    const b = { entities: { Order: { get: vi.fn(() => Promise.resolve(approvedNow)), update: vi.fn((id, patch) => Promise.resolve({ ...approvedNow, ...patch })) } } };
+    await changeOrderStatus({ order, newStatus: "Order Goods", user: {}, base44: b, requireArtApproval: true });
+    expect(b.entities.Order.get).toHaveBeenCalledWith("o1");
+    expect(b.entities.Order.update).toHaveBeenCalled();
   });
 
   it("changeOrderStatus refuses with a plain message and writes nothing — even a jump straight to Completed", async () => {

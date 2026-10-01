@@ -22,6 +22,12 @@ alter table public.orders
   -- current art still matches it (artApproval.artFingerprint).
   add column if not exists art_approved_fingerprint text;
 
+-- ── Quotes: what art the CUSTOMER approved ───────────────────────────────
+-- Fingerprint of the quote's art at the moment the customer approved it on
+-- the public quote page (never the shop's own Approve button). A converted
+-- order starts art-approved only if its art still matches.
+alter table public.quotes add column if not exists customer_approved_art_fp text;
+
 -- ── Proof versions (history + audit trail) ──────────────────────────────
 create table if not exists public.art_proofs (
   id                 uuid primary key default gen_random_uuid(),
@@ -79,12 +85,13 @@ comment on table public.art_proofs is
 -- artwork_changes_requested — and two names the code already logs that the
 -- old list rejected: deposit_payment (qbDepositPaid; the deposit-email
 -- dedupe reads these rows, so a rejected log let it repeat) and winback
--- (billingWebhook).
+-- (billingWebhook), plus cancellation_scheduled (billingWebhook; allowed by
+-- 20260901000000_cancellation_state but dropped by a later rewrite).
 alter table public.notification_log drop constraint if exists notification_log_event_type_check;
 alter table public.notification_log add constraint notification_log_event_type_check check (event_type = any (array[
   'quote_approval', 'artwork_approval', 'quote_payment', 'quote_send', 'reply',
   'payment_confirmation', 'trial_reminder', 'signup_notify', 'welcome_email',
   'drip_day2', 'status_update',
   'art_proof_sent', 'art_proof_reminder', 'artwork_changes_requested',
-  'deposit_payment', 'winback'
+  'deposit_payment', 'winback', 'cancellation_scheduled'
 ]));

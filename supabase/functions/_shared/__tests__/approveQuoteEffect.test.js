@@ -155,3 +155,13 @@ describe("cross-layer contracts", () => {
     expect(resolveApproveQuoteUpdate(brokerMidFlow, { nowISO: NOW }).update).toBeNull();
   });
 });
+
+describe("resolveApproveQuoteUpdate — art the customer approved", () => {
+  it("stamps the art fingerprint on direct and broker approvals; nothing when the quote had no art", () => {
+    expect(resolveApproveQuoteUpdate({ status: "Sent" }, { nowISO: NOW, artFingerprint: "v1:abc" }).update)
+      .toMatchObject({ status: "Approved", customer_approved_art_fp: "v1:abc" });
+    expect(resolveApproveQuoteUpdate({ status: "Sent", broker_id: "b@x.com" }, { nowISO: NOW, artFingerprint: "v1:abc" }).update)
+      .toMatchObject({ customer_approved_art_fp: "v1:abc" });
+    expect(resolveApproveQuoteUpdate({ status: "Sent" }, { nowISO: NOW }).update).not.toHaveProperty("customer_approved_art_fp");
+  });
+});

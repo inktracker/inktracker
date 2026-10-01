@@ -5,7 +5,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { fakeSupabase } from "../../_shared/testing/fakeSupabase.ts";
 import { handle, sendReminders, proofRecipient, type Deps } from "../index.ts";
-import { artApprovalState } from "../../_shared/artApproval.js";
+import { artApprovalState, artFingerprint } from "../../_shared/artApproval.js";
 
 // createCheckoutSession starts a server on import; stub it like its own tests.
 const realServe = Deno.serve;
@@ -52,6 +52,8 @@ function deps(fake: any, sent: any[], env: Record<string, string> = {}): Deps {
 const req = (body: unknown, bearer = "") => new Request("http://x", { method: "POST", headers: bearer ? { Authorization: `Bearer ${bearer}` } : {}, body: JSON.stringify(body) });
 const as = (authId: string, body: Record<string, unknown>) => req({ ...body, accessToken: authId });
 const META = { ip: "1.2.3.4", userAgent: "Safari" };
+// What the customer's page shows (and sends back): the current art + version.
+const seen = (fake: any) => ({ fingerprint: artFingerprint(fake.tables.orders[0]), version: fake.tables.orders[0].art_proof_version });
 
 Deno.test("send → v1 recorded, order waiting, customer emailed with the approval link", async () => {
   const fake = db();
@@ -72,7 +74,7 @@ Deno.test("send → v1 recorded, order waiting, customer emailed with the approv
 Deno.test("customer approves → proof + order record who/when/where/what; shop bell", async () => {
   const fake = db();
   await handle(as("own-auth", { action: "send", orderId: ORDER_ID }), deps(fake, []));
-  const res: any = await handleApproveArtwork(ORDER_ID, "Jane Smith", "tok", META, fake);
+  const res: any = await handleApproveArtwork(ORDER_ID, "Jane Smith", "tok", META, fake, seen(fake));
   assertEquals(res.order.art_state.approved, true);
   assertEquals(res.order.art_approved_fingerprint, undefined); // never sent to the customer
   const p = fake.tables.art_proofs[0];
@@ -84,9 +86,9 @@ Deno.test("customer approves → proof + order record who/when/where/what; shop 
 Deno.test("replayed approval doesn't restamp; an approval the art outgrew can be given again", async () => {
   const fake = db();
   await handle(as("own-auth", { action: "send", orderId: ORDER_ID }), deps(fake, []));
-  await handleApproveArtwork(ORDER_ID, "Jane", "tok", META, fake);
+  await handleApproveArtwork(ORDER_ID, "Jane", "tok", META, fake, seen(fake));
   const at = fake.tables.orders[0].art_approved_at;
-  await handleApproveArtwork(ORDER_ID, "Someone else", "tok", META, fake);
+  await handleApproveArtwork(ORDER_ID, "Someone else", "tok", META, fake, seen(fake));
   assertEquals(fake.tables.orders[0].art_approved_by, "Jane");
   assertEquals(fake.tables.orders[0].art_approved_at, at);
   // Shop swaps the file → approval no longer applies
@@ -98,7 +100,7 @@ Deno.test("customer requests changes → recorded, approval cleared, shop alerte
   const fake = db();
   const sent: any[] = [];
   await handle(as("own-auth", { action: "send", orderId: ORDER_ID }), deps(fake, sent));
-  const res: any = await handleRequestArtChanges(ORDER_ID, { comment: "Logo bigger please", location: "Front", name: "Jane" }, "tok", META, fake);
+  const res: any = await handleRequestArtChanges(ORDER_ID, { comment: "Logo bigger please", location: "Front", name: "Jane", ...seen(fake) }, "tok", META, fake);
   assertEquals(res.changesRequested, true);
   assertEquals(fake.tables.orders[0].art_status, "changes_requested");
   assertEquals(fake.tables.art_proofs[0].response_comment, "Logo bigger please");
@@ -123,6 +125,8 @@ Deno.test("override: owner/manager with a note; employees and missing notes refu
   assertEquals(r.status, 200);
   assertEquals(fake.tables.art_proofs[0].status, "approved_override");
   assertEquals(fake.tables.art_proofs[0].override_by, "Mo Manager");
+  // The customer's page never shows the staff name or the internal note.
+  assertEquals(fake.tables.orders[0].art_approved_by, "The shop, on your behalf");
   assert(artApprovalState(fake.tables.orders[0]).approved);
 });
 
@@ -157,4 +161,38 @@ Deno.test("reminders: once, after 2 days, only for the proof still waited on; cr
   assertEquals(sent[0].event_type, "art_proof_reminder");
   assert(String(sent[0].subject).startsWith("Reminder:"));
   assertEquals((await sendReminders(deps(fake, sent))).reminded, 0); // only once
+});
+
+Deno.test("stale page: art changed or a newer version went out → refused, nothing written", async () => {
+  const fake = db();
+  await handle(as("own-auth", { action: "send", orderId: ORDER_ID }), deps(fake, []));
+  const old = seen(fake);
+  fake.tables.orders[0].selected_artwork = [{ id: "a1", name: "Front v2.pdf", url: "https://x/front-v2.pdf" }];
+  const res: any = await handleApproveArtwork(ORDER_ID, "Jane", "tok", META, fake, old);
+  assertEquals(res.stale, true);
+  assert(res.order, "returns the fresh order so the page can reload");
+  assertEquals(fake.tables.orders[0].art_status, "sent");
+  assertEquals(fake.tables.art_proofs[0].status, "sent");
+  const ch: any = await handleRequestArtChanges(ORDER_ID, { comment: "x", ...old }, "tok", META, fake);
+  assertEquals(ch.stale, true);
+  // Version moved on (v2 sent) → the v1 page can't answer either
+  await handle(as("own-auth", { action: "send", orderId: ORDER_ID }), deps(fake, []));
+  const v1: any = await handleApproveArtwork(ORDER_ID, "Jane", "tok", META, fake, { fingerprint: artFingerprint(fake.tables.orders[0]), version: 1 });
+  assertEquals(v1.stale, true);
+});
+
+Deno.test("reminders skip proofs nobody is waiting on (order moved on / newer version) and dequeue them", async () => {
+  const fake = db({ status: "Printing", art_status: "sent", art_proof_version: 1 });
+  fake.tables.art_proofs.push({ id: "p1", order_id: ORDER_ID, version: 1, status: "sent", sent_at: "2026-09-29T17:00:00Z", sent_to: "buyer@tahoegift.com", reminder_sent_at: null, shop_owner: OWNER });
+  const sent: any[] = [];
+  const r = await sendReminders(deps(fake, sent));
+  assertEquals(r.reminded, 0);
+  assertEquals(sent.length, 0);
+  assert(fake.tables.art_proofs[0].reminder_sent_at, "dequeued so it isn't re-checked every day");
+});
+
+Deno.test("send after a quote-carried approval is v2, not a second v1", async () => {
+  const fake = db({ art_status: "approved", art_proof_version: 1, art_approved: true });
+  const j = await (await handle(as("own-auth", { action: "send", orderId: ORDER_ID }), deps(fake, []))).json();
+  assertEquals(j.version, 2);
 });

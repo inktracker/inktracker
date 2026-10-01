@@ -1,4 +1,4 @@
-import { quoteProofApproval, artFiles } from "./artApproval.js";
+import { quoteProofApproval } from "./artApproval.js";
 // Pure logic for the QB webhook handler. Extracted so the cross-tenant
 // scoping, idempotency rules, and payload parsing are unit-testable
 // without spinning up a Deno runtime or a real Supabase client.
@@ -352,7 +352,6 @@ export function buildOrderInsertFromQuote(quote, orderId) {
     ...(quoteProofApproval({
       quote: quote,
       order: { selected_artwork: quote.selected_artwork, line_items: quote.line_items },
-      proofUrls: artFiles(quote).map((f) => f.url || f.key),
     }) ?? {}),
   };
 }

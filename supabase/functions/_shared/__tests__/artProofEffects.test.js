@@ -35,13 +35,13 @@ describe("planSendProof", () => {
 describe("planCustomerApproval", () => {
   it("approves the current sent version and records who/when/where + what", () => {
     const o = order({ art_proof_version: 2 });
-    const p = planCustomerApproval({ order: o, proofs: [{ id: "p2", version: 2, status: "sent" }], name: " Jane Smith ", ip: "1.2.3.4", userAgent: "Safari", now: NOW });
+    const p = planCustomerApproval({ order: o, proofs: [{ id: "p2", version: 2, status: "sent" }], name: " Jane Smith ", ip: "1.2.3.4", userAgent: "Safari", seen: { fingerprint: artFingerprint(o), version: 2 }, now: NOW });
     expect(p.proofUpdate).toMatchObject({ id: "p2", patch: { status: "approved", approved_by_name: "Jane Smith", client_ip: "1.2.3.4", client_user_agent: "Safari" } });
     expect(p.orderPatch).toMatchObject({ art_status: "approved", art_approved: true, art_approved_by: "Jane Smith", art_proof_version: 2, art_approved_fingerprint: artFingerprint(o) });
     expect(artApprovalState({ ...o, ...p.orderPatch }).approved).toBe(true);
   });
   it("link copied by hand (no proof sent) → creates the version it approves", () => {
-    const p = planCustomerApproval({ order: order(), proofs: [], name: "", now: NOW });
+    const p = planCustomerApproval({ order: order(), proofs: [], name: "", seen: { fingerprint: artFingerprint(order()) }, now: NOW });
     expect(p.proofInsert).toMatchObject({ version: 1, status: "approved", source: "link", approved_by_name: "Customer" });
   });
 });
@@ -49,7 +49,7 @@ describe("planCustomerApproval", () => {
 describe("planChangeRequest", () => {
   it("records the comment + location, clears approval", () => {
     const o = order({ art_proof_version: 1 });
-    const p = planChangeRequest({ order: o, proofs: [{ id: "p1", version: 1, status: "sent" }], name: "Jane", comment: "Make the logo bigger", location: "Front", now: NOW });
+    const p = planChangeRequest({ order: o, proofs: [{ id: "p1", version: 1, status: "sent" }], name: "Jane", comment: "Make the logo bigger", location: "Front", seen: { fingerprint: artFingerprint(o), version: 1 }, now: NOW });
     expect(p.ok).toBe(true);
     expect(p.proofUpdate.patch).toMatchObject({ status: "changes_requested", response_comment: "Make the logo bigger", response_location: "Front" });
     expect(p.orderPatch).toMatchObject({ art_status: "changes_requested", art_approved: false });
@@ -66,7 +66,23 @@ describe("planOverride", () => {
     expect(p.version).toBe(2);
     expect(p.supersede).toEqual(["p1"]);
     expect(p.insert).toMatchObject({ status: "approved_override", override_by: "Joe", override_note: "Approved by phone 10/2" });
-    expect(p.orderPatch.art_approved_by).toBe("Joe (override: Approved by phone 10/2)");
+    // Customer-facing: never the staff name or the internal note.
+    expect(p.orderPatch.art_approved_by).toBe("The shop, on your behalf");
   });
   it("latestVersion", () => expect(latestVersion([{ version: 3 }, { version: 1 }])).toBe(3));
+});
+
+describe("audit fixes", () => {
+  it("a stale page (art or version moved on) can't approve or request changes", () => {
+    const o = order({ art_proof_version: 2 });
+    const oldFp = artFingerprint(order({ selected_artwork: [{ id: "a1", url: "https://x/front-OLD.pdf" }] }));
+    expect(planCustomerApproval({ order: o, proofs: [], seen: { fingerprint: oldFp, version: 2 } })).toMatchObject({ ok: false, stale: true });
+    expect(planCustomerApproval({ order: o, proofs: [], seen: { fingerprint: artFingerprint(o), version: 1 } }).stale).toBe(true);
+    expect(planCustomerApproval({ order: o, proofs: [], seen: null }).stale).toBe(true);
+    expect(planChangeRequest({ order: o, proofs: [], comment: "x", seen: { fingerprint: oldFp, version: 2 } }).stale).toBe(true);
+  });
+  it("versions continue after a quote-carried v1 (no second v1)", () => {
+    const p = planSendProof({ order: order({ art_proof_version: 1, art_approved: true }), proofs: [], sentTo: "b@x.com" });
+    expect(p.version).toBe(2);
+  });
 });

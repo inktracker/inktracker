@@ -16,7 +16,7 @@ import { insertShopNotification } from "../_shared/notifications.js";
 import { resolveApproveQuoteUpdate, APPROVE_GUARD_OR } from "../_shared/approveQuoteEffect.js";
 import { sanitizeQuoteForCustomer, sanitizeOrderForCustomer, customerFacingShopPayload, isBrokerDoc } from "../_shared/publicSafe.js";
 import { toPublicMessage } from "../_shared/publicErrors.ts";
-import { artApprovalState } from "../_shared/artApproval.js";
+import { artApprovalState, artFiles, artFingerprint } from "../_shared/artApproval.js";
 import { planCustomerApproval, planChangeRequest } from "../_shared/artProofEffects.js";
 import { escapeHtml } from "../_shared/emailSanitize.js";
 
@@ -195,7 +195,7 @@ async function handleApproveQuote(quoteId: string, token?: string) {
   // first select was just for the token verification.
   const { data: pre } = await supabase
     .from("quotes")
-    .select("broker_id, broker_email, status, client_status, converted_order_id")
+    .select("broker_id, broker_email, status, client_status, converted_order_id, selected_artwork, line_items")
     .eq("id", quoteId)
     .single();
 
@@ -211,7 +211,11 @@ async function handleApproveQuote(quoteId: string, token?: string) {
   // is the broker's END CLIENT, and the broker still has to "Submit to
   // Shop" (mirrors BrokerDashboard.handleMarkClientApproved exactly).
   const { update: approvePatch, isBroker: isBrokerQuote } =
-    resolveApproveQuoteUpdate(pre ?? {}, { nowISO: new Date().toISOString() });
+    resolveApproveQuoteUpdate(pre ?? {}, {
+      nowISO: new Date().toISOString(),
+      // Only when the customer was actually shown artwork.
+      artFingerprint: pre && artFiles(pre).length ? artFingerprint(pre) : null,
+    });
 
   let quote: any = null;
   // True only when THIS request performed the approve transition — the sole
@@ -393,17 +397,40 @@ async function loadOrderForArt(supabase: any, orderId: string, token?: string) {
   return { row: order, proofs: proofs ?? [] };
 }
 
-async function writeProof(supabase: any, plan: any) {
-  if (plan.proofUpdate) {
-    const { error } = await supabase.from("art_proofs").update(plan.proofUpdate.patch).eq("id", plan.proofUpdate.id);
-    if (error) throw new Error(`proof update failed: ${error.message}`);
-  } else if (plan.proofInsert) {
-    const { error } = await supabase.from("art_proofs").insert(plan.proofInsert);
-    if (error) throw new Error(`proof insert failed: ${error.message}`);
+// The proof row is the audit record (who / when / device / what was shown).
+// The order is already updated when this runs, so a failure here must be
+// loud, and a version clash (a shop send landed at the same moment) retries
+// with the next free version — then re-points the order at it.
+async function writeProof(supabase: any, plan: any, orderId: string) {
+  try {
+    if (plan.proofUpdate) {
+      const { error } = await supabase.from("art_proofs").update(plan.proofUpdate.patch).eq("id", plan.proofUpdate.id);
+      if (error) throw new Error(`proof update failed: ${error.message}`);
+      return;
+    }
+    if (!plan.proofInsert) return;
+    let row = plan.proofInsert;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { error } = await supabase.from("art_proofs").insert(row);
+      if (!error) {
+        if (row.version !== plan.proofInsert.version) {
+          await supabase.from("orders").update({ art_proof_version: row.version }).eq("id", orderId);
+        }
+        return;
+      }
+      if (error.code !== "23505") throw new Error(`proof insert failed: ${error.message}`);
+      const { data: rows } = await supabase.from("art_proofs").select("version").eq("order_id", orderId);
+      const next = (rows ?? []).reduce((m: number, r: any) => Math.max(m, Number(r.version) || 0), 0) + 1;
+      row = { ...row, version: next };
+    }
+    throw new Error("proof insert kept clashing on version");
+  } catch (err) {
+    console.error(`[art proof] audit record not saved for order ${orderId}:`, err);
+    await captureError(err, { fn: "createCheckoutSession", where: "art proof audit record", orderId });
   }
 }
 
-export async function handleApproveArtwork(orderId: string, approvedBy: string, token: string | undefined, meta: { ip: string; userAgent: string }, supabase: any = serviceClient()) {
+export async function handleApproveArtwork(orderId: string, approvedBy: string, token: string | undefined, meta: { ip: string; userAgent: string }, supabase: any = serviceClient(), seen: any = null) {
   const loaded = await loadOrderForArt(supabase, orderId, token);
   if (!loaded) return { error: "Order not found." };
   const { row: existing, proofs } = loaded;
@@ -414,7 +441,8 @@ export async function handleApproveArtwork(orderId: string, approvedBy: string, 
     return { order: sanitizeOrderForCustomer(existing) };
   }
 
-  const plan: any = planCustomerApproval({ order: existing, proofs, name: approvedBy, ip: meta.ip, userAgent: meta.userAgent });
+  const plan: any = planCustomerApproval({ order: existing, proofs, name: approvedBy, ip: meta.ip, userAgent: meta.userAgent, seen });
+  if (!plan.ok) return { error: plan.error, stale: Boolean(plan.stale), order: sanitizeOrderForCustomer(existing) };
   // Guarded on the state we read, so two near-simultaneous clicks can't both
   // record an approval (the loser re-reads below).
   let q = supabase.from("orders").update(plan.orderPatch).eq("id", orderId);
@@ -426,7 +454,7 @@ export async function handleApproveArtwork(orderId: string, approvedBy: string, 
     const { data: current } = await supabase.from("orders").select("*").eq("id", orderId).single();
     return { order: sanitizeOrderForCustomer(current) };
   }
-  try { await writeProof(supabase, plan); } catch (e) { console.error("[approveArtwork]", e); }
+  await writeProof(supabase, plan, orderId);
 
   // Best-effort notifications — only the request that recorded the approval.
   try {
@@ -484,13 +512,13 @@ export async function handleRequestArtChanges(orderId: string, body: any, token:
 
   const plan: any = planChangeRequest({
     order: existing, proofs, name: body?.name, comment: body?.comment, location: body?.location,
-    ip: meta.ip, userAgent: meta.userAgent,
+    ip: meta.ip, userAgent: meta.userAgent, seen: { fingerprint: body?.fingerprint, version: body?.version },
   });
-  if (!plan.ok) return { error: plan.error };
+  if (!plan.ok) return { error: plan.error, stale: Boolean(plan.stale), order: plan.stale ? sanitizeOrderForCustomer(existing) : undefined };
   const { data: rows, error } = await supabase.from("orders").update(plan.orderPatch).eq("id", orderId).select("*");
   if (error || !rows?.[0]) return { error: "Couldn't send your request. Please try again." };
   const order = rows[0];
-  try { await writeProof(supabase, plan); } catch (e) { console.error("[requestArtChanges]", e); }
+  await writeProof(supabase, plan, orderId);
 
   try {
     const who = String(body?.name ?? "").trim() || order.customer_name || "The customer";
@@ -708,7 +736,7 @@ Deno.serve(async (req) => {
         result = await handleGetOrder(rest.orderId ?? quoteId, token);
         break;
       case "approveArtwork":
-        result = await handleApproveArtwork(rest.orderId, rest.approvedBy ?? "Customer", token, clientMeta(req));
+        result = await handleApproveArtwork(rest.orderId, rest.approvedBy ?? "Customer", token, clientMeta(req), undefined, { fingerprint: rest.fingerprint, version: rest.version });
         break;
       case "requestArtChanges":
         result = await handleRequestArtChanges(rest.orderId, rest, token, clientMeta(req));

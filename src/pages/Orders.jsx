@@ -17,7 +17,7 @@ import HintTip from "../components/shared/HintTip";
 import { useBillingGate, useReadOnly } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
-import { changeOrderStatus, nextStatusOf, autoPoToast } from "@/lib/orders/changeOrderStatus";
+import { changeOrderStatus, nextStatusOf, autoPoToast, assertArtGateFresh } from "@/lib/orders/changeOrderStatus";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { shopScope } from "@/lib/shopScope";
 import ArtStatusBadge from "@/components/art/ArtStatusBadge";
@@ -212,6 +212,7 @@ export default function Orders() {
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
     try {
+      await assertArtGateFresh(order, "Completed", base44);
       const updated = await runOrderCompletion({ order, user, base44 });
       setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
       // Keep the modal open on the just-completed order so its action bar can

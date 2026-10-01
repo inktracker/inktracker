@@ -83,14 +83,18 @@ describe("proofSnapshot / reminders / quote carry-over", () => {
     expect(proofReminderDue({ status: "sent", sent_at: "2026-10-01T00:00:00Z", reminder_sent_at: "x" }, now)).toBe(false);
     expect(proofReminderDue({ status: "approved", sent_at: "2026-10-01T00:00:00Z" }, now)).toBe(false);
   });
-  it("quote approved with proofs → order starts approved (v1); without proofs → no", () => {
+  it("quote carry-over: only the CUSTOMER's approval of this exact art counts", () => {
     const o = order();
-    const q = { client_approved_at: "2026-10-01T18:00:00Z", customer_name: "Tahoe Gift Co" };
-    expect(quoteProofApproval({ quote: q, order: o, proofUrls: ["https://x/p.png"] })).toMatchObject({
+    const q = { client_approved_at: "2026-10-01T18:00:00Z", customer_name: "Tahoe Gift Co", customer_approved_art_fp: artFingerprint(o) };
+    expect(quoteProofApproval({ quote: q, order: o })).toMatchObject({
       art_status: ART_STATUS.APPROVED, art_approved: true, art_proof_version: 1,
       art_approved_by: "Tahoe Gift Co (approved with quote)", art_approved_fingerprint: artFingerprint(o),
     });
-    expect(quoteProofApproval({ quote: q, order: o, proofUrls: [] })).toBeNull();
-    expect(quoteProofApproval({ quote: {}, order: o, proofUrls: ["x"] })).toBeNull();
+    // Shop's own Approve button (no customer stamp) → no carry-over
+    expect(quoteProofApproval({ quote: { client_approved_at: "2026-10-01T18:00:00Z" }, order: o })).toBeNull();
+    // Art changed after the customer approved the quote → no carry-over
+    expect(quoteProofApproval({ quote: q, order: order({ selected_artwork: [{ id: "a1", url: "https://x/new.pdf" }] }) })).toBeNull();
+    // No artwork at all → nothing to approve
+    expect(quoteProofApproval({ quote: q, order: order({ selected_artwork: [] }) })).toBeNull();
   });
 });

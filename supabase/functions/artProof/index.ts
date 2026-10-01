@@ -120,8 +120,18 @@ export async function sendReminders(deps: Deps): Promise<{ reminded: number }> {
   for (const p of waiting ?? []) {
     if (!proofReminderDue(p, now.getTime())) continue;
     const { data: order } = await admin.from("orders").select("*").eq("id", p.order_id).maybeSingle();
-    // Only the proof the order is still waiting on.
-    if (!order || order.art_status !== "sent" || Number(order.art_proof_version) !== Number(p.version) || !order.public_token) continue;
+    // Only the proof the order is still waiting on, while the order is still
+    // in Art Approval (with the gate off a job can move on unanswered — no
+    // "before we start printing" email for a job already printing). Rows
+    // that will never be reminded are taken out of the queue so they can't
+    // crowd out newer ones.
+    const remindable = order && order.public_token && order.art_status === "sent" &&
+      Number(order.art_proof_version) === Number(p.version) &&
+      (!order.status || order.status === "Art Approval");
+    if (!remindable) {
+      await admin.from("art_proofs").update({ reminder_sent_at: now.toISOString() }).eq("id", p.id).is("reminder_sent_at", null);
+      continue;
+    }
     // Claim first so a re-run can't double-remind.
     const { data: claimed } = await admin.from("art_proofs").update({ reminder_sent_at: now.toISOString() }).eq("id", p.id).is("reminder_sent_at", null).select("id");
     if (!claimed?.length) continue;
