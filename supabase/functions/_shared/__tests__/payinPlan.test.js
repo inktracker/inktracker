@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  priceForMethod,
-  bankDiscountCents,
-  normalizeDiscountPct,
+  customerFeeCents,
+  customerFeeSettings,
+  customerFeeNote,
+  normalizeBankFeePct,
+  maxCustomerFeeCents,
   PLATFORM_PRICING,
   STRIPE_COST,
   platformFeeCents,
@@ -213,18 +215,39 @@ describe("invoices (order-then-invoice flow) pay the same way", () => {
   });
 });
 
-describe("bank-transfer discount pricing", () => {
-  it("card = the invoice; bank = invoice minus the shop's % (half-up cents)", () => {
-    expect(priceForMethod({ balanceCents: 56872, method: "card", discountPct: 2 })).toEqual({ chargeCents: 56872, discountCents: 0 });
-    expect(priceForMethod({ balanceCents: 56872, method: "ach", discountPct: 2 })).toEqual({ chargeCents: 55735, discountCents: 1137 });
-    expect(priceForMethod({ balanceCents: 56872, method: "ach", discountPct: 0 })).toEqual({ chargeCents: 56872, discountCents: 0 });
+describe("fees the customer pays", () => {
+  const on = customerFeeSettings({ customer_fees_enabled: true, bank_fee_pct: 1 });
+  it("credit card: 2.99% (half-up cents)", () => {
+    expect(customerFeeCents({ balanceCents: 56872, method: "card", funding: "credit", settings: on })).toBe(1700);
   });
-  it("0–5% only; junk is no discount", () => {
-    expect(normalizeDiscountPct("2.5")).toBe(2.5);
-    expect(normalizeDiscountPct(6)).toBeNull();
-    expect(normalizeDiscountPct(-1)).toBeNull();
-    expect(normalizeDiscountPct("abc")).toBeNull();
-    expect(bankDiscountCents(56872, 9)).toBe(0);
-    expect(bankDiscountCents(1, 5)).toBe(0); // never discounts a payment to nothing
+  it("debit, prepaid and unknown cards pay no fee", () => {
+    for (const funding of ["debit", "prepaid", "unknown", null, undefined]) {
+      expect(customerFeeCents({ balanceCents: 56872, method: "card", funding, settings: on })).toBe(0);
+    }
+  });
+  it("bank: the shop's percentage, capped at 1%", () => {
+    expect(customerFeeCents({ balanceCents: 56872, method: "ach", settings: on })).toBe(569);
+    expect(customerFeeCents({ balanceCents: 56872, method: "ach", settings: { ...on, bankPct: 4 } })).toBe(569);
+    expect(customerFeeCents({ balanceCents: 56872, method: "ach", settings: { ...on, bankPct: 0 } })).toBe(0);
+  });
+  it("off unless the shop turned it on", () => {
+    const off = customerFeeSettings({ customer_fees_enabled: false, bank_fee_pct: 1 });
+    expect(off).toEqual({ enabled: false, cardPct: 0, bankPct: 0 });
+    expect(customerFeeCents({ balanceCents: 56872, method: "card", funding: "credit", settings: off })).toBe(0);
+    expect(customerFeeNote(off)).toBe("");
+  });
+  it("bank fee setting: 0–1% only", () => {
+    expect(normalizeBankFeePct("0.5")).toBe(0.5);
+    expect(normalizeBankFeePct(1.5)).toBeNull();
+    expect(normalizeBankFeePct(-1)).toBeNull();
+    expect(normalizeBankFeePct("abc")).toBeNull();
+    expect(normalizeBankFeePct("")).toBeNull();
+  });
+  it("never more than 3% of the invoice", () => {
+    expect(maxCustomerFeeCents(10000)).toBe(300);
+  });
+  it("the note says what each way of paying costs", () => {
+    expect(customerFeeNote(on)).toBe("Credit card payments include a 2.99% processing fee (no fee on debit cards). Bank transfer payments include a 1% fee. The exact amount is shown before you pay.");
+    expect(customerFeeNote({ ...on, bankPct: 0 })).toContain("Bank transfer has no fee.");
   });
 });

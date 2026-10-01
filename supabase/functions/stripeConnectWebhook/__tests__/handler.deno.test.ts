@@ -695,17 +695,17 @@ Deno.test("payouts on a Stripe account no shop owns (a deleted shop) are ignored
   assertEquals(db.tables.notifications.length, 0);
 });
 
-Deno.test("bank-transfer discount: customer pays less, QuickBooks shows the invoice paid IN FULL", async () => {
-  // Invoice $1,643.00, 2% bank discount = $32.86 → customer paid $1,610.14.
+Deno.test("customer-paid fee: QuickBooks gets the invoice amount, not the fee", async () => {
+  // Invoice $1,643.00 + 1% bank fee $16.43 → customer paid $1,659.43.
   const { db, deps, posted } = setup({ balance: 1643 });
-  const md = { ...MD, bank_discount_cents: "3286" };
-  await handle(await request(evt("payment_intent.processing", bankPi({ status: "processing", amount: 161014, metadata: md }))), deps);
-  await handle(await request(evt("payment_intent.succeeded", bankPi({ amount: 161014, metadata: md }))), deps);
+  const md = { ...MD, customer_fee_cents: "1643" };
+  await handle(await request(evt("payment_intent.processing", bankPi({ status: "processing", amount: 165943, metadata: md }))), deps);
+  await handle(await request(evt("payment_intent.succeeded", bankPi({ amount: 165943, metadata: md }))), deps);
   const row = db.tables.processor_payments[0];
-  assertEquals([row.amount_cents, row.discount_cents], [161014, 3286]);
+  assertEquals([row.amount_cents, row.customer_fee_cents], [165943, 1643]);
   assertEquals(posted.length, 1);
   const body = posted[0] as Record<string, Any>;
   assertEquals(body.TotalAmt, 1643);
   assertEquals(body.Line, [{ Amount: 1643, LinkedTxn: [{ TxnId: "3815", TxnType: "Invoice" }] }]);
-  assert(String(body.PrivateNote).includes("bank transfer discount $32.86"));
+  assert(String(body.PrivateNote).includes("customer also paid a $16.43 processing fee"));
 });

@@ -10,7 +10,7 @@
 //     minus billing".
 
 import { resolvePaymentRail, RAIL, ACTIVE_MERCHANT_STATUSES, paymentsPauseDate, planGraceOver } from "./paymentRail.js";
-import { PLATFORM_PRICING, formatRatePct } from "./paymentsPricing.js";
+import { PLATFORM_PRICING, formatRatePct, customerFeeSettings, DEFAULT_BANK_FEE_PCT } from "./paymentsPricing.js";
 
 const OWNER_ROLES = ["admin", "shop"];
 const TEAM_ROLES = ["admin", "shop", "manager", "employee"];
@@ -61,7 +61,8 @@ export function buildStatusPayload({ envEnabled, account, viewer }) {
     qbAccountsMapped: Boolean(account?.qb_bank_account_id && account?.qb_fee_account_id),
     qbBankAccountId: account?.qb_bank_account_id ?? null,
     qbFeeAccountId: account?.qb_fee_account_id ?? null,
-    bankDiscountPct: Number(account?.bank_discount_pct) || 0,
+    // What customers pay on top (off unless the owner turned it on).
+    customerFees: { ...customerFeeSettings(account), bankFeeSetting: Number(account?.bank_fee_pct ?? DEFAULT_BANK_FEE_PCT) },
     pricing: {
       card: formatRatePct("card"),
       ach: formatRatePct("ach"),

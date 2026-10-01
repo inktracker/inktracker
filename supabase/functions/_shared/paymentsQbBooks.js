@@ -51,7 +51,7 @@ const refNum = (id) => String(id ?? "").slice(-21);
  * @param {string} a.txnDate          YYYY-MM-DD the payment succeeded
  * @param {{value:string}|null} [a.paymentMethodRef]
  * @param {number} [a.platformFeeCents] shown in the memo only
- * @param {number} [a.discountCents] bank-transfer discount (memo only; booked on the Deposit)
+ * @param {number} [a.customerFeeCents] fee the customer paid on top (memo only; booked on the Deposit)
  * @param {number} [a.applyCents] portion applied to the invoice (default: all).
  *        Less than amountCents only when the customer overpaid (two payments
  *        raced); QuickBooks keeps the rest as a customer credit.
@@ -65,11 +65,11 @@ export function buildQbPaymentBody(a) {
   if (!Number.isInteger(apply) || apply < 0 || apply > amt) return { ok: false, reason: "invalid_apply_amount" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a?.txnDate ?? ""))) return { ok: false, reason: "invalid_date" };
 
-  // Fees (Stripe's + InkTracker's) — and any bank-transfer discount — come
-  // off the payout, so they're booked on its Deposit, not here.
-  const disc = Number(a?.discountCents);
-  const feeNote = Number.isInteger(disc) && disc > 0
-    ? ` · bank transfer discount $${dollars(disc).toFixed(2)} and processing fees are on the payout deposit`
+  // Fees (Stripe's + InkTracker's) — and any fee the customer paid on top —
+  // move with the payout, so they're booked on its Deposit, not here.
+  const cf = Number(a?.customerFeeCents);
+  const feeNote = Number.isInteger(cf) && cf > 0
+    ? ` · customer also paid a $${dollars(cf).toFixed(2)} processing fee; it and the processing fees are on the payout deposit`
     : " · processing fees are on the payout deposit";
   const body = {
     CustomerRef: { value: String(a.customerRefValue) },

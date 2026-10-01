@@ -43,6 +43,7 @@ let accountOnRead: Any = { id: "acct_1", charges_enabled: true, payouts_enabled:
 let postImpl: ((path: string, params: Any, opts: Any) => Promise<Any>) | null = null;
 let oauthAccountId = "acct_existing";
 let checkoutNow: Any = null;
+let getImpl: ((path: string) => Promise<Any> | undefined) | null = null;
 
 function fakeStripe(calls: StripeCall[] = [], live = true) {
   return {
@@ -56,6 +57,10 @@ function fakeStripe(calls: StripeCall[] = [], live = true) {
     },
     get: (path: string, params?: Any, opts?: Any) => {
       calls.push({ method: "GET", path, params, opts });
+      if (getImpl) {
+        const hit = getImpl(path);
+        if (hit !== undefined) return hit;
+      }
       if (path === "/v1/accounts") return Promise.resolve({ data: existingAccounts, has_more: false });
       if (path.startsWith("/v1/checkout/sessions/")) return checkoutNow ? Promise.resolve(checkoutNow) : Promise.reject(Object.assign(new Error("404"), { status: 404 }));
       return Promise.resolve(accountOnRead);
@@ -506,35 +511,148 @@ Deno.test("sign-up needs the platform client id (so the account can always be di
   assertEquals(calls.length, 0);
 });
 
-// ── Bank-transfer discount ──────────────────────────────────────────────
-Deno.test("bank discount: owner sets 0–5%; managers can't; out of range refused", async () => {
-  const fake = db({ ...ACTIVE, enabled: true, bank_discount_pct: 0 });
-  assertEquals((await call(fake, "mgr-auth", { action: "setBankDiscount", pct: 2 })).status, 403);
-  assertEquals((await call(fake, "own-auth", { action: "setBankDiscount", pct: 7 })).status, 400);
-  const j = await (await call(fake, "own-auth", { action: "setBankDiscount", pct: 2 })).json();
-  assertEquals(j.bankDiscountPct, 2);
-  assertEquals(fake.tables.processor_accounts[0].bank_discount_pct, 2);
+// ── Fees the customer pays ──────────────────────────────────────────────
+const FEES_ON = { ...ACTIVE, enabled: true, customer_fees_enabled: true, bank_fee_pct: 1 };
+const PK_ENV = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_test123", STRIPE_CONNECT_PUBLISHABLE_KEY: "pk_live_abc" };
+
+Deno.test("customer fees: owner only; turning on needs the owner's okay; bank fee 0–1%", async () => {
+  const fake = db({ ...ACTIVE, enabled: true });
+  assertEquals((await call(fake, "mgr-auth", { action: "setCustomerFees", enabled: true, acknowledged: true })).status, 403);
+  assertEquals((await call(fake, "own-auth", { action: "setCustomerFees", enabled: true })).status, 400);
+  assertEquals((await call(fake, "own-auth", { action: "setCustomerFees", enabled: true, acknowledged: true, bankFeePct: 2 })).status, 400);
+  const j = await (await call(fake, "own-auth", { action: "setCustomerFees", enabled: true, acknowledged: true, bankFeePct: 0.5 }, PK_ENV)).json();
+  assertEquals(j.customerFees.enabled, true);
+  assertEquals(j.customerFees.bankPct, 0.5);
+  assertEquals(j.cardSurchargeReady, true);
+  const row = fake.tables.processor_accounts[0];
+  assertEquals([row.customer_fees_enabled, row.bank_fee_pct], [true, 0.5]);
+  assert(row.customer_fees_ack_at);
+  // Without the publishable key the card form can't run: not ready.
+  assertEquals((await (await call(fake, "own-auth", { action: "status" })).json()).cardSurchargeReady, false);
+  // Turning off needs no okay.
+  assertEquals((await (await call(fake, "own-auth", { action: "setCustomerFees", enabled: false })).json()).customerFees.enabled, false);
 });
 
-Deno.test("bank discount: the pay page gets card/bank prices without calling Stripe or QuickBooks", async () => {
-  const fake = withQuote({ ...ACTIVE, enabled: true, bank_discount_pct: 2 }, { qb_total: 568.72, total: 568.72 });
+Deno.test("customer fees: the pay page gets the fee amounts and the card form without calling Stripe or QuickBooks", async () => {
   const calls: StripeCall[] = [];
-  const j = await (await call(fake, "", { action: "payRail", id: QUOTE_ID, token: "tok" }, undefined, calls)).json();
-  assertEquals(j.pricing, { bankDiscountPct: 2, cardCents: 56872, bankCents: 55735, bankSavingsCents: 1137 });
+  const j = await (await call(withQuote(FEES_ON, { qb_total: 568.72, total: 568.72 }), "", { action: "payRail", id: QUOTE_ID, token: "tok" }, PK_ENV, calls)).json();
+  assertEquals(j.pricing.invoiceCents, 56872);
+  assertEquals(j.pricing.creditFeeCents, 1700);
+  assertEquals(j.pricing.bankFeeCents, 569);
+  assertEquals(j.pricing.cardForm, { publishableKey: "pk_live_abc", accountId: "acct_1" });
+  assert(j.pricing.note.includes("2.99%"));
   assertEquals(calls.length, 0);
-  const dep = withQuote({ ...ACTIVE, enabled: true, bank_discount_pct: 2 }, { qb_total: 568.72, deposit_pct: 50 });
-  assertEquals((await (await call(dep, "", { action: "payRail", id: QUOTE_ID, token: "tok" })).json()).pricing, { bankDiscountPct: 2 });
+  // A test-mode key with a live-mode publishable key → no card form, no card fee.
+  const t = await (await call(withQuote(FEES_ON, { qb_total: 568.72, customer_name: "TEST Co" }), "", { action: "payRail", id: QUOTE_ID, token: "tok" }, PK_ENV, [], false)).json();
+  assertEquals(t.pricing.cardForm ?? null, null);
+  // Fees off → nothing extra.
+  const off = await (await call(withQuote({ ...ACTIVE, enabled: true }, { qb_total: 568.72 }), "", { action: "payRail", id: QUOTE_ID, token: "tok" }, PK_ENV)).json();
+  assertEquals([off.pricing.creditFeeCents, off.pricing.bankFeeCents, off.pricing.cardForm], [0, 0, null]);
 });
 
-Deno.test("bank discount: bank checkout charges the LIVE balance minus the discount; card pays full", async () => {
+Deno.test("customer fees: bank checkout adds the fee as its own line on the LIVE balance", async () => {
   liveInvoice = { Id: "3815", TotalAmt: 568.72, Balance: 568.72, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
   const calls: StripeCall[] = [];
-  const fake = withQuote({ ...ACTIVE, enabled: true, bank_discount_pct: 2 }, { total: 568.72 });
-  const bank = await (await call(fake, "", { action: "payinSession", id: QUOTE_ID, token: "tok", method: "ach" }, undefined, calls)).json();
-  assertEquals([bank.amountCents, bank.discountCents], [55735, 1137]);
+  const bank = await (await call(withQuote(FEES_ON, { total: 568.72 }), "", { action: "payinSession", id: QUOTE_ID, token: "tok", method: "ach" }, PK_ENV, calls)).json();
+  assertEquals([bank.invoiceCents, bank.feeCents, bank.amountCents], [56872, 569, 57441]);
   const cs = calls.find((c) => c.path === "/v1/checkout/sessions")!;
-  assertEquals(cs.params.line_items[0].price_data.unit_amount, 55735);
-  assertEquals(cs.params.payment_intent_data.metadata.bank_discount_cents, "1137");
-  const card = await (await call(withQuote({ ...ACTIVE, enabled: true, bank_discount_pct: 2 }, { total: 568.72 }), "", { action: "payinSession", id: QUOTE_ID, token: "tok", method: "card" })).json();
-  assertEquals([card.amountCents, card.discountCents], [56872, 0]);
+  assertEquals(cs.params.line_items.map((l: Any) => l.price_data.unit_amount), [56872, 569]);
+  assertEquals(cs.params.payment_intent_data.metadata.customer_fee_cents, "569");
+});
+
+function cardSetup(funding: string, piResult: Any = { id: "pi_9", status: "succeeded", amount: 58572 }) {
+  liveInvoice = { Id: "3815", TotalAmt: 568.72, Balance: 568.72, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  getImpl = (path) => path.startsWith("/v1/confirmation_tokens/")
+    ? Promise.resolve({ id: "ctoken_1", payment_method_preview: { type: "card", card: { funding, brand: "visa", last4: "4242" } } })
+    : undefined;
+  postImpl = (path) => path === "/v1/payment_intents"
+    ? (typeof piResult === "function" ? piResult() : Promise.resolve(piResult))
+    : Promise.resolve({});
+}
+const cardReq = (extra: Record<string, unknown> = {}) => ({ id: QUOTE_ID, token: "tok", confirmationToken: "ctoken_1", ...extra });
+
+Deno.test("card: a credit card is quoted the 2.99% surcharge BEFORE anything is charged", async () => {
+  cardSetup("credit");
+  const calls: StripeCall[] = [];
+  const j = await (await call(withQuote(FEES_ON, { total: 568.72 }), "", { action: "cardQuote", ...cardReq() }, PK_ENV, calls)).json();
+  assertEquals([j.invoiceCents, j.surchargeCents, j.totalCents, j.funding], [56872, 1700, 58572, "credit"]);
+  assertEquals(calls.filter((c) => c.method === "POST").length, 0);
+  assertEquals(calls.find((c) => c.path.startsWith("/v1/confirmation_tokens/"))!.opts.account, "acct_1");
+  getImpl = null; postImpl = null;
+});
+
+Deno.test("card: debit pays no surcharge", async () => {
+  cardSetup("debit");
+  const j = await (await call(withQuote(FEES_ON, { total: 568.72 }), "", { action: "cardQuote", ...cardReq() }, PK_ENV)).json();
+  assertEquals([j.surchargeCents, j.totalCents], [0, 56872]);
+  getImpl = null; postImpl = null;
+});
+
+Deno.test("card: pays the agreed total as a Stripe surcharge on the shop's account", async () => {
+  cardSetup("credit");
+  const calls: StripeCall[] = [];
+  const j = await (await call(withQuote(FEES_ON, { total: 568.72 }), "", { action: "cardPay", ...cardReq({ expectTotalCents: 58572 }) }, PK_ENV, calls)).json();
+  assertEquals([j.state, j.amountCents, j.surchargeCents], ["paid", 58572, 1700]);
+  const pi = calls.find((c) => c.path === "/v1/payment_intents")!;
+  assertEquals(pi.opts.account, "acct_1");
+  assertEquals(pi.opts.version, "2026-03-25.preview");
+  assertEquals(pi.params.amount, 58572);
+  assertEquals(pi.params.amount_details, { surcharge: { amount: 1700, enforce_validation: "enabled" } });
+  assertEquals(pi.params.metadata.customer_fee_cents, "1700");
+  getImpl = null; postImpl = null;
+});
+
+Deno.test("card: if the amount changed since the customer looked, nothing is charged", async () => {
+  cardSetup("credit");
+  const calls: StripeCall[] = [];
+  const j = await (await call(withQuote(FEES_ON, { total: 568.72 }), "", { action: "cardPay", ...cardReq({ expectTotalCents: 56872 }) }, PK_ENV, calls)).json();
+  assertEquals([j.changed, j.totalCents], [true, 58572]);
+  assertEquals(calls.filter((c) => c.method === "POST").length, 0);
+  getImpl = null; postImpl = null;
+});
+
+Deno.test("card: declined → the bank's words, no crash; 3-D Secure → client secret for the page", async () => {
+  cardSetup("credit", () => Promise.reject(Object.assign(new Error("Stripe POST /v1/payment_intents → 402: Your card was declined."), { status: 402 })));
+  const d = await (await call(withQuote(FEES_ON, { total: 568.72 }), "", { action: "cardPay", ...cardReq({ expectTotalCents: 58572 }) }, PK_ENV)).json();
+  assertEquals([d.declined, d.message], [true, "Your card was declined."]);
+  cardSetup("credit", { id: "pi_3ds", status: "requires_action", client_secret: "pi_3ds_secret_x", amount: 58572 });
+  const a = await (await call(withQuote(FEES_ON, { total: 568.72 }), "", { action: "cardPay", ...cardReq({ expectTotalCents: 58572 }) }, PK_ENV)).json();
+  assertEquals([a.requiresAction, a.clientSecret], [true, "pi_3ds_secret_x"]);
+  getImpl = null; postImpl = null;
+});
+
+Deno.test("card: Stripe refuses the surcharge → charged WITHOUT it (never more than agreed)", async () => {
+  let n = 0;
+  cardSetup("credit", () => (n++ === 0
+    ? Promise.reject(Object.assign(new Error("Stripe POST /v1/payment_intents → 400: surcharge is not available"), { status: 400 }))
+    : Promise.resolve({ id: "pi_2", status: "succeeded", amount: 56872 })));
+  const calls: StripeCall[] = [];
+  const j = await (await call(withQuote(FEES_ON, { total: 568.72 }), "", { action: "cardPay", ...cardReq({ expectTotalCents: 58572 }) }, PK_ENV, calls)).json();
+  assertEquals([j.state, j.amountCents, j.surchargeCents], ["paid", 56872, 0]);
+  const second = calls.filter((c) => c.path === "/v1/payment_intents")[1];
+  assertEquals(second.params.amount, 56872);
+  assertEquals(second.params.amount_details, undefined);
+  getImpl = null; postImpl = null;
+});
+
+Deno.test("card: no card form for this shop (fees off) → refused, nothing charged", async () => {
+  cardSetup("credit");
+  const calls: StripeCall[] = [];
+  const j = await (await call(withQuote({ ...ACTIVE, enabled: true }, { total: 568.72 }), "", { action: "cardPay", ...cardReq({ expectTotalCents: 56872 }) }, PK_ENV, calls)).json();
+  assertEquals(j.reason, "card_form_off");
+  assertEquals(calls.length, 0);
+  getImpl = null; postImpl = null;
+});
+
+Deno.test("paidStatus: a card PaymentIntent must belong to THIS document", async () => {
+  getImpl = (path) => path === "/v1/payment_intents/pi_9"
+    ? Promise.resolve({ id: "pi_9", status: "succeeded", metadata: { inktracker_quote_id: QUOTE_ID } })
+    : path === "/v1/payment_intents/pi_other"
+      ? Promise.resolve({ id: "pi_other", status: "succeeded", metadata: { inktracker_quote_id: "someone-else" } })
+      : undefined;
+  const ok = await (await call(withQuote(FEES_ON), "", { action: "paidStatus", id: QUOTE_ID, token: "tok", paymentIntentId: "pi_9" })).json();
+  assertEquals([ok.confirmed, ok.state], [true, "paid"]);
+  const other = await (await call(withQuote(FEES_ON), "", { action: "paidStatus", id: QUOTE_ID, token: "tok", paymentIntentId: "pi_other" })).json();
+  assertEquals(other.confirmed, false);
+  getImpl = null;
 });

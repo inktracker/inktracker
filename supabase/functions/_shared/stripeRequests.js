@@ -7,7 +7,7 @@
 // and takes an application fee.
 
 import { payinIdempotencyKey, buildPayinMetadata } from "./payinPlan.js";
-import { platformFeeCents } from "./paymentsPricing.js";
+import { platformFeeCents, maxCustomerFeeCents } from "./paymentsPricing.js";
 
 /**
  * Only paying shops can sign up: payments are a paid-plan feature, and a
@@ -68,49 +68,54 @@ export function buildAccountLink(accountId, appUrl) {
   };
 }
 
-/**
- * POST /v1/checkout/sessions on the shop's account (Stripe-Account header):
- * one line for the LIVE QuickBooks balance, one payment method (card or
- * bank — each has its own fee), InkTracker's application fee, and our
- * metadata on the PaymentIntent (that's what webhooks carry back).
- * @returns {{ params: object, idempotencyKey: string, platformFeeCents: number }}
- */
-export function buildCheckoutSession({ doc, docType, target, method, discountCents = 0, shopName, customer = {}, payPageUrl, attempt = 0, nowMs = Date.now() }) {
+const docLabel = (doc, docType, target) => {
   const isInvoice = docType === "invoice";
   const docNumber = String((isInvoice ? doc?.invoice_id : doc?.quote_id) ?? "").slice(0, 40);
-  const what = target.kind === "deposit" ? `Deposit for ${docNumber}` : target.kind === "balance" ? `Balance due on ${docNumber}` : (isInvoice ? `Invoice ${docNumber}` : `Order ${docNumber}`);
-  // Bank-transfer discount: the customer pays the balance minus it.
-  const discount = Number.isInteger(discountCents) && discountCents > 0 && discountCents < target.amountCents ? discountCents : 0;
-  const chargeCents = target.amountCents - discount;
-  const fee = platformFeeCents(method, chargeCents);
+  return target.kind === "deposit" ? `Deposit for ${docNumber}` : target.kind === "balance" ? `Balance due on ${docNumber}` : (isInvoice ? `Invoice ${docNumber}` : `Order ${docNumber}`);
+};
+
+const validFee = (feeCents, target) =>
+  Number.isInteger(feeCents) && feeCents > 0 && feeCents <= maxCustomerFeeCents(target.amountCents) ? feeCents : 0;
+
+const validEmailOf = (customer) => {
+  const email = clean(customer?.email, 254);
+  return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
+};
+
+/**
+ * POST /v1/checkout/sessions on the shop's account (Stripe-Account header):
+ * one line for the LIVE QuickBooks balance (plus a line for the shop's fee
+ * when the customer pays one), one payment method, InkTracker's application
+ * fee, and our metadata on the PaymentIntent (that's what webhooks carry
+ * back). Card payments with a surcharge don't come here — the fee depends on
+ * the card, so they use buildCardPaymentIntent.
+ * @returns {{ params: object, idempotencyKey: string, platformFeeCents: number, chargeCents: number }}
+ */
+export function buildCheckoutSession({ doc, docType, target, method, feeCents = 0, shopName, customer = {}, payPageUrl, attempt = 0, nowMs = Date.now() }) {
+  const what = docLabel(doc, docType, target);
+  const fee = validFee(feeCents, target);
+  const chargeCents = target.amountCents + fee;
+  const appFee = platformFeeCents(method, chargeCents);
   const { key, expiresAt } = payinIdempotencyKey({ quoteId: doc?.id, qbInvoiceId: target.qbInvoiceId, amountCents: chargeCents, method, attempt, nowMs });
   const metadata = {
     ...buildPayinMetadata({ quote: doc, target, docType }),
-    ...(discount ? { bank_discount_cents: String(discount) } : {}),
+    ...(fee ? { customer_fee_cents: String(fee) } : {}),
   };
-  const money = (c) => `$${(c / 100).toFixed(2)}`;
-  const email = clean(customer.email, 254);
-  const validEmail = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
+  const validEmail = validEmailOf(customer);
   const back = String(payPageUrl);
   const join = back.includes("?") ? "&" : "?";
+  const line = (name, cents) => ({ quantity: 1, price_data: { currency: "usd", unit_amount: cents, product_data: { name } } });
   const params = dropUndefined({
     mode: "payment",
-    line_items: [{
-      quantity: 1,
-      price_data: {
-        currency: "usd",
-        unit_amount: chargeCents,
-        product_data: {
-          name: `${what}${shopName ? ` · ${String(shopName).slice(0, 60)}` : ""}`,
-          // Shown under the line on Stripe's page and receipt.
-          ...(discount ? { description: `Invoice ${money(target.amountCents)} − bank transfer discount ${money(discount)}` } : {}),
-        },
-      },
-    }],
+    line_items: [
+      line(`${what}${shopName ? ` · ${String(shopName).slice(0, 60)}` : ""}`, target.amountCents),
+      // Its own line on Stripe's page and receipt.
+      ...(fee ? [line(method === "ach" ? "Bank payment fee" : "Card processing fee", fee)] : []),
+    ],
     payment_method_types: [method === "ach" ? "us_bank_account" : "card"],
     ...(method === "ach" ? { payment_method_options: { us_bank_account: { verification_method: "automatic" } } } : {}),
     payment_intent_data: {
-      ...(fee > 0 ? { application_fee_amount: fee } : {}),
+      ...(appFee > 0 ? { application_fee_amount: appFee } : {}),
       description: what,
       metadata,
       // A new Stripe account doesn't email receipts by default; asking for
@@ -125,7 +130,47 @@ export function buildCheckoutSession({ doc, docType, target, method, discountCen
     cancel_url: back,
     expires_at: expiresAt,
   });
-  return { params, idempotencyKey: key, platformFeeCents: fee };
+  return { params, idempotencyKey: key, platformFeeCents: appFee, chargeCents };
+}
+
+/**
+ * POST /v1/payment_intents on the shop's account for a CARD payment entered
+ * on InkTracker's own pay page (Stripe's card form, ConfirmationToken). The
+ * surcharge is known only once the card is (credit vs debit), so the
+ * customer sees it and clicks Pay before this is sent. Sent with
+ * STRIPE_SURCHARGE_API_VERSION when there's a surcharge: Stripe records it
+ * as the surcharge (its own line on the receipt) and refuses one the card
+ * can't carry.
+ * @returns {{ params: object, idempotencyKey: string, platformFeeCents: number, chargeCents: number }}
+ */
+export function buildCardPaymentIntent({ doc, docType, target, confirmationToken, surchargeCents = 0, customer = {}, payPageUrl }) {
+  const what = docLabel(doc, docType, target);
+  const fee = validFee(surchargeCents, target);
+  const chargeCents = target.amountCents + fee;
+  const appFee = platformFeeCents("card", chargeCents);
+  const metadata = {
+    ...buildPayinMetadata({ quote: doc, target, docType }),
+    ...(fee ? { customer_fee_cents: String(fee) } : {}),
+  };
+  const back = String(payPageUrl);
+  const join = back.includes("?") ? "&" : "?";
+  const params = dropUndefined({
+    amount: chargeCents,
+    currency: "usd",
+    confirm: true,
+    confirmation_token: String(confirmationToken),
+    payment_method_types: ["card"],
+    ...(appFee > 0 ? { application_fee_amount: appFee } : {}),
+    ...(fee ? { amount_details: { surcharge: { amount: fee, enforce_validation: "enabled" } } } : {}),
+    description: what,
+    metadata,
+    receipt_email: validEmailOf(customer),
+    // Where the bank's card check (3-D Secure) sends the customer back;
+    // Stripe adds ?payment_intent=pi_… and the page confirms it (paidStatus).
+    return_url: `${back}${join}paid=card`,
+  });
+  // One PaymentIntent per card entry: the same token can't pay twice.
+  return { params, idempotencyKey: `it-card:${String(confirmationToken)}:${chargeCents}`, platformFeeCents: appFee, chargeCents };
 }
 
 /**

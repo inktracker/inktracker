@@ -60,7 +60,14 @@ export default function PaymentsSection() {
   const [accounts, setAccounts] = useState(null);
   const [bankId, setBankId] = useState("");
   const [feeId, setFeeId] = useState("");
-  const [discountPct, setDiscountPct] = useState("");
+  const [feesOn, setFeesOn] = useState(false);
+  const [bankFeePct, setBankFeePct] = useState("1");
+  const [feesAck, setFeesAck] = useState(false);
+  const syncFees = (d) => {
+    setFeesOn(Boolean(d?.customerFees?.enabled));
+    setBankFeePct(String(d?.customerFees?.bankFeeSetting ?? 1));
+    setFeesAck(false);
+  };
 
   const apply = useCallback((d) => {
     setState(d);
@@ -76,7 +83,7 @@ export default function PaymentsSection() {
         : (back.error && notify.error("Stripe account not connected", back.error), call("status")))
       : call(back ? "refreshStatus" : "status");
     first
-      .then((d) => { if (alive) { setState(d); setBankId(d.qbBankAccountId || ""); setFeeId(d.qbFeeAccountId || ""); setDiscountPct(d.bankDiscountPct ? String(d.bankDiscountPct) : "0"); } })
+      .then((d) => { if (alive) { setState(d); setBankId(d.qbBankAccountId || ""); setFeeId(d.qbFeeAccountId || ""); syncFees(d); } })
       .catch(() => { if (alive) setState(null); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -269,21 +276,42 @@ export default function PaymentsSection() {
                         : "When this is on, quote and invoice emails link to InkTracker's payment page (Stripe checkout) instead of QuickBooks."}
                     </div>
                     {state.canToggle && (
-                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-1.5 max-w-xl">
-                        <label className="flex items-center gap-2 flex-wrap" htmlFor="payments-bank-discount">
-                          <span className="font-semibold text-slate-700">Bank transfer discount</span>
-                          <input id="payments-bank-discount" type="number" min="0" max="5" step="0.25" inputMode="decimal"
-                            className="w-20 text-sm border border-slate-200 rounded-lg px-2 py-1 bg-white"
-                            value={discountPct} onChange={(e) => setDiscountPct(e.target.value)} />
-                          <span>%</span>
-                          <button className={ghost} disabled={!!busy || Number(discountPct) === Number(state.bankDiscountPct || 0)}
-                            onClick={() => run("setBankDiscount", { pct: Number(discountPct) || 0 }, (d) => { apply(d); notify.success(Number(discountPct) > 0 ? `Bank payers now save ${Number(discountPct)}%` : "Bank transfer discount off"); })}>
-                            {busy === "setBankDiscount" ? "Saving…" : "Save"}
-                          </button>
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2 max-w-xl">
+                        <label className="flex items-center gap-2 font-semibold text-slate-700">
+                          <input type="checkbox" checked={feesOn} onChange={(e) => { setFeesOn(e.target.checked); setFeesAck(false); }} />
+                          Customers pay the processing fee
                         </label>
                         <div>
-                          Your quote and invoice price is the card price. Customers who pay by bank transfer get this much off, shown on the email, the pay page and Stripe's checkout. At 2% you keep the same amount either way: a card costs you 2.99%, a bank payment 1% plus the 2% off. 0 turns it off.
+                          Quotes and invoices show your price with a note about the fee. On the pay page the customer sees the exact fee before paying: {state.pricing?.card || "2.99%"} on credit cards (none on debit cards, by card network rules) and your bank fee below. QuickBooks still records the invoice amount; the fees customers pay are booked on the payout deposit.
                         </div>
+                        {feesOn && (
+                          <label className="flex items-center gap-2 flex-wrap" htmlFor="payments-bank-fee">
+                            <span className="text-slate-700">Bank transfer fee</span>
+                            <input id="payments-bank-fee" type="number" min="0" max="1" step="0.25" inputMode="decimal"
+                              className="w-20 text-sm border border-slate-200 rounded-lg px-2 py-1 bg-white"
+                              value={bankFeePct} onChange={(e) => setBankFeePct(e.target.value)} />
+                            <span>% (0 to 1; a bank payment costs you 1%)</span>
+                          </label>
+                        )}
+                        {feesOn && !state.customerFees?.enabled && (
+                          <label className="flex items-start gap-2">
+                            <input type="checkbox" className="mt-0.5" checked={feesAck} onChange={(e) => setFeesAck(e.target.checked)} />
+                            <span>
+                              Card surcharges are allowed where my business operates, and I've given any notice the card networks require (Visa asks merchants to tell their processor before they start). A few states ban or cap surcharges; check yours if you're not sure.
+                            </span>
+                          </label>
+                        )}
+                        {feesOn && state.cardSurchargeReady === false && (
+                          <div className="text-slate-500">The card fee isn't available yet. Until it is, only the bank fee applies.</div>
+                        )}
+                        <button className={ghost}
+                          disabled={!!busy
+                            || (feesOn && !state.customerFees?.enabled && !feesAck)
+                            || (feesOn === Boolean(state.customerFees?.enabled) && Number(bankFeePct) === Number(state.customerFees?.bankFeeSetting ?? 1))}
+                          onClick={() => run("setCustomerFees", { enabled: feesOn, bankFeePct: Number(bankFeePct), acknowledged: feesAck },
+                            (d) => { apply(d); syncFees(d); notify.success(feesOn ? "Customers now pay the processing fee" : "Processing fee off: you pay it"); })}>
+                          {busy === "setCustomerFees" ? "Saving…" : "Save"}
+                        </button>
                       </div>
                     )}
                     {state.canToggle ? (
