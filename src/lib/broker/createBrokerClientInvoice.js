@@ -93,6 +93,18 @@ export async function createBrokerClientInvoice({ base44, quote, session }) {
         customer_email: clientEmail,
       },
       invoicePayload,
+      // The broker's own client tax is ALWAYS authoritative here: the shop
+      // never taxes the broker, and the broker types the exact rate he charges
+      // his client (broker_tax_rate → clientFacing.tax_rate → invoicePayload.
+      // taxPercent). Push it in "self" mode so it lands correctly even on a
+      // FREE / non-AST QuickBooks — the Truman case: QB's Automated Sales Tax
+      // returns $0 there, so planSelfTax falls back to pushing the exact tax as
+      // its own line and the invoice TOTAL still matches (reconcile passes). On
+      // an AST broker QB with a matching rate it records PROPER tracked tax
+      // instead. A 0% rate makes couldSelf false in qbSync → unchanged (no
+      // tax). See project_inktracker_qb_tax_mode + _shared/qbTaxPlan.js.
+      taxMode: "self",
+      taxAmount: Number(clientFacing.tax) || 0,
       // End client as the customer — NO id / qb_customer_id, so qbSync dedups
       // fresh in the BROKER's realm and never caches a broker-realm QB id onto
       // a shared customers row.
