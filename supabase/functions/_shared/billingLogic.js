@@ -210,12 +210,23 @@ export function trialPeriodDaysForCheckout(profile, now = Date.now()) {
 // shop owner's for a team member (the SQL resolves inheritance before calling
 // this logic). Admin/broker bypass is handled by the caller, not here.
 //
+// Stripe statuses that are TERMINALLY lapsed — hard write-block, no grace.
+// `canceled` alone was the original set; Stripe's dunning escalates
+// past_due → `unpaid`, and a never-completed checkout decays
+// incomplete → `incomplete_expired` — both previously fell through every
+// gate's past_due/canceled checks and RESTORED full write access to a
+// non-payer (audit 2026-09-30, latent fail-open). `paused` (trial ended
+// without a payment method, collection paused) is lapsed for the same
+// reason. Mirrored in src/lib/billing.js, subscriptionGuard.ts, and the
+// SQL has_active_subscription() — keep all four in lockstep.
+export const LAPSED_SUB_STATUSES = Object.freeze(["canceled", "unpaid", "incomplete_expired", "paused"]);
+
 // Returns true when writes should be BLOCKED (clearly lapsed).
 export function subscriptionBlocksWrites(gov = {}, now = Date.now()) {
   const tier = gov?.tier ?? gov?.subscription_tier ?? null;
   const status = gov?.status ?? gov?.subscription_status ?? null;
   const trial = gov?.trialEndsAt ?? gov?.trial_ends_at ?? null;
-  if (tier === "expired" || tier === "incomplete" || status === "canceled") return true;
+  if (tier === "expired" || tier === "incomplete" || LAPSED_SUB_STATUSES.includes(status)) return true;
   if (tier === "trial" && trial) {
     const endsAt = new Date(trial).getTime();
     if (Number.isFinite(endsAt) && endsAt < now) return true;

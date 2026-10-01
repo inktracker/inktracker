@@ -63,8 +63,13 @@ export function requireActiveSubscription(profile: Profile | null): Response | n
   const tier = profile.subscription_tier || "";
   const status = profile.subscription_status || "";
 
-  // Expired or canceled — always blocked
-  if (tier === "expired" || status === "canceled") {
+  // Expired or terminally lapsed — always blocked. Beyond `canceled`:
+  // Stripe dunning escalates past_due → `unpaid` (and incomplete →
+  // `incomplete_expired`, trial-without-card → `paused`); without these the
+  // "any truthy tier" allow below RESTORED write access to a non-payer the
+  // moment dunning gave up (audit 2026-09-30). Lockstep with
+  // billingLogic.LAPSED_SUB_STATUSES / src/lib/billing.js / SQL gate.
+  if (tier === "expired" || ["canceled", "unpaid", "incomplete_expired", "paused"].includes(status)) {
     return new Response(
       JSON.stringify({ error: "Your subscription has expired. Please renew to continue." }),
       { status: 403, headers: { ...CORS, "Content-Type": "application/json" } },

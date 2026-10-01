@@ -510,6 +510,11 @@ describe("subscriptionBlocksWrites", () => {
     expect(subscriptionBlocksWrites({ tier: "expired" }, NOW)).toBe(true);
     expect(subscriptionBlocksWrites({ tier: "incomplete" }, NOW)).toBe(true);
     expect(subscriptionBlocksWrites({ status: "canceled" }, NOW)).toBe(true);
+    // BILL-04 terminal statuses — hard block, no grace (unpaid is the
+    // dunning-escalation fail-open case).
+    expect(subscriptionBlocksWrites({ status: "unpaid" }, NOW)).toBe(true);
+    expect(subscriptionBlocksWrites({ status: "incomplete_expired" }, NOW)).toBe(true);
+    expect(subscriptionBlocksWrites({ status: "paused" }, NOW)).toBe(true);
     expect(subscriptionBlocksWrites({ tier: "trial", trialEndsAt: daysFromNow(-1) }, NOW)).toBe(true);
   });
 
