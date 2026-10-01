@@ -329,10 +329,10 @@ export async function sendApprovalNotification({ to, subject, html, reply_to }, 
 /**
  * @typedef {Object} NotificationLogContext
  * @property {string} shop_owner       Required. Tenant scope.
- * @property {'quote_approval'|'artwork_approval'|'quote_payment'|'quote_send'|'reply'|'payment_confirmation'|'trial_reminder'|'signup_notify'|'welcome_email'|'drip_day2'|'status_update'|'art_proof_sent'|'art_proof_reminder'|'artwork_changes_requested'|'deposit_payment'|'winback'|'cancellation_scheduled'} event_type
+ * @property {'quote_approval'|'artwork_approval'|'quote_payment'|'quote_send'|'reply'|'payment_confirmation'|'trial_reminder'|'signup_notify'|'welcome_email'|'drip_day2'|'status_update'|'art_proof_sent'|'art_proof_reminder'|'artwork_changes_requested'|'deposit_payment'|'winback'|'cancellation_scheduled'|'operator_alert'} event_type
  *   Mirror of the notification_log_event_type_check constraint
  *   (20260825000000, extended by 20260905000000, 20260909000000, and
- *   20260901150000 status_update; 20261121000000 art proofs + deposit_payment + winback) — keep the two lists in lockstep.
+ *   20260901150000 status_update; 20261121000000 art proofs + deposit_payment + winback; 20261121000000_operator_alert operator_alert) — keep the two lists in lockstep.
  * @property {string} recipient_email
  * @property {string|null} [recipient_role]  'shop_owner' | 'broker' | 'customer'
  * @property {string|null} [quote_id]       quotes.id UUID (NOT the human "Q-####")

@@ -18,6 +18,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { timingSafeEqual } from "../_shared/qbWebhookSignature.js";
 import { extractConnectionStatus } from "../_shared/connectionLogic.js";
+import { sendResendEmail } from "../_shared/resendClient.js";
+import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 import {
   summarizeHealth,
   buildHealthSubject,
@@ -329,13 +331,23 @@ Deno.serve(async (req) => {
   let emailSent = false;
   if (RESEND_API_KEY && ADMIN_EMAIL) {
     try {
-      const r = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: `InkTracker <${FROM_EMAIL}>`, to: [ADMIN_EMAIL], subject, html, text }),
-        signal: AbortSignal.timeout(15_000),
-      });
+      // Shared transport: retries 429/5xx/network with backoff — a single
+      // Resend 429 (the ~2req/s account limit, shared with every shop's
+      // quote sends) used to silently eat the only copy of the digest. The
+      // notification_log row makes a failed digest visible to
+      // probeEmailFailures instead of the monitor being blind to its own
+      // channel (audit 2026-09-30).
+      const r = await sendResendEmail({ from: `InkTracker <${FROM_EMAIL}>`, to: [ADMIN_EMAIL], subject, html, text });
       emailSent = r.ok;
+      await logNotificationAttempt(admin, {
+        shop_owner: "__system__",
+        event_type: "operator_alert",
+        recipient_email: ADMIN_EMAIL,
+        subject,
+        status: r.ok ? "sent" : "failed",
+        failure_reason: r.ok ? null : (r.reason || `resend_${r.status}`),
+        resend_id: r.id ?? null,
+      });
     } catch { /* swallow — digest is best-effort */ }
   }
 
@@ -352,6 +364,10 @@ Deno.serve(async (req) => {
 
   const payload = { ok: summary.overall !== DOWN, overall: summary.overall, okCount: summary.okCount, total: summary.total, emailSent, subject };
   // 503 on critical-down makes the GitHub workflow go red → operator emailed
-  // via a channel independent of Resend.
-  return Response.json(payload, { status: summary.overall === DOWN ? 503 : 200 });
+  // via a channel independent of Resend. ALSO 503 when the morning is NOT ok
+  // and the digest email itself failed to send: in that state the digest was
+  // the only channel carrying the warning, so losing it must turn the
+  // workflow red rather than reporting a green run over a swallowed alert.
+  const digestLost = summary.overall !== "ok" && !emailSent;
+  return Response.json(payload, { status: summary.overall === DOWN || digestLost ? 503 : 200 });
 });
