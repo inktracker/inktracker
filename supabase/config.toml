@@ -132,3 +132,9 @@ verify_jwt = false
 
 [functions.artProof]
 verify_jwt = false
+
+[functions.stripePayments]
+verify_jwt = false
+
+[functions.stripeConnectWebhook]
+verify_jwt = false

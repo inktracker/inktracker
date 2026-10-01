@@ -22,6 +22,7 @@ import { toCustomerFacingQuote, isBrokerQuote } from "@/lib/quotes/customerFacin
 import { useBillingGate } from "@/lib/billing-gate";
 import { DEPOSITS_ENABLED, depositAmountFor } from "@/lib/deposits";
 import { qbTaxHoldState } from "@/lib/quotes/qbTaxHold";
+import { usePaymentRail, fetchPaymentStatus, railForDocument } from "@/lib/payment/usePaymentRail";
 
 // Saved totals win over live recompute — keeps the email's number
 // pinned to what the editor stamped on the row, so the customer
@@ -106,6 +107,14 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // working unchanged. Re-introducing Stripe is a UI-only change (the
   // edge functions stay).
   const paymentProvider = "qb";
+  // Which way the customer pays: the QuickBooks link ("qb", default) or
+  // InkTracker's own payment page ("processor"). The status call gives the
+  // starting value; a qbSync response (which re-reads it server-side) wins.
+  const { status: payStatus } = usePaymentRail();
+  const statusRail = payStatus ? railForDocument(payStatus, quote) : null;
+  const [railFromSync, setRailFromSync] = useState(null);
+  const paymentRail = railFromSync || statusRail || "qb";
+  const onlinePay = paymentRail === "processor";
   const [qbConnected, setQbConnected] = useState(false);
   const [qbInvoiceId, setQbInvoiceId] = useState(quote.qb_invoice_id ?? null);
   const [qbDocNumber, setQbDocNumber] = useState(quote.qb_doc_number ?? null);
@@ -173,8 +182,8 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // blocks Send. In deposit mode the DEPOSIT invoice/link are the
   // documents that gate the send — same state machine, deposit inputs.
   const qbState = depositMode
-    ? deriveQbSendState({ qbInvoiceId: qbDepositInvoiceId, qbPaymentLink: qbDepositLink })
-    : deriveQbSendState({ qbInvoiceId, qbPaymentLink });
+    ? deriveQbSendState({ qbInvoiceId: qbDepositInvoiceId, qbPaymentLink: qbDepositLink, paymentRail })
+    : deriveQbSendState({ qbInvoiceId, qbPaymentLink, paymentRail });
   // Quote edited AFTER the QB invoice was cut → the pay-now link charges the
   // OLD amount. qb_total mirrors the QB invoice (qbSync + QB webhook), so a
   // total mismatch is the money-correct staleness signal (predicate tested
@@ -352,8 +361,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         }
         setQbDepositInvoiceId(depData?.qbDepositInvoiceId || null);
         setQbDepositLink(depData?.depositPaymentLink || null);
-        autoSendAfter = Boolean(depData?.qbDepositInvoiceId && depData?.depositPaymentLink);
-        if (!depData?.depositPaymentLink && depData?.linkFailureReason) {
+        const depOnlinePay = depData?.paymentRail === "processor";
+        if (depData?.paymentRail) setRailFromSync(depData.paymentRail);
+        // Processor rail: no QB link by design — the deposit invoice is enough.
+        autoSendAfter = Boolean(depData?.qbDepositInvoiceId && (depData?.depositPaymentLink || depOnlinePay));
+        if (!depData?.depositPaymentLink && depData?.linkFailureReason && !depOnlinePay) {
           autoSendAfter = false;
           if (depData.linkFailureReason === "no_link_after_retry") {
             setQbError(
@@ -455,6 +467,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       setQbInvoiceId(data.qbInvoiceId);
       setQbDocNumber(data.qbDocNumber || null);
       setQbPaymentLink(data.paymentLink || null);
+      if (data.paymentRail) setRailFromSync(data.paymentRail);
       // Clean success — fire the InkTracker quote send in the finally
       // block. Any of the four guards below will flip this off if we
       // hit a state where the operator should review before sending.
@@ -576,7 +589,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // into a human-readable error. Without a payment link the modal
       // falls through to `send_failed`/`needs_create`; this string
       // shows up under either banner.
-      if (!data.paymentLink && data.linkFailureReason) {
+      if (!data.paymentLink && data.linkFailureReason && data.linkFailureReason !== "processor_mode") {
         autoSendAfter = false;
         // no_bill_email is covered by the send_failed banner (which detects the
         // missing email directly), so only the QB-Payments case needs a toast.
@@ -677,6 +690,21 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         `${fmtMoney(taxHold.quotedTax)}. Click "Use QuickBooks' tax" below, or fix the tax rate and retry, before sending.`,
       );
       return;
+    }
+    // This tab's payment status can be hours old. If the shop is back on
+    // QuickBooks (switched off, account on hold), a quote sent now would
+    // have no way to pay — the QuickBooks link was never made. Re-check and
+    // route the shop to the "get payment link" retry instead.
+    if (onlinePay && !isBrokerQuote(quote)) {
+      const fresh = await fetchPaymentStatus({ fresh: true });
+      if (!fresh.unavailable && railForDocument(fresh, quote) !== "processor") {
+        setRailFromSync("qb");
+        const hasLink = depositMode ? Boolean(qbDepositLink) : Boolean(qbPaymentLink);
+        if (!hasLink) {
+          setError("Payments are back on QuickBooks for your shop. Click the retry button below to add a QuickBooks pay link, then send.");
+          return;
+        }
+      }
     }
     setSending(true);
 
@@ -781,7 +809,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         taggedSubject,
         body,
         paymentLink,
-        ...(depositMode && qbDepositLink ? { buttonLabel: "View Quote & Pay Deposit" } : {}),
+        ...(depositMode && (qbDepositLink || (onlinePay && qbDepositInvoiceId)) ? { buttonLabel: "View Quote & Pay Deposit" } : {}),
         // Pass the customer-facing brand name (broker for broker quotes,
         // shop for direct quotes) — this is what renders in the email
         // header. The edge function also derives a fromHeader from
@@ -874,7 +902,8 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
            <QuoteSentConfirmation
              recipients={recipientEmails}
              quoteId={quote.quote_id}
-             paymentLinkIncluded={!!qbPaymentLink}
+             paymentLinkIncluded={!!qbPaymentLink || (onlinePay && Boolean(depositMode ? qbDepositInvoiceId : qbInvoiceId))}
+             onlinePay={onlinePay}
              onClose={onClose}
            />
          ) : (
@@ -1006,8 +1035,12 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                     <span className="text-xs text-emerald-700 leading-relaxed">
                       {depositMode
-                        ? `QB deposit invoice ready (${fmtMoney(depositDollars)}) — its pay-deposit link is included in the quote email InkTracker sends. The full invoice is created when you invoice the finished job.`
-                        : `QB invoice ${qbDocNumber || `#${qbInvoiceId}`} ready — its pay-now link is included in the quote email InkTracker sends. QuickBooks doesn't send a separate email.`}
+                        ? (onlinePay
+                          ? `QB deposit invoice ready (${fmtMoney(depositDollars)}). Your customer pays the deposit on InkTracker from the quote email, and it's recorded in QuickBooks for you. The full invoice is created when you invoice the finished job.`
+                          : `QB deposit invoice ready (${fmtMoney(depositDollars)}) — its pay-deposit link is included in the quote email InkTracker sends. The full invoice is created when you invoice the finished job.`)
+                        : (onlinePay
+                          ? `QB invoice ${qbDocNumber || `#${qbInvoiceId}`} ready. Your customer pays on InkTracker from the quote email, and the payment is recorded in QuickBooks for you.`
+                          : `QB invoice ${qbDocNumber || `#${qbInvoiceId}`} ready — its pay-now link is included in the quote email InkTracker sends. QuickBooks doesn't send a separate email.`)}
                     </span>
                   </div>
                 )}
@@ -1195,8 +1228,9 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
             <h3 className="text-base font-bold text-slate-900 mb-2">Send this quote?</h3>
             <p className="text-sm text-slate-600 leading-relaxed">
               About to email <span className="font-semibold">{recipientEmails.join(", ")}</span>
-              {depositMode && qbDepositLink
+              {depositMode && (qbDepositLink || (onlinePay && qbDepositInvoiceId))
                 ? ` with the pay-deposit link (${fmtMoney(depositDollars)}).`
+                : onlinePay && qbInvoiceId ? " with a link to pay online."
                 : qbPaymentLink ? " with the QuickBooks payment link." : " with the quote details (no pay-now link)."}
             </p>
             <div className="mt-5 flex gap-2">

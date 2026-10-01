@@ -78,6 +78,7 @@ const Dashboard = lazyWithRetry(() => import('./pages/Dashboard'));
 const Embed = lazyWithRetry(() => import('./pages/Embed'));
 const Inventory = lazyWithRetry(() => import('./pages/Inventory'));
 const QuotePayment = lazyWithRetry(() => import('./pages/QuotePayment'));
+const InvoicePayment = lazyWithRetry(() => import('./pages/InvoicePayment'));
 const QuotePaymentCancel = lazyWithRetry(() => import('./pages/QuotePaymentCancel'));
 const QuotePaymentSuccess = lazyWithRetry(() => import('./pages/QuotePaymentSuccess'));
 const QuoteRequest = lazyWithRetry(() => import('./pages/QuoteRequest'));
@@ -115,6 +116,7 @@ export const PAGES = {
     "Invoices": InvoicesRoute,
     "Orders": OrdersRoute,
     "QuotePayment": QuotePayment,
+    "InvoicePayment": InvoicePayment,
     "QuotePaymentCancel": QuotePaymentCancel,
     "QuotePaymentSuccess": QuotePaymentSuccess,
     "QuoteRequest": QuoteRequest,

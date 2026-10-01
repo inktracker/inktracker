@@ -10,7 +10,7 @@
  * Motion lives in index.css (.sent-*) so `prefers-reduced-motion` can switch
  * all of it off in one place while the words stay identical.
  */
-export default function QuoteSentConfirmation({ recipients = [], quoteId, onClose, paymentLinkIncluded = false }) {
+export default function QuoteSentConfirmation({ recipients = [], quoteId, onClose, paymentLinkIncluded = false, onlinePay = false }) {
   const list = recipients.filter(Boolean);
 
   return (
@@ -41,7 +41,7 @@ export default function QuoteSentConfirmation({ recipients = [], quoteId, onClos
         </div>
         <div className="sent-line sent-line-2 text-sm text-slate-500 mt-1.5">
           {list.length > 0 ? <>Sent to {list.join(", ")}</> : "Your customer has it."}
-          {paymentLinkIncluded && <span className="block text-emerald-600 mt-1">QB payment link included</span>}
+          {paymentLinkIncluded && <span className="block text-emerald-600 mt-1">{onlinePay ? "Pay-online link included" : "QB payment link included"}</span>}
           {quoteId ? <span className="block text-slate-400 mt-0.5">{quoteId}</span> : null}
         </div>
       </div>

@@ -96,6 +96,15 @@ import {
 } from "../_shared/qbLinkLogic.js";
 import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
 import {
+  RAIL,
+  PROCESSOR_LINK_REASON,
+  applyRailToInvoiceBody,
+  flagOn,
+  loadPaymentRailState,
+  stripeKeyMode,
+  restoreQbOnlinePayFields,
+} from "../_shared/paymentRail.js";
+import {
   chooseQuotePaymentRecipient,
   buildQuotePaymentEmail,
   sendAndLogApprovalNotification,
@@ -911,7 +920,10 @@ const extractPaymentLink = (invoiceData: any, _realmId?: string) => sharedExtrac
 
 // ── Action: createInvoice ───────────────────────────────────────────────────
 
-async function handleCreateInvoice(token: string, realmId: string, params: any, supabase: any) {
+// paymentRailArg: resolved by the router from the AUTHENTICATED shop (never
+// from the request body). "processor" = the shop collects through InkTracker
+// (Rainforest), so no QuickBooks pay link and online payment off in QB.
+async function handleCreateInvoice(token: string, realmId: string, params: any, supabase: any, paymentRailArg: string = RAIL.QB, restoreQbPay = false) {
   const { quote, invoicePayload } = params;
   // When true, suppress QBO's /send fallback so creating the invoice never
   // emails the customer (invoice/order flow — the shop sends via InkTracker).
@@ -1006,6 +1018,11 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       brokerBlocked: true,
     };
   }
+
+  // Broker invoices (either kind) always stay on the QuickBooks rail.
+  const paymentRail = (billBroker || brokerClientInvoice || quote.broker_id || quote.broker_email || sourceRow?.broker_id)
+    ? RAIL.QB
+    : paymentRailArg;
 
   let customer = params.customer;
   if (customer?.id) {
@@ -1447,6 +1464,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
           PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`
             + (quote.job_title ? ` · Job: ${quote.job_title}` : ""),
         };
+        // Processor-rail shops: explicitly turn QB online payment OFF (a
+        // sparse update would otherwise keep whatever the invoice had).
+        Object.assign(updateBody, applyRailToInvoiceBody({}, paymentRail));
+        // Back on QuickBooks after InkTracker payments: turn QB online
+        // payment back ON for an invoice InkTracker had turned off.
+        if (paymentRail === RAIL.QB && !billBroker && !brokerClientInvoice) {
+          Object.assign(updateBody, restoreQbOnlinePayFields(existingInv, restoreQbPay));
+        }
         if (billEmail) {
           updateBody.BillEmail = { Address: billEmail };
         }
@@ -1558,6 +1583,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         + (quote.job_title ? ` · Job: ${quote.job_title}` : ""),
     };
 
+    // The one exception to "never set AllowOnline*Payment": a shop that
+    // collects through InkTracker gets both OFF, so QuickBooks can't offer a
+    // second way to pay the same invoice.
+    Object.assign(invoiceBody, applyRailToInvoiceBody({}, paymentRail));
     if (billEmail) {
       invoiceBody.BillEmail = { Address: billEmail };
       invoiceBody.EmailStatus = "NeedToSend";
@@ -1771,6 +1800,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       `quoted tax $${reconciliation.sentTax.toFixed(2)} vs QB $${reconciliation.qbTax.toFixed(2)} ` +
       `(drift $${reconciliation.taxDrift.toFixed(2)}) — payment link NOT minted; customer send blocked.`,
     );
+  } else if (paymentRail === RAIL.PROCESSOR) {
+    // Customers pay on InkTracker's own page — no QuickBooks link, and no
+    // /send fallback email from QuickBooks either.
+    linkFailureReason = PROCESSOR_LINK_REASON;
   } else {
     const linkResult = await mintInvoicePaymentLink(token, realmId, qbInvoiceId, billEmail, initialInvoice, noEmail);
     paymentLink = linkResult.link;
@@ -1892,6 +1925,23 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         const lateLinked = paymentsLinkedToInvoice(payData?.QueryResponse?.Payment ?? [], depositInvoiceId);
         if (lateLinked.length > 0) {
           throw new Error(`deposit invoice ${depositInvoiceId} received a payment mid-settlement — retry the sync to settle it properly`);
+        }
+        // InkTracker payments: a bank payment for the deposit can be clearing
+        // (~4 business days) with nothing in QuickBooks yet. Voiding now would
+        // turn it into a stray credit and let the customer pay the full
+        // invoice on top. Wait for it to clear.
+        {
+          const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+          const { data: clearing, error: clearingErr } = await adminClient.from("processor_payments")
+            .select("processor_payin_id")
+            .eq("qb_invoice_id", String(depositInvoiceId))
+            .in("status", ["processing", "succeeded"])
+            .is("qb_payment_id", null)
+            .limit(1);
+          // Table missing (migration not applied yet) = no InkTracker payments.
+          if (!clearingErr && clearing?.length) {
+            throw new Error("The customer's deposit payment is still clearing (bank payments take about 4 business days). Create the final invoice once it clears, so the deposit is applied instead of voided.");
+          }
         }
         await qbVoidInvoice(token, realmId, depositInvoiceId, depInvoice.SyncToken);
         // Fresh row wins over the caller's snapshot (?? not ||): a stale
@@ -2028,7 +2078,11 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // A re-sync whose link mint transiently fails (or a held invoice that skips
   // minting) returns paymentLink=null — writing that would WIPE a previously
   // good link and break "Approve & Pay". Omit the field to keep the existing link.
-  const linkField = paymentLink ? { qb_payment_link: paymentLink } : {};
+  // Processor-rail shops: CLEAR any link minted before the shop switched, so
+  // nothing routes a customer to QuickBooks checkout for this invoice.
+  const linkField = paymentRail === RAIL.PROCESSOR
+    ? { qb_payment_link: null }
+    : paymentLink ? { qb_payment_link: paymentLink } : {};
 
   // Deposit-settlement write-back: once the deposit invoice is settled
   // (moved+voided / voided-unpaid / already gone), the local pointers to it
@@ -2209,7 +2263,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     //                          after retries + 2 refetches. The most likely
     //                          cause is QB Payments isn't activated on the
     //                          shop's QuickBooks account.
+    //   "processor_mode"     → deliberate: the shop collects through
+    //                          InkTracker (paymentRail "processor").
     linkFailureReason,
+    paymentRail,
     // True when the deposit-against-invoice payment record failed in QB.
     // The invoice was created successfully; the operator needs to record
     // the deposit manually in QuickBooks → Receive Payment. A shop
@@ -2251,7 +2308,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
 // re-minted if missing), never duplicated.
 const DEPOSIT_ITEM_NAME = "Customer Deposit";
 
-async function handleCreateDepositInvoice(token: string, realmId: string, params: any, supabase: any) {
+async function handleCreateDepositInvoice(token: string, realmId: string, params: any, supabase: any, paymentRail: string = RAIL.QB, restoreQbPay = false) {
   const quote = params?.quote ?? {};
   if (!quote?.id) throw new Error("createDepositInvoice requires quote.id");
 
@@ -2308,6 +2365,20 @@ async function handleCreateDepositInvoice(token: string, realmId: string, params
     const depData = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(String(fresh.qb_deposit_invoice_id))}'`);
     const existing = depData?.QueryResponse?.Invoice?.[0];
     if (existing && Number(existing.TotalAmt ?? 0) > 0) {
+      if (paymentRail === RAIL.PROCESSOR) {
+        // Collected on InkTracker's page: no QB link, and clear any old one.
+        if (fresh.qb_deposit_payment_link) {
+          await supabase.from("quotes").update({ qb_deposit_payment_link: null }).eq("id", fresh.id);
+        }
+        return { qbDepositInvoiceId: String(existing.Id), depositAmount, depositPaymentLink: null, linkFailureReason: PROCESSOR_LINK_REASON, paymentRail, adopted: true };
+      }
+      // Back on QuickBooks after InkTracker payments: this deposit invoice
+      // may have online payment turned off by us — turn it back on first,
+      // or the new link opens a page with no Pay button.
+      const restoreFields = restoreQbOnlinePayFields(existing, restoreQbPay);
+      if (Object.keys(restoreFields).length) {
+        await qbUpdate(token, realmId, "invoice", { Id: existing.Id, SyncToken: existing.SyncToken, sparse: true, ...restoreFields });
+      }
       let link = fresh.qb_deposit_payment_link || null;
       let linkFailureReason: string | null = null;
       if (!link) {
@@ -2357,12 +2428,14 @@ async function handleCreateDepositInvoice(token: string, realmId: string, params
       billEmail,
       txnDate: new Date().toISOString().slice(0, 10),
     });
-    created = await qbCreate(token, realmId, "invoice", body);
+    created = await qbCreate(token, realmId, "invoice", applyRailToInvoiceBody(body, paymentRail));
     depInvoiceId = String(created?.Invoice?.Id || "");
     if (!depInvoiceId) throw new Error("QB deposit-invoice create returned no Id");
   }
 
-  const minted = await mintInvoicePaymentLink(token, realmId, depInvoiceId, fresh.customer_email || null, created?.Invoice ?? created, params?.noEmail === true);
+  const minted = paymentRail === RAIL.PROCESSOR
+    ? { link: null, reason: PROCESSOR_LINK_REASON }
+    : await mintInvoicePaymentLink(token, realmId, depInvoiceId, fresh.customer_email || null, created?.Invoice ?? created, params?.noEmail === true);
 
   // Write-back (same retry posture as the main path — losing this pointer
   // risks a duplicate deposit invoice on re-send).
@@ -2370,7 +2443,9 @@ async function handleCreateDepositInvoice(token: string, realmId: string, params
     qb_deposit_invoice_id: depInvoiceId,
     deposit_amount: depositAmount,
     payment_status: "Deposit Requested",
-    ...(minted.link ? { qb_deposit_payment_link: minted.link } : {}),
+    ...(paymentRail === RAIL.PROCESSOR
+      ? { qb_deposit_payment_link: null }
+      : minted.link ? { qb_deposit_payment_link: minted.link } : {}),
   };
   let wroteBack = false;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -2387,6 +2462,7 @@ async function handleCreateDepositInvoice(token: string, realmId: string, params
     depositAmount,
     depositPaymentLink: minted.link,
     linkFailureReason: minted.reason,
+    paymentRail,
   };
 }
 
@@ -3795,6 +3871,16 @@ Deno.serve(async (req) => {
         const quote        = params?.quote ?? {};
         const idempKey     = params?.idempotencyKey ?? null;
         const quoteShop    = quote?.shop_owner || shopOwnerEmail;
+        // Payment rail from the AUTHENTICATED shop, never the request body.
+        // Brokers invoice in their own QuickBooks — always the QB rail.
+        const railState = await loadPaymentRailState(adminClient, shopOwnerEmail, {
+          envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
+          broker: Boolean(params?.billBroker || params?.brokerClientInvoice),
+          // Stripe test mode: only TEST/DEMO documents leave QuickBooks.
+          keyMode: stripeKeyMode(Deno.env.get("STRIPE_CONNECT_SECRET_KEY")),
+          doc: quote,
+        });
+        const invoiceRail = railState.rail;
         const auditCtx = {
           shop_owner:      quoteShop,
           action:          "create_invoice",
@@ -3829,7 +3915,7 @@ Deno.serve(async (req) => {
               rowLockKey,
               { shop_owner: quoteShop, action: "create_invoice_lock" },
               () => withQbAudit(adminClient, auditCtx, () =>
-                handleCreateInvoice(qbToken, realmId, params, supabase),
+                handleCreateInvoice(qbToken, realmId, params, supabase, invoiceRail, railState.restore),
               ),
             );
             if (!serialized.acquired) {
@@ -3865,6 +3951,12 @@ Deno.serve(async (req) => {
         );
         const depQuote = params?.quote ?? {};
         const depShop = depQuote?.shop_owner || shopOwnerEmail;
+        const depRailState = await loadPaymentRailState(depAdmin, shopOwnerEmail, {
+          envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
+          keyMode: stripeKeyMode(Deno.env.get("STRIPE_CONNECT_SECRET_KEY")),
+          doc: depQuote,
+        });
+        const depRail = depRailState.rail;
         const depIdempKey = params?.idempotencyKey ?? (depQuote?.id ? `createDepositInvoice:${depQuote.id}` : null);
         const depAuditCtx = {
           shop_owner: depShop,
@@ -3895,7 +3987,7 @@ Deno.serve(async (req) => {
               depLockKey,
               { shop_owner: depShop, action: "create_deposit_invoice_lock" },
               () => withQbAudit(depAdmin, depAuditCtx, () =>
-                handleCreateDepositInvoice(qbToken, realmId, params, supabase),
+                handleCreateDepositInvoice(qbToken, realmId, params, supabase, depRail, depRailState.restore),
               ),
             );
             if (!serialized.acquired) {

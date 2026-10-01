@@ -38,6 +38,12 @@ export const SHOP_PURGE_TABLES = Object.freeze([
   { table: "broker_performance",   column: "shop_owner" },
   { table: "broker_documents",     column: "shop_owner" },
   { table: "broker_files",         column: "shop_owner" },
+  // InkTracker payments (Stripe). Only reached once payments are switched
+  // off — purgeBlockedByPayments refuses while they're on. The shop's own
+  // Stripe account is theirs and isn't touched.
+  { table: "processor_payments", column: "shop_owner" },
+  { table: "processor_payouts",  column: "shop_owner" },
+  { table: "processor_accounts", column: "shop_owner" },
   { table: "orders",           column: "shop_owner" },
   { table: "quotes",           column: "shop_owner" },
   { table: "customers",        column: "shop_owner" },
@@ -115,4 +121,18 @@ export function authorizeShopPurge({ callerRole, callerShop, targetEmail, confir
   if (callerRole === "admin") return { ok: true };
   if (String(callerShop ?? "").trim().toLowerCase() === target) return { ok: true };
   return { ok: false, reason: "forbidden" };
+}
+
+/**
+ * The shop's Stripe account is the shop's own (Connect Standard): deleting
+ * InkTracker leaves it, its payouts and its dashboard untouched. But while
+ * InkTracker payments are switched ON, customers may be mid-payment on
+ * links InkTracker sent. Ask the owner to switch them off first, a
+ * deliberate step that sends new invoices back to QuickBooks.
+ * @param {object|null} account processor_accounts row
+ * @returns {string|null} message to show, or null when OK to delete
+ */
+export function purgeBlockedByPayments(account) {
+  if (account?.enabled !== true) return null;
+  return "InkTracker payments are still switched on. Turn them off in Account → Payments first, then delete your account. Your Stripe account stays yours either way.";
 }

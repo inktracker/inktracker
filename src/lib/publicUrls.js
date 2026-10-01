@@ -18,6 +18,14 @@ export function quotePaymentUrl(quoteId, token) {
   return `${CUSTOMER_PUBLIC_URL}/quotepayment?${params}`;
 }
 
+// Customer pay page for an INVOICE (order-then-invoice flow) on shops that
+// take payment through InkTracker. Token-gated like the quote page.
+export function invoicePaymentUrl(invoiceId, token) {
+  const params = new URLSearchParams({ id: invoiceId });
+  if (token) params.set("token", token);
+  return `${CUSTOMER_PUBLIC_URL}/invoicepayment?${params}`;
+}
+
 export function artApprovalUrl(orderId, token) {
   const params = new URLSearchParams({ id: orderId });
   if (token) params.set("token", token);

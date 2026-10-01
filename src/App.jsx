@@ -59,6 +59,7 @@ const PUBLIC_PAGE_NAMES = [
   "EmployeeOnboarding",
   "ManagerOnboarding",
   "QuotePayment",
+  "InvoicePayment",
   "QuotePaymentSuccess",
   "QuotePaymentCancel",
   "QuoteRequest",

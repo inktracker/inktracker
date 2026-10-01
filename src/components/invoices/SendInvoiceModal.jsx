@@ -11,6 +11,8 @@ import { describeEdgeError } from "@/lib/edgeErrors";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
 import { depositAmountFor } from "@/lib/deposits";
 import ModalBackdrop from "../shared/ModalBackdrop";
+import { usePaymentRail, fetchPaymentStatus, railForDocument } from "@/lib/payment/usePaymentRail";
+import { invoicePaymentUrl } from "@/lib/publicUrls";
 
 export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess }) {
   const [shopName, setShopName] = useState("");
@@ -89,10 +91,46 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
   const checkoutTarget = resolveCheckoutTarget({ qb_payment_link: qbPaymentLink });
   const usablePaymentLink = checkoutTarget.provider === "qb" ? checkoutTarget.url : null;
 
+  // Processor rail: the customer pays on InkTracker's own invoice page, not a
+  // QuickBooks link. Broker invoices always stay on QuickBooks.
+  const { status: payStatus } = usePaymentRail();
+  const paymentRail = invoice?.broker_id ? "qb" : railForDocument(payStatus, invoice);
+  const onlinePay = paymentRail === "processor";
+
   const qbState = deriveQbSendState({
     qbInvoiceId,
     qbPaymentLink: usablePaymentLink,
+    paymentRail,
   });
+
+  // Token for the invoice pay page — minted once, on first send, and kept
+  // (re-sends reuse it so an earlier email's button keeps working).
+  // Returns { url } or { taxHold } — a tax-held invoice must not go out with
+  // a pay link (the customer would be charged QuickBooks' tax, not ours).
+  async function ensureInvoicePayUrl() {
+    const fresh = await base44.entities.Invoice.get(invoice.id).catch(() => null);
+    if (fresh?.qb_tax_hold) return { taxHold: fresh.qb_tax_hold };
+    let token = fresh?.public_token || invoice.public_token || null;
+    if (!token) {
+      // Write only if still unset: two people sending at once must not
+      // overwrite each other's token (the first email's link would 404).
+      const mine = crypto.randomUUID();
+      const { data: won, error: writeErr } = await supabase.from("invoices")
+        .update({ public_token: mine })
+        .eq("id", invoice.id)
+        .is("public_token", null)
+        .select("public_token");
+      if (writeErr) throw new Error(`Couldn't create the payment link: ${writeErr.message}`);
+      if (won?.length) {
+        token = mine;
+      } else {
+        const again = await base44.entities.Invoice.get(invoice.id);
+        token = again?.public_token || null;
+      }
+      if (!token) throw new Error("Couldn't create the payment link. Try sending again.");
+    }
+    return { url: invoicePaymentUrl(invoice.id, token) };
+  }
 
   // Last-ditch attempt to mint a QB payment link when one is missing
   // but a QB invoice already exists. Happens when the customer's saved
@@ -195,7 +233,30 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       // a real one into the To field.
       // Paid invoices are receipts — never mint or attach a pay link.
       let effectiveLink = isPaid ? null : usablePaymentLink;
-      if (!isPaid && !effectiveLink && invoice.qb_invoice_id) {
+      // Re-ask the server right before sending: the value cached when this
+      // tab loaded can be hours old (owner switched payments off, or the
+      // payments account was put on hold). A stale "processor" would email
+      // a pay link the customer can't use; stale "qb" is the safe side.
+      let sendRail = "qb";
+      if (!isPaid && !invoice?.broker_id) {
+        const fresh = await fetchPaymentStatus({ fresh: true });
+        // Couldn't reach the server → keep what this tab knew.
+        sendRail = fresh.unavailable ? paymentRail : railForDocument(fresh, invoice);
+      }
+      const sendOnline = sendRail === "processor";
+      if (!isPaid && sendOnline && qbInvoiceId) {
+        // Pay on InkTracker: never mint (or fall back to) a QuickBooks link.
+        const pay = await ensureInvoicePayUrl();
+        if (pay.taxHold) {
+          setError(
+            "On hold: QuickBooks calculated a different sales tax than this invoice. Not sent. " +
+            "Confirm the customer's address & tax status in QuickBooks, fix this invoice's tax to match, then Send again.",
+          );
+          setSending(false);
+          return;
+        }
+        effectiveLink = pay.url;
+      } else if (!isPaid && !effectiveLink && invoice.qb_invoice_id) {
         const minted = await tryMintMissingLink(recipientEmails[0]);
         // Tax hold: QuickBooks calculated a different sales tax than this
         // invoice. Do NOT send — the customer would be charged a tax we
@@ -217,7 +278,12 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       // Generate PDF (best-effort; not blocking the send)
       let pdfBase64 = null;
       try {
-        pdfBase64 = await exportInvoiceToPDF(invoice, customer, shopName, logoUrl, "base64");
+        // Processor rail: the PDF's "Pay invoice" button goes to the same
+        // InkTracker page as the email (never a stale QuickBooks link).
+        const pdfInvoice = sendOnline && effectiveLink
+          ? { ...invoice, qb_payment_link: null, payment_link: effectiveLink }
+          : invoice;
+        pdfBase64 = await exportInvoiceToPDF(pdfInvoice, customer, shopName, logoUrl, "base64");
       } catch {}
 
       const taggedSubject = addRefTag(subject, invoice.invoice_id, invoice.shop_owner);
@@ -367,7 +433,9 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                   <span className="text-xs text-emerald-700 leading-relaxed">
-                    QB invoice #{qbInvoiceId} ready. Customer's "Pay Invoice" button will link to the QuickBooks portal.
+                    {onlinePay
+                      ? <>QB invoice #{qbInvoiceId} ready. Your customer's "Pay Invoice" button opens InkTracker's payment page, and the payment is recorded in QuickBooks for you.</>
+                      : <>QB invoice #{qbInvoiceId} ready. Customer's "Pay Invoice" button will link to the QuickBooks portal.</>}
                   </span>
                 </div>
               )}
