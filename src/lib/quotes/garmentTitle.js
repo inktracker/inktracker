@@ -94,3 +94,24 @@ export function brandStyleHeader(brand, styleNumber) {
   if (b && n) return `${b} ${n}`;
   return b || n || "Garment";
 }
+
+// Singular, human label for a wizard garment category ("T-Shirts" → "T-Shirt")
+// so a header with no supplier name can still say WHAT the garment is:
+// "Comfort Colors 1717 — T-Shirt" instead of a bare SKU (Joe, 2026-10-01).
+// Simple plurals get de-pluralized; compound categories ("Hoodies &
+// Sweatshirts") are left as-is (still informative).
+export function categoryLabel(category) {
+  const c = clean(category);
+  if (!c) return "";
+  if (c.includes("&")) return c;           // compound — leave it
+  return c.replace(/s$/i, "");             // T-Shirts→T-Shirt, Tanks→Tank, Polos→Polo
+}
+
+// The full fallback header when no supplier product NAME exists:
+// "Brand Style — Category", dropping any half that's missing. The spec
+// paragraph is never used; the category gives the garment type.
+export function brandStyleCategoryHeader(brand, styleNumber, category) {
+  const base = brandStyleHeader(brand, styleNumber);
+  const cat = categoryLabel(category);
+  return cat ? `${base} — ${cat}` : base;
+}

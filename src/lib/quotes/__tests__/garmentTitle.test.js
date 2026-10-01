@@ -134,3 +134,22 @@ describe("brandStyleHeader", () => {
     expect(brandStyleHeader("", "")).toBe("Garment");
   });
 });
+
+import { categoryLabel, brandStyleCategoryHeader } from "../garmentTitle";
+
+describe("categoryLabel / brandStyleCategoryHeader", () => {
+  it("singularizes simple plural categories", () => {
+    expect(categoryLabel("T-Shirts")).toBe("T-Shirt");
+    expect(categoryLabel("Tanks")).toBe("Tank");
+    expect(categoryLabel("Polos")).toBe("Polo");
+  });
+  it("leaves compound categories alone", () => {
+    expect(categoryLabel("Hoodies & Sweatshirts")).toBe("Hoodies & Sweatshirts");
+    expect(categoryLabel("")).toBe("");
+  });
+  it("builds 'Brand Style — Category', dropping missing halves", () => {
+    expect(brandStyleCategoryHeader("Comfort Colors", "1717", "T-Shirts")).toBe("Comfort Colors 1717 — T-Shirt");
+    expect(brandStyleCategoryHeader("Comfort Colors", "1717", "")).toBe("Comfort Colors 1717");
+    expect(brandStyleCategoryHeader("", "5026", "T-Shirts")).toBe("5026 — T-Shirt");
+  });
+});

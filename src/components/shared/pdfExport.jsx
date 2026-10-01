@@ -21,7 +21,7 @@ import { imprintColorLabel, imprintCountText } from '../../lib/quotes/imprintLab
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 import { signArtworkUrl } from '../../lib/uploadFile';
 import { stripSyncNotes } from '../../lib/invoices/qbModifiedSync';
-import { customGarmentHeader, isSpecDump, brandStyleHeader } from "@/lib/quotes/garmentTitle";
+import { customGarmentHeader, isSpecDump, brandStyleCategoryHeader } from "@/lib/quotes/garmentTitle";
 import { depositAmountFor } from "@/lib/deposits";
 import { slipSize } from "@/lib/orders/packingSlipLayout";
 import { drawCompactSlip } from "@/lib/orders/packingSlipDraw";
@@ -397,8 +397,8 @@ function getItemHeaderLine(li) {
     return `${garmentNumber} - ${description}`;
   }
 
-  // No concise name — clean "Brand Style#" (never the spec paragraph).
-  return brandStyleHeader(cleanText(li?.brand), garmentNumber);
+  // No concise name — clean "Brand Style# — Category" (never the spec paragraph).
+  return brandStyleCategoryHeader(cleanText(li?.brand), garmentNumber, li?.category);
 }
 
 function getItemMetaLine(li) {

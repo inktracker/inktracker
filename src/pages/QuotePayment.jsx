@@ -34,7 +34,7 @@ import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import OnlinePaymentPanel, { PaidNotice, readPaidReturn } from "@/components/payment/OnlinePaymentPanel";
 import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
-import { customGarmentHeader, isSpecDump, brandStyleHeader } from "@/lib/quotes/garmentTitle";
+import { customGarmentHeader, isSpecDump, brandStyleCategoryHeader } from "@/lib/quotes/garmentTitle";
 import { cardSurchargeNote } from "@/lib/payment/cardSurcharge";
 import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 
@@ -172,7 +172,7 @@ function getGarmentHeader(li) {
   // Concise supplier name → "STYLE - Name"; otherwise a clean "Brand STYLE"
   // (the full spec paragraph never becomes the header). The Brand/Color line
   // below carries the brand regardless.
-  return description ? `${number} - ${description}` : brandStyleHeader(cleanText(li?.brand), number);
+  return description ? `${number} - ${description}` : brandStyleCategoryHeader(cleanText(li?.brand), number, li?.category);
 }
 
 function getLineItemPricing(li, quote) {
