@@ -69,3 +69,28 @@ export function customGarmentHeader(li, styleNumber) {
   if (num && title.toLowerCase() === num.toLowerCase()) return num;
   return num ? `${num} - ${title}` : title;
 }
+
+// Supplier catalogs (AS Colour, Comfort Colors, …) stuff the full marketing/
+// spec PARAGRAPH into the product-name fields (styleName / productTitle /
+// resolvedTitle). Used as a line-item header it becomes a wall of "6.1-ounce,
+// 100% US ring spun cotton Soft-washed, garment-dyed fabric…" on the customer
+// quote — ugly, and worse on a broker's white-label quote (Joe, 2026-10-01).
+// Treat such text as NOT a product name so the header falls back to a clean
+// "Brand Style#". A real garment name is short and reads like a title.
+export function isSpecDump(text) {
+  const t = clean(text);
+  if (!t) return false;
+  if (t.length > 55) return true;                          // names are short
+  if (/[.!?]\s+\S/.test(t)) return true;                   // more than one sentence
+  if (/\b\d+(?:\.\d+)?\s?(?:oz|ounce|gsm|singles|gm)\b/i.test(t)) return true; // spec
+  return false;
+}
+
+// The fallback header when no concise product name exists: "Brand Style#"
+// (e.g. "Comfort Colors 1717"), or whichever half is present.
+export function brandStyleHeader(brand, styleNumber) {
+  const b = clean(brand);
+  const n = clean(styleNumber);
+  if (b && n) return `${b} ${n}`;
+  return b || n || "Garment";
+}

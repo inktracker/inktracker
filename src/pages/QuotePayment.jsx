@@ -34,7 +34,7 @@ import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import OnlinePaymentPanel, { PaidNotice, readPaidReturn } from "@/components/payment/OnlinePaymentPanel";
 import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
-import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
+import { customGarmentHeader, isSpecDump, brandStyleHeader } from "@/lib/quotes/garmentTitle";
 import { cardSurchargeNote } from "@/lib/payment/cardSurcharge";
 import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 
@@ -149,6 +149,9 @@ function getPreferredGarmentDescription(li) {
     if (looksLikeCode(candidate)) continue;
     if (normalized === "shirt") continue;
     if (normalized === "garment") continue;
+    // Supplier catalogs put the full marketing paragraph in these fields; it's
+    // not a name. Skip it so the header falls back to a clean "Brand Style#".
+    if (isSpecDump(candidate)) continue;
 
     // Strip trailing style number from descriptions like "Comfort Colors — 1717"
     const stripped = candidate.replace(/\s*[—–-]\s*\d{3,5}[A-Z]?\s*$/i, "").trim();
@@ -156,8 +159,7 @@ function getPreferredGarmentDescription(li) {
     if (stripped) return stripped;
   }
 
-  if (cleanText(li?.brand)) return cleanText(li.brand);
-  return "";
+  return ""; // no concise name — getGarmentHeader renders "Brand Style#"
 }
 
 function getGarmentHeader(li) {
@@ -167,7 +169,10 @@ function getGarmentHeader(li) {
   const custom = customGarmentHeader(li, number);
   if (custom) return custom;
   const description = getPreferredGarmentDescription(li);
-  return description ? `${number} - ${description}` : number;
+  // Concise supplier name → "STYLE - Name"; otherwise a clean "Brand STYLE"
+  // (the full spec paragraph never becomes the header). The Brand/Color line
+  // below carries the brand regardless.
+  return description ? `${number} - ${description}` : brandStyleHeader(cleanText(li?.brand), number);
 }
 
 function getLineItemPricing(li, quote) {
