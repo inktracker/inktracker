@@ -106,50 +106,55 @@ describe("customTitleAfterStyleChange (rule 4 — a title names ONE garment)", (
   });
 });
 
-import { isSpecDump, brandStyleHeader } from "../garmentTitle";
+import { resolveGarmentHeader } from "../garmentTitle";
 
-describe("isSpecDump — reject marketing paragraphs as garment names", () => {
-  it("true for the AS Colour / Comfort Colors blurbs", () => {
-    expect(isSpecDump("The timeless AS Colour Classic Tee, ideal for printing with its regular fit and heavy weight 6.5 oz, 22-singles 100% combed cotton.")).toBe(true);
-    expect(isSpecDump("6.1-ounce, 100% US ring spun cotton Soft-washed, garment-dyed fabric Top-stitched")).toBe(true);
+// resolveGarmentHeader is the ONE header builder shared by the admin quote
+// view (QuoteDetailModal), the customer QuotePayment page, and the PDF. These
+// cases pin that all three now read identically — Joe, 2026-10-01: "have it
+// match how the admin quotes read."
+describe("resolveGarmentHeader — shared line-item header", () => {
+  it("renders a clean supplier name as 'STYLE - Name'", () => {
+    expect(resolveGarmentHeader({
+      styleNumber: "1717",
+      brand: "Comfort Colors",
+      styleName: "COMFORT COLORS Heavyweight Ring Spun Tee",
+    })).toBe("1717 - COMFORT COLORS Heavyweight Ring Spun Tee");
   });
-  it("false for a real short product name", () => {
-    expect(isSpecDump("Unisex Heavyweight Hooded Sweatshirt")).toBe(false);
-    expect(isSpecDump("Garment-Dyed Heavyweight Tee")).toBe(false);
-    expect(isSpecDump("")).toBe(false);
-  });
-  it("catches a short-but-sentencey or spec'd string", () => {
-    expect(isSpecDump("Soft tee. Great print.")).toBe(true); // two sentences
-    expect(isSpecDump("Heavy 6.5 oz tee")).toBe(true);        // spec marker
-  });
-});
 
-describe("brandStyleHeader", () => {
-  it("brand + number", () => {
-    expect(brandStyleHeader("Comfort Colors", "1717")).toBe("Comfort Colors 1717");
+  it("first sentence + 80-char cap keeps a marketing paragraph on one line", () => {
+    const header = resolveGarmentHeader({
+      styleNumber: "1717",
+      brand: "Comfort Colors",
+      styleName: "6.1-ounce, 100% US ring spun cotton Soft-washed, garment-dyed fabric Top-stitched, classic width rib collar",
+    });
+    expect(header.startsWith("1717 - ")).toBe(true);
+    // never longer than "STYLE - " + 80 chars (the trim ends with an ellipsis)
+    expect(header.length).toBeLessThanOrEqual("1717 - ".length + 80);
+    expect(header.endsWith("…")).toBe(true);
   });
-  it("falls back to whichever half exists", () => {
-    expect(brandStyleHeader("", "5026")).toBe("5026");
-    expect(brandStyleHeader("AS Colour", "")).toBe("AS Colour");
-    expect(brandStyleHeader("", "")).toBe("Garment");
-  });
-});
 
-import { categoryLabel, brandStyleCategoryHeader } from "../garmentTitle";
+  it("strips a leading/trailing style code out of the description", () => {
+    expect(resolveGarmentHeader({
+      styleNumber: "5000",
+      brand: "Gildan",
+      styleName: "5000 - Heavy Cotton Tee",
+    })).toBe("5000 - Heavy Cotton Tee");
+  });
 
-describe("categoryLabel / brandStyleCategoryHeader", () => {
-  it("singularizes simple plural categories", () => {
-    expect(categoryLabel("T-Shirts")).toBe("T-Shirt");
-    expect(categoryLabel("Tanks")).toBe("Tank");
-    expect(categoryLabel("Polos")).toBe("Polo");
+  it("shop's custom title wins over supplier fields", () => {
+    expect(resolveGarmentHeader({
+      styleNumber: "1717",
+      customTitle: "House Blank Tee",
+      styleName: "COMFORT COLORS Heavyweight Ring Spun Tee",
+    })).toBe("1717 - House Blank Tee");
   });
-  it("leaves compound categories alone", () => {
-    expect(categoryLabel("Hoodies & Sweatshirts")).toBe("Hoodies & Sweatshirts");
-    expect(categoryLabel("")).toBe("");
+
+  it("falls back to the bare style number when no usable name exists", () => {
+    expect(resolveGarmentHeader({ styleNumber: "1717", brand: "Comfort Colors" })).toBe("1717");
   });
-  it("builds 'Brand Style — Category', dropping missing halves", () => {
-    expect(brandStyleCategoryHeader("Comfort Colors", "1717", "T-Shirts")).toBe("Comfort Colors 1717 — T-Shirt");
-    expect(brandStyleCategoryHeader("Comfort Colors", "1717", "")).toBe("Comfort Colors 1717");
-    expect(brandStyleCategoryHeader("", "5026", "T-Shirts")).toBe("5026 — T-Shirt");
+
+  it("never throws on junk input", () => {
+    expect(() => resolveGarmentHeader(null)).not.toThrow();
+    expect(() => resolveGarmentHeader({})).not.toThrow();
   });
 });
