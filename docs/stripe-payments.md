@@ -133,6 +133,27 @@ Rules that keep it safe:
   other failure alerts us (Sentry) and the purge result names the account
   to remove by hand. The deletion itself is never blocked.
 
+### Bank-transfer discount (per shop, off by default)
+
+Card surcharges are out (debit cards can't be surcharged and hosted Checkout
+can't tell credit from debit until after the charge). Instead the **card
+price is the invoice price** and bank payers get `bank_discount_pct`% off
+(0–5%, owner sets it in Account → Payments). At 2% the shop nets the same
+either way (card: 2.99% fee; bank: 1% + 2% off).
+
+Shown everywhere a price is: quote/invoice email ("Pay by bank transfer:
+$X, save $Y"), the quote and invoice PDFs (under the total), the pay page
+buttons (exact card and bank amounts for a plain full payment, the % for
+deposits/balances), and Stripe's checkout (the line's description:
+"Invoice $X − bank transfer discount $Y").
+
+Books: the QuickBooks invoice is untouched (its sales tax stands — the shop
+never under-reports) and the QB Payment is for the **full invoice**; the
+discount is a separate "Bank transfer discounts" line on the payout Deposit
+(to the fee account), so the Deposit still equals the bank to the cent.
+`processor_payments.discount_cents` carries it from checkout metadata
+(bounded to 5%).
+
 ### When is an invoice "paid"?
 
 * **Card:** `payment_intent.succeeded` (captured), same moment QuickBooks

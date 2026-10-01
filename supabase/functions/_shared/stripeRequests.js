@@ -75,13 +75,20 @@ export function buildAccountLink(accountId, appUrl) {
  * metadata on the PaymentIntent (that's what webhooks carry back).
  * @returns {{ params: object, idempotencyKey: string, platformFeeCents: number }}
  */
-export function buildCheckoutSession({ doc, docType, target, method, shopName, customer = {}, payPageUrl, attempt = 0, nowMs = Date.now() }) {
+export function buildCheckoutSession({ doc, docType, target, method, discountCents = 0, shopName, customer = {}, payPageUrl, attempt = 0, nowMs = Date.now() }) {
   const isInvoice = docType === "invoice";
   const docNumber = String((isInvoice ? doc?.invoice_id : doc?.quote_id) ?? "").slice(0, 40);
   const what = target.kind === "deposit" ? `Deposit for ${docNumber}` : target.kind === "balance" ? `Balance due on ${docNumber}` : (isInvoice ? `Invoice ${docNumber}` : `Order ${docNumber}`);
-  const fee = platformFeeCents(method, target.amountCents);
-  const { key, expiresAt } = payinIdempotencyKey({ quoteId: doc?.id, qbInvoiceId: target.qbInvoiceId, amountCents: target.amountCents, method, attempt, nowMs });
-  const metadata = buildPayinMetadata({ quote: doc, target, docType });
+  // Bank-transfer discount: the customer pays the balance minus it.
+  const discount = Number.isInteger(discountCents) && discountCents > 0 && discountCents < target.amountCents ? discountCents : 0;
+  const chargeCents = target.amountCents - discount;
+  const fee = platformFeeCents(method, chargeCents);
+  const { key, expiresAt } = payinIdempotencyKey({ quoteId: doc?.id, qbInvoiceId: target.qbInvoiceId, amountCents: chargeCents, method, attempt, nowMs });
+  const metadata = {
+    ...buildPayinMetadata({ quote: doc, target, docType }),
+    ...(discount ? { bank_discount_cents: String(discount) } : {}),
+  };
+  const money = (c) => `$${(c / 100).toFixed(2)}`;
   const email = clean(customer.email, 254);
   const validEmail = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
   const back = String(payPageUrl);
@@ -92,8 +99,12 @@ export function buildCheckoutSession({ doc, docType, target, method, shopName, c
       quantity: 1,
       price_data: {
         currency: "usd",
-        unit_amount: target.amountCents,
-        product_data: { name: `${what}${shopName ? ` · ${String(shopName).slice(0, 60)}` : ""}` },
+        unit_amount: chargeCents,
+        product_data: {
+          name: `${what}${shopName ? ` · ${String(shopName).slice(0, 60)}` : ""}`,
+          // Shown under the line on Stripe's page and receipt.
+          ...(discount ? { description: `Invoice ${money(target.amountCents)} − bank transfer discount ${money(discount)}` } : {}),
+        },
       },
     }],
     payment_method_types: [method === "ach" ? "us_bank_account" : "card"],

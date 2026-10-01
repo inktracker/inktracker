@@ -1,3 +1,4 @@
+import { priceForMethod, normalizeDiscountPct } from "../../../supabase/functions/_shared/paymentsPricing.js";
 // jspdf (~150 KB gzipped) is loaded on demand via dynamic import inside each
 // export function below. Keeps it out of the main bundle until a user actually
 // generates a PDF. The first PDF in a session triggers the chunk fetch; later
@@ -763,6 +764,19 @@ function renderLineItems(
   return { yPos, pdfLineTotals };
 }
 
+/**
+ * "Pay by bank transfer: $X (save $Y)" for a shop with a bank-transfer
+ * discount — the same helper the checkout charges with, so the PDF, email,
+ * pay page and Stripe always agree. Null when there's no discount.
+ */
+function bankPriceLine(totalDollars, pct) {
+  const p = normalizeDiscountPct(pct);
+  const cents = Math.round(Number(totalDollars) * 100);
+  if (!p || !Number.isInteger(cents) || cents <= 0) return null;
+  const { chargeCents, discountCents } = priceForMethod({ balanceCents: cents, method: 'ach', discountPct: p });
+  return { amount: chargeCents / 100, save: discountCents / 100, pct: p };
+}
+
 function renderTotals(doc, totals, discount, taxRate, depositInfo, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null, extraFeeLines = [], discountDescription = '') {
   doc.setDrawColor(180, 180, 200);
   doc.setLineWidth(0.4);
@@ -854,6 +868,21 @@ function renderTotals(doc, totals, discount, taxRate, depositInfo, pageWidth, ma
   // is due NOW vs at completion — the total alone contradicts the
   // pay-deposit button in the same email (previously a dead param).
   const depAmt = Number(depositInfo?.amount) || 0;
+  // Bank-transfer discount: the total above is the card price.
+  const bank = depAmt > 0 ? null : bankPriceLine(totals.total, depositInfo?.bankDiscountPct);
+  if (bank) {
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(22, 101, 52);
+    doc.text(`Pay by bank transfer (${bank.pct}% off):`, margin, yPos);
+    doc.text(fmtMoney(bank.amount), pageWidth - margin - 2, yPos, { align: 'right' });
+    yPos += 5;
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 120);
+    doc.text(`You save ${fmtMoney(bank.save)}. The total above is the card price.`, margin, yPos);
+    yPos += 7;
+  }
   if (depAmt > 0) {
     doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
@@ -961,6 +990,7 @@ export async function exportQuoteToPDF(
   let mode = 'shop';
   let shopName = shopNameOrOptions;
   let output = 'save'; // 'save' | 'base64'
+  let bankDiscountPct = 0; // shop's bank-transfer discount (InkTracker payments)
 
   if (shopNameOrOptions && typeof shopNameOrOptions === 'object' && !Array.isArray(shopNameOrOptions)) {
     mode = shopNameOrOptions.mode || 'shop';
@@ -970,6 +1000,7 @@ export async function exportQuoteToPDF(
     customerEmail = shopNameOrOptions.customerEmail || customerEmail;
     customerPhone = shopNameOrOptions.customerPhone || customerPhone;
     output = shopNameOrOptions.output || 'save';
+    bankDiscountPct = shopNameOrOptions.bankDiscountPct || 0;
   }
 
   // isClientMode = broker ↔ client (broker pricing, broker's client-facing doc)
@@ -1166,7 +1197,7 @@ export async function exportQuoteToPDF(
     quote.discount,
     effectiveTaxRate,
     // Snapshot-aware deposit rows ("due now / balance at completion").
-    { amount: depositAmountFor(quote), paid: Boolean(quote.deposit_paid) },
+    { amount: depositAmountFor(quote), paid: Boolean(quote.deposit_paid), bankDiscountPct },
     pageWidth,
     margin,
     yPos,
@@ -1521,7 +1552,9 @@ export async function exportPackingSlipToPDF(order, shopName, logoUrl, output, c
 //
 // Backward-compat: if `shopOrOptions` is a string, treat it as legacy
 // `shopName` (callers haven't all been updated yet).
-export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoUrl, output) {
+export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoUrl, output, extra = {}) {
+  // extra.bankDiscountPct: the shop's bank-transfer discount (InkTracker payments).
+  let bankDiscountPct = Number(extra?.bankDiscountPct) || 0;
   const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -1534,6 +1567,7 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
     shop   = shopOrOptions.shop   || {};
     output = shopOrOptions.output || output;
     logoUrl = shopOrOptions.logoUrl || logoUrl;
+    bankDiscountPct = Number(shopOrOptions.bankDiscountPct) || bankDiscountPct;
   } else if (typeof shopOrOptions === 'string') {
     shop = { shop_name: shopOrOptions };
   }
@@ -1808,6 +1842,22 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   doc.text('BALANCE DUE', tLabelX, yPos, { align: 'right' });
   doc.text(fmtMoney(balanceDue), tValueX, yPos, { align: 'right' });
   yPos += 8;
+
+  // Bank-transfer discount: BALANCE DUE is the card price.
+  const bankLine = invoiceDeposit > 0 || balanceDue <= 0 ? null : bankPriceLine(balanceDue, bankDiscountPct);
+  if (bankLine) {
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(22, 101, 52);
+    doc.text(`PAY BY BANK TRANSFER (${bankLine.pct}% OFF)`, tLabelX, yPos, { align: 'right' });
+    doc.text(fmtMoney(bankLine.amount), tValueX, yPos, { align: 'right' });
+    yPos += 4.5;
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 100, 120);
+    doc.text(`Save ${fmtMoney(bankLine.save)}. Balance due above is the card price.`, tValueX, yPos, { align: 'right' });
+    yPos += 6;
+  }
 
   // ── Pay invoice button (left, if we have a payment link) ─────────────────
   if (invoice.qb_payment_link || invoice.payment_link) {

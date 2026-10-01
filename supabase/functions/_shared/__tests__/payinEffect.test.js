@@ -6,6 +6,7 @@ import {
   statusesBelow,
   PAYIN_EVENT,
   REJECT,
+  bankDiscount,
 } from "../payinEffect.js";
 import { buildQbPaymentBody } from "../paymentsQbBooks.js";
 
@@ -294,5 +295,15 @@ describe("audit: booking when events arrive out of order", () => {
     expect(plan({ event: ev({ kind: "canceled" }), ledger: { status: "processing", method: "card" } }).postQbPayment).toBe(false);
     expect(plan({ event: ev({ kind: "failed", method: "ach" }), ledger: { status: "processing", method: "ach" } }).postQbPayment).toBe(false);
     expect(plan({ event: ev({ kind: "returned", method: "ach" }), ledger: { status: "processing", method: "ach" } }).postQbPayment).toBe(false);
+  });
+});
+
+describe("bank-transfer discount on the ledger", () => {
+  it("records the discount from our checkout's metadata; bounded to 5%", () => {
+    expect(bankDiscount({ bank_discount_cents: "1137" }, 55735)).toBe(1137);
+    expect(bankDiscount({ bank_discount_cents: "99999" }, 55735)).toBe(0); // implausible → ignored
+    expect(bankDiscount({}, 55735)).toBe(0);
+    const r = plan({ event: ev({ kind: "succeeded", method: "ach", amountCents: 55735, metadata: { ...ev().metadata, bank_discount_cents: "1137" } }) });
+    expect(r.ledger.discount_cents).toBe(1137);
   });
 });

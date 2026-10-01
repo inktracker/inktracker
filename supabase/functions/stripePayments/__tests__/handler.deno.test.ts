@@ -505,3 +505,36 @@ Deno.test("sign-up needs the platform client id (so the account can always be di
   assertEquals(r.status, 400);
   assertEquals(calls.length, 0);
 });
+
+// ── Bank-transfer discount ──────────────────────────────────────────────
+Deno.test("bank discount: owner sets 0–5%; managers can't; out of range refused", async () => {
+  const fake = db({ ...ACTIVE, enabled: true, bank_discount_pct: 0 });
+  assertEquals((await call(fake, "mgr-auth", { action: "setBankDiscount", pct: 2 })).status, 403);
+  assertEquals((await call(fake, "own-auth", { action: "setBankDiscount", pct: 7 })).status, 400);
+  const j = await (await call(fake, "own-auth", { action: "setBankDiscount", pct: 2 })).json();
+  assertEquals(j.bankDiscountPct, 2);
+  assertEquals(fake.tables.processor_accounts[0].bank_discount_pct, 2);
+});
+
+Deno.test("bank discount: the pay page gets card/bank prices without calling Stripe or QuickBooks", async () => {
+  const fake = withQuote({ ...ACTIVE, enabled: true, bank_discount_pct: 2 }, { qb_total: 568.72, total: 568.72 });
+  const calls: StripeCall[] = [];
+  const j = await (await call(fake, "", { action: "payRail", id: QUOTE_ID, token: "tok" }, undefined, calls)).json();
+  assertEquals(j.pricing, { bankDiscountPct: 2, cardCents: 56872, bankCents: 55735, bankSavingsCents: 1137 });
+  assertEquals(calls.length, 0);
+  const dep = withQuote({ ...ACTIVE, enabled: true, bank_discount_pct: 2 }, { qb_total: 568.72, deposit_pct: 50 });
+  assertEquals((await (await call(dep, "", { action: "payRail", id: QUOTE_ID, token: "tok" })).json()).pricing, { bankDiscountPct: 2 });
+});
+
+Deno.test("bank discount: bank checkout charges the LIVE balance minus the discount; card pays full", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 568.72, Balance: 568.72, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  const calls: StripeCall[] = [];
+  const fake = withQuote({ ...ACTIVE, enabled: true, bank_discount_pct: 2 }, { total: 568.72 });
+  const bank = await (await call(fake, "", { action: "payinSession", id: QUOTE_ID, token: "tok", method: "ach" }, undefined, calls)).json();
+  assertEquals([bank.amountCents, bank.discountCents], [55735, 1137]);
+  const cs = calls.find((c) => c.path === "/v1/checkout/sessions")!;
+  assertEquals(cs.params.line_items[0].price_data.unit_amount, 55735);
+  assertEquals(cs.params.payment_intent_data.metadata.bank_discount_cents, "1137");
+  const card = await (await call(withQuote({ ...ACTIVE, enabled: true, bank_discount_pct: 2 }, { total: 568.72 }), "", { action: "payinSession", id: QUOTE_ID, token: "tok", method: "card" })).json();
+  assertEquals([card.amountCents, card.discountCents], [56872, 0]);
+});

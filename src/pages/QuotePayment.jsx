@@ -234,6 +234,8 @@ export default function QuotePayment() {
   // through Stripe instead of a QuickBooks link. Asked once per load;
   // anything but a clear "processor" keeps the QuickBooks flow.
   const [payRail, setPayRail] = useState("qb");
+  // Card / bank prices + the shop's bank-transfer discount (from payRail).
+  const [payPricing, setPayPricing] = useState(null);
   // After Approve: show the card / bank choice (each opens Stripe Checkout).
   const [showPayChoice, setShowPayChoice] = useState(false);
   // Back from Stripe Checkout (?paid=card|ach).
@@ -309,7 +311,7 @@ export default function QuotePayment() {
     if (!quoteDbId || !publicToken) return undefined;
     let alive = true;
     base44.functions.invoke("stripePayments", { action: "payRail", docType: "quote", id: quoteDbId, token: publicToken })
-      .then((r) => { if (alive && r?.data?.rail === "processor") setPayRail("processor"); })
+      .then((r) => { if (alive && r?.data?.rail === "processor") { setPayRail("processor"); setPayPricing(r.data.pricing ?? null); } })
       .catch(() => {});
     return () => { alive = false; };
   }, [quoteDbId, publicToken]);
@@ -1098,7 +1100,7 @@ export default function QuotePayment() {
             if (onlinePay && paidReturn) {
               return (
                 <PaidNotice docType="quote" id={quote.id} token={publicToken} paid={paidReturn}
-                  fallback={<OnlinePaymentPanel docType="quote" id={quote.id} token={publicToken} />} />
+                  fallback={<OnlinePaymentPanel docType="quote" id={quote.id} token={publicToken} pricing={payPricing} />} />
               );
             }
             if (showPayChoice) {
@@ -1108,6 +1110,7 @@ export default function QuotePayment() {
                   id={quote.id}
                   token={publicToken}
                   kind={depositRoute && !depositPaid ? "deposit" : hasDeposit && depositPaid ? "balance" : null}
+                  pricing={payPricing}
                 />
               );
             }

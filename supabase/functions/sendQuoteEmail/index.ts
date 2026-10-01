@@ -7,6 +7,8 @@ import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { escapeHtml, sanitizeEmailBody, asBareEmail } from "../_shared/emailSanitize.js";
 import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
+import { flagOn, loadPaymentRail, RAIL, stripeKeyMode } from "../_shared/paymentRail.js";
+import { priceForMethod, normalizeDiscountPct } from "../_shared/paymentsPricing.js";
 import {
   renderEmailLayout,
   renderEmailButton,
@@ -94,6 +96,9 @@ Deno.serve(async (req) => {
     // "Q-####" string) and the authoritative owner. Both branches below
     // fill these from the DB rows they already fetch.
     let quoteDbId: string | null = null;
+    // Bank-transfer discount line ("Pay by bank: $X, save $Y"), set below for
+    // shops taking payment through InkTracker with a discount on.
+    let bankDiscountHtml = "";
     let logShopOwner: string | null = null;
 
     // ── Anonymous-caller lockdown ─────────────────────────────────────
@@ -269,6 +274,40 @@ Deno.serve(async (req) => {
     }
 
     const emailSubject = subject || `Your Quote from ${shopName} - Quote #${quoteId}`;
+
+    // Bank-transfer discount: the total shown is the card price; tell the
+    // customer what paying by bank costs. Only for shops on InkTracker
+    // payments with a discount on, and a plain full payment (deposits are
+    // worked out on the pay page). Best-effort — never blocks the send.
+    if (isAuthed) {
+      try {
+        const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        const { data: qq } = await admin.from("quotes")
+          .select("shop_owner, broker_id, broker_email, customer_name, company, job_title, deposit_amount, deposit_pct, deposit_paid")
+          .eq("quote_id", quoteId).maybeSingle();
+        const { data: iv } = qq ? { data: null } : await admin.from("invoices").select("shop_owner, customer_name").eq("invoice_id", quoteId).maybeSingle();
+        const doc: any = qq ?? iv;
+        const plain = doc && !doc.broker_id && !doc.broker_email && !doc.deposit_paid && !(Number(doc.deposit_amount) > 0) && !(Number(doc.deposit_pct) > 0);
+        if (plain) {
+          const rail = await loadPaymentRail(admin, doc.shop_owner, {
+            envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
+            keyMode: stripeKeyMode(Deno.env.get("STRIPE_CONNECT_SECRET_KEY")),
+            doc,
+          });
+          if (rail === RAIL.PROCESSOR) {
+            const { data: acct } = await admin.from("processor_accounts").select("bank_discount_pct").eq("shop_owner", doc.shop_owner).maybeSingle();
+            const pct = normalizeDiscountPct(acct?.bank_discount_pct) ?? 0;
+            const cents = Math.round(Number(quoteTotal) * 100);
+            if (pct > 0 && Number.isInteger(cents) && cents > 0) {
+              const p = priceForMethod({ balanceCents: cents, method: "ach", discountPct: pct });
+              bankDiscountHtml = `<p style="color:${EMAIL_INK};font-size:14px;line-height:1.6;margin:-8px 0 20px;">Pay by bank transfer: <strong>$${(p.chargeCents / 100).toFixed(2)}</strong> (save $${(p.discountCents / 100).toFixed(2)}, ${pct}% off). The total above is the card price.</p>`;
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[sendQuoteEmail] bank discount line skipped:", (e as Error)?.message);
+      }
+    }
     const totalNum = Number(quoteTotal);
     const hasRealTotal = Number.isFinite(totalNum) && totalNum > 0;
     const total = (hasRealTotal ? totalNum : 0).toFixed(2);
@@ -320,6 +359,7 @@ Deno.serve(async (req) => {
            quoteTotal — otherwise every "we received your request" email showed
            a prominent "Quote Total $0.00" contradicting the message. */ ""}
       ${hasRealTotal ? renderEmailHighlight("Quote Total", `$${total}`) : ""}
+      ${hasRealTotal ? bankDiscountHtml : ""}
       ${/* Broker quotes are approve-only (no QB checkout for end clients) —
            never promise "Pay Online" on a page that can't take payment. */ ""}
       ${(paymentLink || approveLink) ? renderEmailButton(buttonLabel || (brokerName ? "View & Approve Quote" : "View Quote & Pay Online"), paymentLink || approveLink) : ""}

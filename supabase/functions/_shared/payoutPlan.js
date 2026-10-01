@@ -51,6 +51,7 @@ export function planPayoutDeposit({ payout, items, ledgerByPayin, account, txnDa
   const list = Array.isArray(items) ? items : [];
   const payments = [];
   let feeCents = 0;
+  let discountCents = 0; // bank-transfer discounts customers got (own Deposit line)
   const problems = [];
   const waitingFor = []; // reasons we're waiting, for the shop if it drags on
   const ageDays = (now.getTime() - new Date(payout.createdAt ?? now).getTime()) / (24 * 60 * 60 * 1000);
@@ -73,8 +74,13 @@ export function planPayoutDeposit({ payout, items, ledgerByPayin, account, txnDa
         continue;
       }
       if (gross !== led.amount_cents) { problems.push(`A payment shows ${money(gross)} here but ${money(led.amount_cents)} in QuickBooks.`); continue; }
-      payments.push({ qbPaymentId: led.qb_payment_id, grossCents: gross });
+      // A bank-transfer discount: the QuickBooks Payment is for the full
+      // invoice (gross + discount); the discount comes off with the fees, so
+      // the Deposit still equals what reached the bank.
+      const disc = Number(led.discount_cents) || 0;
+      payments.push({ qbPaymentId: led.qb_payment_id, grossCents: gross + disc });
       feeCents += fee;
+      discountCents += disc;
     } else if (it.type === PAYOUT_ITEM.FEE && gross <= 0) {
       // Stripe charges with no sale behind them (e.g. bank verification).
       feeCents += -gross + fee;
@@ -106,16 +112,24 @@ export function planPayoutDeposit({ payout, items, ledgerByPayin, account, txnDa
     payments,
     feeCents,
     netCents: net,
+    // Its own line so the books show discounts given apart from fees; same
+    // expense account the shop picked for fees.
+    adjustments: discountCents > 0 ? [{
+      amountCents: -discountCents,
+      accountId: account?.qb_fee_account_id,
+      memo: `Bank transfer discounts — payout ${payout.id}`,
+    }] : [],
   });
   if (!built.ok) {
     return built.reason === "does_not_match_bank"
-      ? manual(payout, [`Payments minus fees (${money(built.detail.grossTotal - built.detail.fee)}) don't equal what reached the bank (${money(net)}).`])
+      ? manual(payout, [`Payments minus fees${discountCents ? " and discounts" : ""} (${money(built.detail.grossTotal - built.detail.fee + built.detail.adjTotal)}) don't equal what reached the bank (${money(net)}).`])
       : manual(payout, [`Setup needed: ${built.reason.replace(/_/g, " ")}.`]);
   }
   return {
     plan: PAYOUT_PLAN.POST,
     body: built.body,
     feeCents,
+    discountCents,
     netCents: net,
     payinIds: list.filter((i) => i.type === PAYOUT_ITEM.PAYMENT && i.payinId).map((i) => String(i.payinId)),
   };

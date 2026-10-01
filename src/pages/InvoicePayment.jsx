@@ -70,9 +70,9 @@ export default function InvoicePayment() {
           </div>
         ) : paidReturn ? (
           <PaidNotice docType="invoice" id={id} token={token} paid={paidReturn}
-            fallback={<OnlinePaymentPanel docType="invoice" id={id} token={token} />} />
+            fallback={<OnlinePaymentPanel docType="invoice" id={id} token={token} pricing={info?.pricing} />} />
         ) : (
-          <OnlinePaymentPanel docType="invoice" id={id} token={token} />
+          <OnlinePaymentPanel docType="invoice" id={id} token={token} pricing={info?.pricing} />
         )}
       </div>
     </div>

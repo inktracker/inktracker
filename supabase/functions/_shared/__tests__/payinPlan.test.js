@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  priceForMethod,
+  bankDiscountCents,
+  normalizeDiscountPct,
   PLATFORM_PRICING,
   STRIPE_COST,
   platformFeeCents,
@@ -207,5 +210,21 @@ describe("invoices (order-then-invoice flow) pay the same way", () => {
       inktracker_quote_id: "inv-uuid",
       quote_number: "INV-2026-0042",
     });
+  });
+});
+
+describe("bank-transfer discount pricing", () => {
+  it("card = the invoice; bank = invoice minus the shop's % (half-up cents)", () => {
+    expect(priceForMethod({ balanceCents: 56872, method: "card", discountPct: 2 })).toEqual({ chargeCents: 56872, discountCents: 0 });
+    expect(priceForMethod({ balanceCents: 56872, method: "ach", discountPct: 2 })).toEqual({ chargeCents: 55735, discountCents: 1137 });
+    expect(priceForMethod({ balanceCents: 56872, method: "ach", discountPct: 0 })).toEqual({ chargeCents: 56872, discountCents: 0 });
+  });
+  it("0–5% only; junk is no discount", () => {
+    expect(normalizeDiscountPct("2.5")).toBe(2.5);
+    expect(normalizeDiscountPct(6)).toBeNull();
+    expect(normalizeDiscountPct(-1)).toBeNull();
+    expect(normalizeDiscountPct("abc")).toBeNull();
+    expect(bankDiscountCents(56872, 9)).toBe(0);
+    expect(bankDiscountCents(1, 5)).toBe(0); // never discounts a payment to nothing
   });
 });
