@@ -114,6 +114,12 @@ describe("createBrokerClientInvoice — happy path", () => {
     expect(p.invoicePayload.lines.reduce((s, l) => s + l.amount, 0)).toBe(975);
     // The broker's client tax rate (7), not the shop's tax_rate.
     expect(p.invoicePayload.taxPercent).toBe(7);
+    // Tax goes in "self" mode with the broker's exact client tax amount, so it
+    // lands correctly even on a free/non-AST QuickBooks (the Truman case:
+    // AST returns $0 → planSelfTax pushes the exact tax as its own line and the
+    // TOTAL still matches). taxAmount = clientFacing.tax = client_tax (68).
+    expect(p.taxMode).toBe("self");
+    expect(p.taxAmount).toBe(68);
     // Customer = the end client, with NO id / qb_customer_id (fresh dedup in broker realm).
     expect(p.customer.email).toBe("buyer@acme.com");
     expect(p.customer).not.toHaveProperty("id");
@@ -126,6 +132,20 @@ describe("createBrokerClientInvoice — happy path", () => {
     expect(patch.qb_broker_client_invoice_id).toBe("BQB-1");
     expect(patch.qb_broker_client_payment_link).toBe("https://broker-pay");
     expect(patch).not.toHaveProperty("qb_invoice_id");
+  });
+
+  it("a 0% broker tax rate still sends self-mode with taxAmount 0 (qbSync then applies no tax)", async () => {
+    // broker_tax_rate 0 (e.g. the broker left tax off, or a tax-exempt client).
+    // We still pass taxMode:"self"/taxAmount:0 — qbSync's couldSelf gate
+    // (taxPercent > 0) short-circuits to the no-tax plan, so nothing is added.
+    const { b, invoke } = mockBase44();
+    const noTax = { ...brokerQuote, broker_tax_rate: 0, client_tax: 0, client_subtotal: 975, client_total: 975 };
+    const r = await createBrokerClientInvoice({ base44: b, quote: noTax, session });
+    expect(r.ok).toBe(true);
+    const p = invoke.mock.calls[0][1];
+    expect(p.taxMode).toBe("self");
+    expect(p.taxAmount).toBe(0);
+    expect(p.invoicePayload.taxPercent).toBe(0);
   });
 
   it("fail-open (never throws) when qbSync returns an error — send still proceeds", async () => {
