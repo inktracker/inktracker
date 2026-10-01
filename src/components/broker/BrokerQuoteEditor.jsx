@@ -25,13 +25,9 @@ import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/
 import { isRushManuallyOverridden, nextRushRateForDueDateChange } from "@/lib/pricing/rushOverride";
 import { Eye } from "lucide-react";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
+import { defaultExtrasList } from "@/lib/pricing/extrasDefaults";
 
-const DEFAULT_EXTRAS_META = [
-  { key: "colorMatch", label: "Ink Color Match", rate: 1.0 },
-  { key: "difficultPrint", label: "Difficult Print", rate: 0.5 },
-  { key: "waterbased", label: "Water-Based Ink", rate: 1.0 },
-  { key: "tags", label: "Custom Tags", rate: 1.5 },
-];
+const DEFAULT_EXTRAS_META = defaultExtrasList();
 
 function addBusinessDays(date, days) {
   const d = new Date(date);

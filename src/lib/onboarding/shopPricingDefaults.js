@@ -1,3 +1,4 @@
+import { DEFAULT_EXTRA_RATES } from "@/lib/pricing/extrasDefaults";
 // Canonical pricing-config defaults for a new shop.
 //
 // Pulled out of Account.jsx so onboarding and "Pricing → Save" write
@@ -39,7 +40,7 @@ export const SHOP_PRICING_DEFAULTS = Object.freeze({
     { above: 8,  markup: 1.3  },
     { above: 0,  markup: 1.4  },
   ],
-  extras: { colorMatch: 1.0, difficultPrint: 0.5, waterbased: 1.0, tags: 1.5 },
+  extras: { ...DEFAULT_EXTRA_RATES },
   setupFees: {
     enabled: false,
     items: [

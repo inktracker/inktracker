@@ -48,12 +48,13 @@ import {
   resolveExtraBasis as _resolveExtraBasis,
 } from "@/lib/pricing/extras";
 import { sumAdditionalCharges as _sumAdditionalCharges, normalizeAdditionalCharges as _normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
+import { DEFAULT_EXTRA_RATES } from "@/lib/pricing/extrasDefaults";
 
+// Derived from the ONE shared default table (lib/pricing/extrasDefaults) —
+// this used to be one of six independent copies. Export name kept for the
+// existing consumers.
 export const EXTRA_RATES = {
-  colorMatch: 1.0,
-  difficultPrint: 0.5,
-  waterbased: 1.0,
-  tags: 1.5,
+  ...DEFAULT_EXTRA_RATES,
 };
 
 export const SIZES = ["OS", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];

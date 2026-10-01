@@ -1,3 +1,4 @@
+import { DEFAULT_EXTRA_RATES } from "@/lib/pricing/extrasDefaults";
 // Default pricing configuration for the Account → Pricing & Fees editor.
 // Extracted verbatim from PricingConfigEditor as a pure decomposition —
 // no value changes. A freshly-connected shop with no saved pricing_config
@@ -34,7 +35,7 @@ export const DEFAULTS = {
     { above: 8, markup: 1.3 },
     { above: 0, markup: 1.4 },
   ],
-  extras: { colorMatch: 1.0, difficultPrint: 0.5, waterbased: 1.0, tags: 1.5 },
+  extras: { ...DEFAULT_EXTRA_RATES },
   // Per-screen setup fee billing. Off by default. Shops define their
   // own named fees (Screens, Film, Color Match, etc.) each with a
   // per-screen rate plus a cheaper reorder rate (used when "Reorder"
