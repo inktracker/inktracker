@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPayingShop, buildMerchantCreate, buildOnboardingSession, buildPaymentSession, buildPayinConfig } from "../rainforestRequests.js";
+import { isPayingShop, buildMerchantCreate, buildOnboardingSession, buildPaymentSession, buildPayinConfig, buildActivitySession } from "../rainforestRequests.js";
 
 describe("isPayingShop — Rainforest discourages trial accounts", () => {
   it("paid, admin and comped shops qualify; trials and lapsed don't", () => {
@@ -60,5 +60,17 @@ describe("buildPayinConfig", () => {
       level_2_3: { order_number: "INV-2026-0042", tax_amount: 0 },
       risk_data: { external_ref: "INV-2026-0042" },
     });
+  });
+});
+
+describe("buildActivitySession", () => {
+  it("view-only by default; refunds + disputes only when allowed; always one merchant", () => {
+    const view = buildActivitySession("mid_1");
+    expect(view.statements[0].permissions).toEqual(["group#payment_report_component", "group#deposit_report_component"]);
+    expect(view.statements[0].constraints).toEqual({ merchant: { merchant_id: "mid_1" } });
+    const act = buildActivitySession("mid_1", { canAct: true });
+    expect(act.statements[0].permissions).toContain("group#payment_report_component.create_refund");
+    expect(act.statements[0].permissions).toContain("group#payment_report_component.update_chargeback");
+    expect(JSON.stringify(act)).not.toContain("group#all");
   });
 });

@@ -42,6 +42,7 @@ import {
   buildOnboardingSession,
   buildPaymentSession,
   buildPayinConfig,
+  buildActivitySession,
 } from "../_shared/rainforestRequests.js";
 import { choosePayTarget, NOT_PAYABLE } from "../_shared/rainforestPayinPlan.js";
 import { formatRatePct } from "../_shared/rainforestPricing.js";
@@ -382,6 +383,22 @@ export async function handle(req: Request, deps: Deps) {
       merchantApplicationId: applicationId,
       scriptUrl: componentScripts(deps.rf.base).merchant,
       termsUrl: deps.env("RAINFOREST_TERMS_URL") ?? "https://www.inktracker.app/payment-processing-agreement",
+    });
+  }
+
+  // The shop's payments and payouts (Rainforest's report components): refund
+  // a customer, answer a dispute, see what each payout contained. Owner and
+  // managers view; only the owner can refund or respond to disputes.
+  if (action === "activitySession") {
+    if (!canMapQbAccounts(viewer)) return json({ error: "Only the owner or a manager can see payments." }, 403);
+    if (!account?.merchant_id) return json({ error: "No payments account yet." }, 400);
+    const canAct = canTogglePayments(viewer);
+    const session = await deps.rf.post("/v1/sessions", buildActivitySession(account.merchant_id, { canAct }));
+    return json({
+      sessionKey: session?.session_key,
+      merchantId: account.merchant_id,
+      canAct,
+      scriptUrl: componentScripts(deps.rf.base).merchant,
     });
   }
 

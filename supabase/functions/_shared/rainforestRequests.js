@@ -82,6 +82,26 @@ export function buildPaymentSession(merchantId) {
 }
 
 /**
+ * Session for the shop's Payments activity (Rainforest's payment report +
+ * deposit report components), constrained to the shop's merchant. Viewing is
+ * for the shop's team; refunding and answering disputes move money, so only
+ * when `canAct` (the owner).
+ */
+export function buildActivitySession(merchantId, { canAct = false } = {}) {
+  const permissions = ["group#payment_report_component", "group#deposit_report_component"];
+  if (canAct) {
+    permissions.push(
+      "group#payment_report_component.create_refund",
+      "group#payment_report_component.update_chargeback",
+    );
+  }
+  return {
+    ttl: ONBOARDING_TTL_S,
+    statements: [{ permissions, constraints: { merchant: { merchant_id: String(merchantId) } } }],
+  };
+}
+
+/**
  * POST /v1/payin_configs for one payment. `doc` is the quote or invoice row
  * (see choosePayTarget), `target` its pay target, `liveInvoice` the QB
  * invoice being paid. The amount is the LIVE QuickBooks balance.
