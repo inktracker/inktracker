@@ -1,13 +1,30 @@
-import { MessageSquare, CheckCircle2, Package } from "lucide-react";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { MoreHorizontal, CheckCircle2, Truck } from "lucide-react";
+import { exportOrderToPDF, previewPdf } from "../../shared/pdfExport";
 import ReactivateLink from "../../shared/ReactivateLink";
+import { buildOrderActionPlan } from "@/lib/orders/orderActionPlan";
 
-// Row 1 of the Order Detail footer: workflow actions (status flow +
-// invoice create/preview/send + QB link + mark-paid + close) and the
-// best-effort QB push note. All handlers + state are owned by the parent
-// and threaded in. Pure decomposition — moved verbatim from
-// OrderDetailModal.jsx.
+// Order Detail footer — ONE state-driven primary action + a ⋯ More menu
+// (Joe, 2026-10-01: the old two-row, 11+-peer-button footer made every click
+// a scan). WHICH actions exist and WHEN they're enabled is decided by the
+// pure, unit-tested buildOrderActionPlan — the gates there are copied
+// verbatim from the old rows (Send only at Completed, Create Invoice only
+// when no invoice exists, reads stay enabled under readOnly, Delete last and
+// separated, …). This file is only rendering + click-dispatch.
+//
+// The one stage-relevant exception kept inline: the tri-state Create PO /
+// View Pending PO / Ordered button during Order Goods — ordering blanks IS
+// that stage's real work, so it sits beside the primary instead of in More.
 export default function OrderInvoiceActions({
   order,
+  liveOrder,
+  customer,
+  shopName,
+  logoUrl,
+  copied,
+  copyLink,
   saving,
   onRevert,
   onAdvance,
@@ -15,6 +32,10 @@ export default function OrderInvoiceActions({
   onComplete,
   onTogglePaid,
   onClose,
+  onDelete,
+  onSendToPartner,
+  onOrderFromAC,
+  sourcePO,
   prevStatus,
   nextStatus,
   relatedInvoice,
@@ -29,164 +50,143 @@ export default function OrderInvoiceActions({
   onPrintTicket,
   onEditOrder,
   editOrderDisabledReason,
-  // Read-only (lapsed subscription): disable the write actions in this row
-  // (status flow, Create Invoice → QB, Send, Mark Paid). Preview Invoice /
-  // View in QB / Close are reads and stay enabled. Defaults keep writable
-  // users unchanged.
   readOnly = false,
   reactivateHref,
 }) {
-  const roTitle = "Your subscription has ended — reactivate to make changes.";
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const plan = buildOrderActionPlan({
+    order,
+    relatedInvoice,
+    readOnly,
+    saving,
+    creatingInvoice,
+    prevStatus,
+    nextStatus,
+    editOrderDisabledReason,
+    copied,
+    has: {
+      onRevert: !!onRevert,
+      onAdvance: !!onAdvance,
+      onShowInvoice: !!onShowInvoice,
+      onComplete: !!onComplete,
+      onTogglePaid: !!onTogglePaid,
+      handleResyncInvoice: !!handleResyncInvoice,
+      onCreateSlip: !!onCreateSlip,
+      onPrintTicket: !!onPrintTicket,
+      onEditOrder: !!onEditOrder,
+      copyLink: !!copyLink,
+      onPreviewPdf: true,
+      onSendToPartner: !!onSendToPartner,
+      onDelete: !!onDelete,
+    },
+  });
+
+  // Key → the existing handler, unchanged behavior.
+  const dispatch = {
+    advance: () => advanceWithGoodsGuard(),
+    createInvoice: () => handleCreateInvoice(),
+    send: () => handleOpenSend(),
+    revert: () => callAction(onRevert, order.id),
+    previewInvoice: () => onShowInvoice(relatedInvoice),
+    resyncQb: () => handleResyncInvoice(),
+    editOrder: () => onEditOrder(),
+    printTicket: () => onPrintTicket(),
+    createSlip: () => onCreateSlip(),
+    togglePaid: () => callAction(onTogglePaid, order),
+    artLink: () => copyLink("art"),
+    statusLink: () => copyLink("status"),
+    // previewPdf keeps the popup tied to the click gesture (mobile Safari);
+    // in-app it renders natively where window.open of a blob is a no-op.
+    previewPdf: () => previewPdf(exportOrderToPDF(order, shopName, logoUrl, "blob", customer?.company)),
+    sendToPartner: () => onSendToPartner(),
+    delete: () => callAction(onDelete, order.id),
+  };
+
+  const runMenuItem = (item) => {
+    if (!item.keepOpen) setMenuOpen(false);
+    dispatch[item.key]?.();
+  };
+
   return (
     <>
-      {/* Row 1: workflow actions (status flow + payment) */}
       <div className="flex flex-wrap items-center gap-2">
-        {onRevert && prevStatus && (
+        {plan.primary && (
           <button
-            onClick={() => callAction(onRevert, order.id)}
+            onClick={plan.primary.disabled ? undefined : dispatch[plan.primary.key]}
+            disabled={plan.primary.disabled}
+            title={plan.primary.title}
+            className="px-5 py-2.5 text-sm font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {plan.primary.label}
+          </button>
+        )}
+
+        {/* Ordering blanks is the Order Goods stage's actual work — inline. */}
+        {onOrderFromAC && (liveOrder || order)?.status === "Order Goods" && (
+          <ACOrderButton
+            order={order}
+            sourcePO={sourcePO}
+            onOrderFromAC={onOrderFromAC}
             disabled={saving || readOnly}
-            title={readOnly ? roTitle : undefined}
-            className="px-3 py-2 text-sm font-semibold text-slate-500 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            ← {prevStatus}
-          </button>
+            readOnly={readOnly}
+          />
         )}
-        {onAdvance && nextStatus && (
-          <button
-            onClick={advanceWithGoodsGuard}
-            disabled={saving || readOnly}
-            title={readOnly ? roTitle : undefined}
-            className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? "Saving…" : `${order.status} Complete →`}
-          </button>
-        )}
-        {/* Invoice actions.
-            READ actions (Preview Invoice / View in QB) render whenever a
-            linked invoice exists, at ANY status — invoice-born orders
-            ("Add to Production" on a QB-written invoice) carry their
-            invoice from day one, and the calendar/production views need
-            the trail back to it mid-production, not just at Completed.
-            WRITE actions stay gated:
-              - "Send" only at Completed (mid-production sends would
-                change when customers get billed)
-              - "Create Invoice" only at Completed + no invoice.
-            The "Create" path was previously labeled "Convert to Invoice" and
-            ran on every click — Joe found that this duplicated invoices when
-            a quote had already been invoiced via the Send-Quote-via-QB flow.
-            The dedup guard is enforced at three layers now:
-              - This UI gate (no Create button when invoice exists)
-              - handleComplete's pre-fetch + buildOrderCompletionPlan
-              - DB unique index on (shop_owner, order_id) in
-                20260519_invoices_no_duplicates.sql */}
-        {relatedInvoice && (
-          <>
-            {onShowInvoice && (
-              <button
-                onClick={() => onShowInvoice(relatedInvoice)}
-                className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition"
-              >
-                Preview Invoice
-              </button>
+
+        {plan.menu.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-semibold text-slate-600 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl transition"
+            >
+              <MoreHorizontal className="w-4 h-4" /> More
+            </button>
+            {menuOpen && (
+              <>
+                {/* click-away layer */}
+                <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                <div
+                  role="menu"
+                  className="absolute bottom-full left-0 mb-2 z-50 min-w-[240px] max-h-[70vh] overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl py-1.5"
+                >
+                  {plan.menu.map((item) =>
+                    item.divider ? (
+                      <div key={item.key} className="my-1.5 border-t border-slate-100" />
+                    ) : item.href ? (
+                      <a
+                        key={item.key}
+                        href={item.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                        className="block px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        {item.label}
+                      </a>
+                    ) : (
+                      <button
+                        key={item.key}
+                        role="menuitem"
+                        onClick={item.disabled ? undefined : () => runMenuItem(item)}
+                        disabled={item.disabled}
+                        title={item.title}
+                        className={`block w-full text-left px-4 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed ${
+                          item.danger ? "text-red-500 hover:bg-red-50" : "text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </>
             )}
-            {/* Send the invoice to the customer (Resend email + QB pay
-                link when one exists). Reuses the standard Send flow; for
-                already-paid invoices it sends the PDF as a receipt. */}
-            {order.status === "Completed" && (
-              <button
-                onClick={handleOpenSend}
-                disabled={readOnly}
-                title={readOnly ? roTitle : undefined}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <MessageSquare className="w-4 h-4" /> Send
-              </button>
-            )}
-            {relatedInvoice.qb_invoice_id && (
-              <a
-                href={`https://qbo.intuit.com/app/invoice?txnId=${encodeURIComponent(relatedInvoice.qb_invoice_id)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 text-sm font-semibold text-[#2CA01C] border border-[#2CA01C] rounded-xl hover:bg-[#2CA01C]/5 transition"
-              >
-                View in QB
-              </a>
-            )}
-            {/* One button that does the right thing without digging into Preview
-                Invoice: qbSync creates when there's no QB invoice, updates when
-                there is, recreates when it was deleted in QB, refuses when paid
-                — so it can't duplicate. Adaptive label mirrors the invoice modal. */}
-            {handleResyncInvoice && (
-              <button
-                onClick={handleResyncInvoice}
-                disabled={creatingInvoice || readOnly}
-                title={readOnly ? roTitle : "Create or update this invoice in QuickBooks"}
-                className="px-4 py-2 text-sm font-semibold text-[#2CA01C] border border-[#2CA01C] rounded-xl hover:bg-[#2CA01C]/5 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {creatingInvoice ? "Syncing…" : (relatedInvoice.qb_invoice_id ? "Resync with QuickBooks" : "Sync to QuickBooks")}
-              </button>
-            )}
-          </>
+          </div>
         )}
-        {order.status === "Completed" && !relatedInvoice && onComplete && (
-          <button
-            onClick={handleCreateInvoice}
-            disabled={saving || creatingInvoice || readOnly}
-            title={readOnly ? roTitle : undefined}
-            className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {creatingInvoice ? "Creating…" : order.floor_completed_at ? "Create Invoice & finish" : "Create Invoice"}
-          </button>
-        )}
-        {/* Packing slip — finished orders only. Opens the confirm-quantities
-            modal (ordered minus recorded misprints, editable) before the
-            price-free PDF preview. */}
-        {/* Edit Order (phase 1, docs/edit-order-design.md): tiers 1-2
-            open the editor; QB-linked / paid / completed / money-hidden
-            show the reason in the tooltip and stay disabled. */}
-        {onEditOrder && (
-          <button
-            onClick={editOrderDisabledReason ? undefined : onEditOrder}
-            disabled={!!editOrderDisabledReason || readOnly}
-            title={editOrderDisabledReason || (readOnly ? roTitle : undefined)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Edit Order
-          </button>
-        )}
-        {/* Production ticket — the paper traveler. Available at every
-            status (it prints when work STARTS, not when it ends). */}
-        {onPrintTicket && (
-          <button
-            onClick={onPrintTicket}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl transition"
-          >
-            <Package className="w-4 h-4" /> Print Ticket
-          </button>
-        )}
-        {order.status === "Completed" && onCreateSlip && (
-          <button
-            onClick={onCreateSlip}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-teal-700 border border-teal-300 bg-teal-50 hover:bg-teal-100 rounded-xl transition"
-          >
-            <Package className="w-4 h-4" /> Create Slip
-          </button>
-        )}
-        {onTogglePaid && (
-          <button
-            onClick={() => callAction(onTogglePaid, order)}
-            disabled={saving || readOnly}
-            title={readOnly ? roTitle : undefined}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 disabled:cursor-not-allowed ${
-              order.paid
-                ? "text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
-                : "text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
-            }`}
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            {order.paid ? "Unmark Paid" : "Mark Paid"}
-          </button>
-        )}
+
         <ReactivateLink show={readOnly} href={reactivateHref} className="ml-auto" />
         <button
           onClick={onClose}
@@ -204,5 +204,49 @@ export default function OrderInvoiceActions({
         </div>
       )}
     </>
+  );
+}
+
+// Tri-state button shown during Order Goods.
+//   no source PO    → "Create PO" (supplier-aware draft per supplier via
+//                      ensurePoDraftsForOrder)
+//   draft source PO → "View Pending PO" (links to /PurchaseOrders)
+//   submitted PO    → "✓ Ordered" (links there, read-only feel)
+// The signal-it-was-ordered behavior is what differentiates this from the
+// old SS button which always invited a re-order.
+function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled, readOnly = false }) {
+  if (sourcePO?.status === "submitted") {
+    return (
+      <Link
+        to={`${createPageUrl("PurchaseOrders")}?po=${sourcePO.id}`}
+        title={`Already ordered from ${sourcePO.supplier || "the supplier"}${sourcePO.supplier_order_id ? ` · ${sourcePO.supplier_order_id}` : ""}`}
+        className="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition"
+      >
+        <CheckCircle2 className="w-4 h-4" /> Ordered
+      </Link>
+    );
+  }
+  if (sourcePO?.status === "draft") {
+    return (
+      <Link
+        to={`${createPageUrl("PurchaseOrders")}?po=${sourcePO.id}`}
+        title="A draft PO exists for this order — open it to review and submit"
+        className="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-semibold text-amber-700 border border-amber-200 bg-amber-50 rounded-xl hover:bg-amber-100 transition"
+      >
+        <Truck className="w-4 h-4" /> View Pending PO
+      </Link>
+    );
+  }
+  return (
+    <button
+      onClick={() => onOrderFromAC(order)}
+      disabled={disabled}
+      title={readOnly
+        ? "Your subscription has ended — reactivate to create a PO."
+        : "Create a draft PO from this order's line items (one per supplier)"}
+      className="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-semibold text-teal-600 border border-teal-200 rounded-xl hover:bg-teal-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      <Truck className="w-4 h-4" /> Create PO
+    </button>
   );
 }
