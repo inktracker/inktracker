@@ -209,6 +209,11 @@ maps QB accounts. **Only the owner** signs up and switches it on or off.
    with the events listed above. Its signing secret →
    `STRIPE_CONNECT_WEBHOOK_SECRET`.
 4. Branding (Settings → Connect → Branding) so the sign-up page says InkTracker.
+4b. **Turn OFF "Show tax during signup"** (Settings → Connect → Onboarding
+   options → Tax). QuickBooks is the only tax authority: checkout charges the
+   QuickBooks balance (tax included) as one total and never sets
+   `automatic_tax` (pinned by a test), so Stripe Tax's sign-up pitch only
+   misleads shops. Done in the sandbox 2026-10-01; repeat on the live account.
 4a. **Required:** Settings → Connect → Onboarding options → OAuth: copy the
    **client id** (`ca_…`, the test one while testing) into
    `STRIPE_CONNECT_CLIENT_ID`, and add the redirect URI

@@ -114,3 +114,17 @@ describe("buildConnectOAuthUrl — connect an existing Stripe account", () => {
     });
   });
 });
+
+describe("tax: QuickBooks is the only tax authority", () => {
+  it("checkout charges the QuickBooks balance as one total and never asks Stripe to calculate tax", () => {
+    const doc = { id: "q", quote_id: "Q-1", shop_owner: "s@x.co", public_token: "t" };
+    for (const method of ["card", "ach"]) {
+      const { params } = buildCheckoutSession({ doc, docType: "quote", target: { kind: "full", qbInvoiceId: "1", amountCents: 107795 }, method, payPageUrl: "https://x/p", nowMs: 0 });
+      const flat = JSON.stringify(params);
+      expect(params).not.toHaveProperty("automatic_tax");
+      expect(flat).not.toMatch(/tax_rates|tax_behavior|automatic_tax|tax_code/);
+      expect(params.line_items).toHaveLength(1);
+      expect(params.line_items[0].price_data.unit_amount).toBe(107795); // QB's total, tax included
+    }
+  });
+});
