@@ -15,20 +15,25 @@ import { artworkProxyUrl } from "@/lib/artwork/proxyUrl";
 // storage API's raw JSON error body to the customer (#681). Every state stays
 // clickable so the overlay (which runs the same probe) can show its own
 // friendly message.
-function ProofPreviewBlock({ art, onEnlarge }) {
+export function ProofPreviewBlock({ art, onEnlarge }) {
   const [imgFailed, setImgFailed] = useState(false);
   // null = probing, true = reachable, false = dead
   const [pdfOk, setPdfOk] = useState(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const isImage = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(art.url || "");
-  const isPdf = !isImage && /\.pdf(\?|$)/i.test(art.url || "");
+  const isPdf = !isImage && /\.(pdf)(\?|$)/i.test(art.url || art.path || "");
+  // Mockup proofs carry a picture of the mockup. Show that instead of the
+  // embedded PDF: Android phones can't draw a PDF inline at all, and iPhones
+  // show a cramped first page. Tapping still opens the full PDF proof.
+  const showPicture = isPdf && art._previewThumb && !previewFailed;
 
   useEffect(() => {
-    if (!isPdf) return undefined;
+    if (!isPdf || showPicture) return undefined;
     let cancelled = false;
     setPdfOk(null);
     probeUrl(art._src).then((ok) => { if (!cancelled) setPdfOk(ok); });
     return () => { cancelled = true; };
-  }, [art._src, isPdf]);
+  }, [art._src, isPdf, showPicture]);
 
   const unavailable = (
     <div className="flex flex-col items-center justify-center gap-2 h-48 text-slate-500">
@@ -72,6 +77,28 @@ function ProofPreviewBlock({ art, onEnlarge }) {
         )}
         <span className="absolute top-2 right-2 inline-flex items-center gap-1 bg-slate-900/70 text-white text-[11px] font-semibold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition">
           <Maximize2 className="w-3.5 h-3.5" /> Enlarge
+        </span>
+      </button>
+    );
+  }
+
+  if (showPicture) {
+    return (
+      <button
+        type="button"
+        onClick={onEnlarge}
+        className="group relative block w-full bg-slate-50"
+        title="Open the full proof"
+      >
+        <img
+          src={art._previewThumb}
+          srcSet={art._previewThumb2x ? `${art._previewThumb} 1x, ${art._previewThumb2x} 2x` : undefined}
+          onError={() => setPreviewFailed(true)}
+          alt={art.name}
+          className="w-full max-h-96 object-contain"
+        />
+        <span className="absolute top-2 right-2 inline-flex items-center gap-1 bg-slate-900/80 text-white text-[11px] font-semibold px-2 py-1 rounded-lg">
+          <Maximize2 className="w-3.5 h-3.5" /> Open full proof
         </span>
       </button>
     );
@@ -141,6 +168,8 @@ function getOrderArtwork(order) {
       // checkbox+signature still worked, producing sign-offs on artwork the
       // customer never saw (audit 2026-09-30).
       path: art.path || "",
+      // Mockup Designer proofs: a PNG of the mockup (see ProofPreviewBlock).
+      previewPath: art.preview?.path || "",
       note: art.note || "",
       imprintDetails: [], // [{location, title, colors, technique, width, height, pantones, details, garmentLabel}]
     });
@@ -335,7 +364,11 @@ export default function ArtApproval() {
     // what the customer APPROVES is always full quality.
     const thumb = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback, width: 1024 });
     const thumb2x = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback, width: 2048 });
-    return { ...art, _src: src, _thumbSrc: thumb || src, _thumbSrc2x: thumb2x || null };
+    const previewThumb = art.previewPath
+      ? artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.previewPath, width: 1024 }) : null;
+    const previewThumb2x = art.previewPath
+      ? artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.previewPath, width: 2048 }) : null;
+    return { ...art, _src: src, _thumbSrc: thumb || src, _thumbSrc2x: thumb2x || null, _previewThumb: previewThumb, _previewThumb2x: previewThumb2x };
   });
   // The server's view of "approved right now": an approval the art has since
   // outgrown (file swapped, print details changed) asks again.

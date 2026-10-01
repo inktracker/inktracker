@@ -32,3 +32,42 @@ export function proofRecipientEmail(order) {
   if (broker.includes("@")) return broker;
   return String(order?.customer_email || "").trim();
 }
+
+/**
+ * The most recent mockup on the record that saved its design (so the
+ * designer can reopen it for a revision), or null.
+ */
+export function latestMockupDesign(selectedArtwork) {
+  const list = (Array.isArray(selectedArtwork) ? selectedArtwork : []).filter((a) => isMockupProof(a) && a?.design?.v === 1);
+  return list.length ? list[list.length - 1] : null;
+}
+
+/**
+ * A designer image (data: URL from a file pick, or a signed http URL from a
+ * restored mockup) as an uploadable PNG/JPG File. Other formats (SVG,
+ * WebP…) are drawn to a canvas and saved as PNG.
+ */
+export async function imageSrcToFile(src, baseName) {
+  const blob = await (await fetch(src)).blob();
+  if (blob.type === "image/png" || blob.type === "image/jpeg") {
+    return new File([blob], `${baseName}.${blob.type === "image/png" ? "png" : "jpg"}`, { type: blob.type });
+  }
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || 1200;
+    canvas.height = img.naturalHeight || 1200;
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    const png = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!png) throw new Error("Couldn't save the artwork image.");
+    return new File([png], `${baseName}.png`, { type: "image/png" });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

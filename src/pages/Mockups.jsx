@@ -2,12 +2,12 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { Search, Download, Upload, RotateCcw, Loader2, FileText, Link2, Send } from "lucide-react";
 import MockupCanvas from "../components/mockups/MockupCanvas";
 import PlacementSelect from "../components/shared/PlacementSelect";
-import { base44 } from "@/api/supabaseClient";
-import { uploadFile } from "@/lib/uploadFile";
+import { base44, supabase } from "@/api/supabaseClient";
+import { uploadFile, signArtworkUrl } from "@/lib/uploadFile";
 import { notify } from "@/lib/notify";
 import { getShopPricingConfig, getDisplayName, getEnabledTechniques } from "../components/shared/pricing";
 import { shopScope } from "@/lib/shopScope";
-import { withMockupProof, countMockupProofs, proofRecipientEmail } from "@/lib/art/mockupProof";
+import { withMockupProof, countMockupProofs, proofRecipientEmail, latestMockupDesign, imageSrcToFile } from "@/lib/art/mockupProof";
 import { callArtProof } from "@/lib/art/artProofClient";
 import { artApprovalState } from "@/lib/art/artApproval";
 // jspdf loaded on demand inside generateProofPDF below
@@ -95,6 +95,14 @@ export default function Mockups() {
   const [editingNote, setEditingNote] = useState(false);
   // Arriving from an order's "Make a mockup" link (?order=<id>): preselect
   // it once the picker has loaded.
+  // Saved-mockup restore: per-view canvas placement, and a counter that
+  // remounts the canvases so they pick it up.
+  const [canvasInit, setCanvasInit] = useState({});
+  const [restoreNonce, setRestoreNonce] = useState(0);
+  const [restoring, setRestoring] = useState(false);
+  // Latest proof on the picked order (what the customer last said / when
+  // the last one went out).
+  const [lastProof, setLastProof] = useState(null);
   const deepLinkOrderId = useRef(new URLSearchParams(window.location.search).get("order")).current;
   const preselectRef = useRef(deepLinkOrderId);
   // Shop identity used by the Art Proof PDF header (logo + name) and
@@ -458,8 +466,12 @@ export default function Mockups() {
       // Loaded via the page's `user` / `shop` state on mount. Best-effort:
       // a failed logo fetch falls through to text-only without aborting
       // the PDF.
-      const shopName = (user?.shop_name || user?.full_name || shop?.shop_name || "").trim();
-      const logoUrl = (user?.logo_url || shop?.logo_url || "").trim();
+      // Broker jobs are blind: the broker's client must never see the
+      // shop's name, logo or website on the proof (the approval page is
+      // white-labeled for them too).
+      const brokerJob = Boolean(resolveTarget(selectedTargetKey)?.record?.broker_id);
+      const shopName = brokerJob ? "" : (user?.shop_name || user?.full_name || shop?.shop_name || "").trim();
+      const logoUrl = brokerJob ? "" : (user?.logo_url || shop?.logo_url || "").trim();
       const identityY = 60;
       let identityTextX = m;
       if (logoUrl) {
@@ -728,7 +740,7 @@ export default function Mockups() {
       // "InkTracker" string when neither is available — never the
       // platform's own biotamfg.com.
       const footerText = (
-        (user?.website || shop?.website || "").trim() ||
+        (brokerJob ? "" : (user?.website || shop?.website || "").trim()) ||
         shopName ||
         "InkTracker"
       ).replace(/^https?:\/\//, "");
@@ -740,6 +752,122 @@ export default function Mockups() {
       return null;
     } finally {
       setGeneratingProof(false);
+    }
+  }
+
+  // Newest proof version on an order (RLS: the shop's own team only).
+  async function latestProofRow(orderId) {
+    const { data } = await supabase.from("art_proofs")
+      .select("version, status, sent_at, sent_to, response_comment, response_location, approved_by_name, responded_at")
+      .eq("order_id", orderId).order("version", { ascending: false }).limit(1);
+    return data?.[0] || null;
+  }
+
+  // Picking an order: load what the customer last said, and reopen its
+  // last mockup when the designer is still empty (the usual revision path).
+  useEffect(() => {
+    const t = resolveTarget(selectedTargetKey);
+    setLastProof(null);
+    if (!t) return;
+    let cancelled = false;
+    if (t.type === "order") latestProofRow(t.record.id).then((r) => { if (!cancelled) setLastProof(r); }).catch(() => {});
+    const saved = latestMockupDesign(t.record.selected_artwork);
+    const empty = !garment && Object.keys(artworks).length === 0;
+    if (saved && empty) restoreDesign(saved);
+    return () => { cancelled = true; };
+    // Only when the pick changes — not on every list refresh.
+  }, [selectedTargetKey]);
+
+  // Everything needed to reopen this mockup for a revision. Art + custom
+  // garment photos are uploaded (they only exist in this tab as data: URLs);
+  // catalog garment photos keep their supplier URL.
+  async function saveMockupDesign() {
+    const art = {};
+    for (const v of views) {
+      const d = canvasRefs.current[v]?.getDesign?.();
+      if (!d?.artSrc) continue;
+      let path = artworks[v]?.path && d.artSrc === artworks[v]?.src ? artworks[v].path : null;
+      if (!path) path = (await uploadFile(await imageSrcToFile(d.artSrc, `mockup-art-${viewLabel(v)}`))).path;
+      art[v] = { path, pos: d.pos, rotation: d.rotation, flipH: d.flipH, flipV: d.flipV };
+    }
+    const garmentPhotos = {};
+    for (const v of views) {
+      const src = getGarmentImageForView(v);
+      if (!src) continue;
+      garmentPhotos[v] = /^https?:/i.test(src) && !src.includes("/storage/v1/object/sign/")
+        ? { url: src }
+        : { path: garmentPhotoPaths.current[v] || (await uploadFile(await imageSrcToFile(src, `mockup-garment-${viewLabel(v)}`))).path };
+    }
+    const { neckLabels, foldBagLabel, colorChange, specialtyInk, notes } = proofDetails;
+    return {
+      v: 1,
+      garment: garment ? {
+        styleNumber: garment.styleNumber || garment.resolvedStyleNumber || "",
+        brandName: garment.brandName || "",
+        title: garment.title || garment.styleName || "",
+      } : null,
+      colorName: selectedColor?.colorName || "",
+      views, printLocations, decorationTypes, viewSpecs,
+      proof: { neckLabels, foldBagLabel, colorChange, specialtyInk, notes },
+      art, garmentPhotos,
+    };
+  }
+
+  // Signed paths of restored garment photos, so a re-save reuses them.
+  const garmentPhotoPaths = useRef({});
+
+  // Reopen a saved mockup. Signed URLs last 12h so a long edit session can
+  // still export.
+  async function restoreDesign(entry) {
+    const d = entry?.design;
+    if (!d || d.v !== 1) return;
+    setRestoring(true);
+    try {
+      const sign = (path) => signArtworkUrl(path, 12 * 60 * 60);
+      const nextViews = Array.isArray(d.views) && d.views.length ? d.views : ["Front", "Back"];
+      const photos = {};
+      garmentPhotoPaths.current = {};
+      for (const v of nextViews) {
+        const g = d.garmentPhotos?.[v];
+        if (g?.url) photos[v] = g.url;
+        else if (g?.path) {
+          const u = await sign(g.path);
+          if (u) { photos[v] = u; garmentPhotoPaths.current[v] = g.path; }
+        }
+      }
+      const arts = {};
+      const init = {};
+      for (const v of nextViews) {
+        const a = d.art?.[v];
+        if (!a?.path) continue;
+        const u = await sign(a.path);
+        if (!u) continue;
+        arts[v] = { src: u, path: a.path };
+        init[v] = { pos: a.pos, rotation: a.rotation, flipH: a.flipH, flipV: a.flipV };
+      }
+      // Garment photos come back as per-view images (they win over the
+      // catalog lookup), so the restore never depends on a supplier search.
+      setGarment(d.garment
+        ? { ...d.garment, isCustomUpload: true, colors: [], images: [] }
+        : { styleNumber: "", brandName: "", isCustomUpload: true, colors: [], images: [] });
+      setColors([]);
+      setSelectedColor(d.colorName ? { colorName: d.colorName } : null);
+      setGarmentImg(photos.Front || photos[nextViews[0]] || "");
+      setCustomGarmentImages(photos);
+      setViews(nextViews);
+      setView(nextViews[0]);
+      setPrintLocations(d.printLocations || {});
+      setDecorationTypes(d.decorationTypes || {});
+      if (d.viewSpecs) setViewSpecs(d.viewSpecs);
+      if (d.proof) setProofDetails(prev => ({ ...prev, ...d.proof }));
+      setArtworks(arts);
+      setCanvasInit(init);
+      setRestoreNonce(n => n + 1);
+      notify.success("Opened the last mockup", "Make your changes, then send it again.");
+    } catch (err) {
+      notify.error("Couldn't open the last mockup", err);
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -763,19 +891,33 @@ export default function Mockups() {
       notify.error("Pick an order or quote to link the proof to first.");
       return;
     }
-    // Art the customer already approved: changing it (even saving without
-    // sending) means they have to approve again before the job can finish.
-    if (target.type === "order") {
-      const st = artApprovalState(target.record);
-      if (st.approved && !window.confirm(send
-        ? `The customer already approved this art${st.version ? ` (v${st.version})` : ""}. Sending a new mockup replaces that approval, and they'll need to approve again. Send it?`
-        : `The customer already approved this art${st.version ? ` (v${st.version})` : ""}. Saving a new mockup changes it, so they'll need to approve again before the job can be completed. Save anyway?`)) {
-        return;
-      }
-    }
     setLinking(true);
     setLinkMode(send ? "send" : "link");
     try {
+      const Entity = target.type === "order" ? base44.entities.Order : base44.entities.Quote;
+      // Re-read: the picker list can be minutes old — both for the checks
+      // below (the customer may have just approved) and so writing the
+      // artwork back doesn't drop files added to the job since.
+      const fresh = (await Entity.get(target.record.id)) || target.record;
+      if (target.type === "order") {
+        // Art the customer already approved: changing it (even saving
+        // without sending) means they have to approve again.
+        const st = artApprovalState(fresh);
+        if (st.approved && !window.confirm(send
+          ? `The customer already approved this art${st.version ? ` (v${st.version})` : ""}. Sending a new mockup replaces that approval, and they'll need to approve again. Send it?`
+          : `The customer already approved this art${st.version ? ` (v${st.version})` : ""}. Saving a new mockup changes it, so they'll need to approve again before the job can be completed. Save anyway?`)) {
+          return;
+        }
+        // A proof went out minutes ago and they haven't answered: a second
+        // send is usually a double click or a tweak that can wait.
+        if (send && !st.approved) {
+          const recent = await latestProofRow(fresh.id);
+          const mins = recent?.status === "sent" && recent.sent_at ? (Date.now() - new Date(recent.sent_at).getTime()) / 60000 : Infinity;
+          if (mins < 30 && !window.confirm(`You sent v${recent.version} to ${recent.sent_to || "the customer"} ${mins < 1 ? "just now" : `${Math.round(mins)} min ago`}, and they haven't answered yet. Send another version anyway?`)) {
+            return;
+          }
+        }
+      }
       const result = await generateProofPDF("blob");
       if (!result?.blob) throw new Error("Couldn't generate the proof PDF.");
       const file = new File([result.blob], result.filename, { type: "application/pdf" });
@@ -783,10 +925,8 @@ export default function Mockups() {
       // A picture of the mockup for the proof email (the PDF can't show in
       // an inbox). Best-effort: the proof still sends without it.
       const preview = await uploadMockupPreview().catch(() => null);
-      const Entity = target.type === "order" ? base44.entities.Order : base44.entities.Quote;
-      // Re-read: the picker list can be minutes old, and writing its
-      // artwork back would drop files added to the job since.
-      const fresh = (await Entity.get(target.record.id)) || target.record;
+      // So "Make a mockup" can reopen this one for a revision. Best-effort.
+      const design = await saveMockupDesign().catch(() => null);
       const next = withMockupProof(fresh.selected_artwork, {
         id: `proof-${Date.now()}`,
         name: result.filename,
@@ -800,6 +940,7 @@ export default function Mockups() {
         file_url,
         type: "proof",
         ...(preview ? { preview } : {}),
+        ...(design ? { design } : {}),
         uploaded_at: new Date().toISOString(),
       }, { replace: replacePrevMockup });
       const updated = await Entity.update(fresh.id, { selected_artwork: next });
@@ -816,6 +957,7 @@ export default function Mockups() {
       try {
         const res = await callArtProof("send", { orderId: fresh.id, to: sendTo.trim() || undefined, message: sendNote.trim() || undefined });
         if (res?.order) setOrders(prev => prev.map(o => (o.id === res.order.id ? { ...o, ...res.order } : o)));
+        latestProofRow(fresh.id).then(setLastProof).catch(() => {});
         if (res?.emailed === false) {
           notify.error("Proof saved, but the email didn't send", "Open the order and use Send proof to try again.");
         } else {
@@ -842,6 +984,7 @@ export default function Mockups() {
   const prevMockups = countMockupProofs(linkTarget?.record?.selected_artwork);
   const defaultRecipient = targetIsOrder ? proofRecipientEmail(linkTarget.record) : "";
   const recipient = sendTo.trim() || defaultRecipient;
+  const savedDesign = latestMockupDesign(linkTarget?.record?.selected_artwork);
 
   return (
     <div className="space-y-6">
@@ -1035,6 +1178,23 @@ export default function Mockups() {
                 )}
               </select>
             </div>
+
+            {lastProof?.status === "changes_requested" && lastProof.response_comment && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <div className="font-semibold text-slate-900">
+                  {lastProof.approved_by_name || "The customer"} asked for changes on v{lastProof.version}
+                  {lastProof.response_location ? ` (${lastProof.response_location})` : ""}
+                </div>
+                <div className="mt-0.5 whitespace-pre-line">“{lastProof.response_comment}”</div>
+              </div>
+            )}
+            {savedDesign && (garment || Object.keys(artworks).length > 0) && (
+              <button type="button" disabled={restoring || linking}
+                onClick={() => { if (window.confirm("Open the last mockup sent for this job? It replaces what's on screen now.")) restoreDesign(savedDesign); }}
+                className="text-xs font-semibold text-teal-700 hover:text-teal-800 disabled:opacity-50">
+                {restoring ? "Opening…" : "Open the last mockup for this job"}
+              </button>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -1266,9 +1426,10 @@ export default function Mockups() {
               </div>
             )}
             {views.map(v => (
-              <div key={v} className={view === v ? "" : "hidden"}>
+              <div key={`${v}:${restoreNonce}`} className={view === v ? "" : "hidden"}>
                 <MockupCanvas
                   ref={(el) => { canvasRefs.current[v] = el; }}
+                  initialDesign={canvasInit[v] || null}
                   garmentImageUrl={getGarmentImageForView(v)}
                   artworkUrl={artworks[v]?.src || null}
                   location={printLocations[v]}
