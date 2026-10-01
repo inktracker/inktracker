@@ -17,17 +17,29 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // clones the Response before reading, and the returned error preserves
 // `.context`/`.status`/`.raw`, so the money-flow callers that unwrap `.context`
 // themselves (QB invoice create, quote/invoice send) keep working.
-const _rawFunctionsInvoke = supabase.functions.invoke.bind(supabase.functions);
-supabase.functions.invoke = async (name, options) => {
-  const res = await _rawFunctionsInvoke(name, options);
-  if (!res || !res.error) return res;
-  const friendly = new Error(await describeEdgeError(res.error));
-  friendly.name = res.error?.name || "FunctionsError";
-  friendly.status = res.error?.context?.status ?? res.error?.status ?? 0;
-  friendly.context = res.error?.context;
-  friendly.raw = res.error;
-  return { data: res.data, error: friendly };
-};
+//
+// Patched on the FunctionsClient PROTOTYPE: `supabase.functions` is a getter
+// that builds a new FunctionsClient on every access (supabase-js 2.1xx), so
+// assigning invoke on one `supabase.functions` object only patched a throwaway
+// and every caller still got the raw message (found 2026-10-01 when a Stripe
+// sign-up error showed "Edge Function returned a non-2xx status code").
+export function installEdgeErrorTranslation(client) {
+  const proto = Object.getPrototypeOf(client.functions);
+  if (!proto || proto.__inktrackerEdgeErrors) return;
+  const rawInvoke = proto.invoke;
+  proto.invoke = async function invoke(name, options) {
+    const res = await rawInvoke.call(this, name, options);
+    if (!res || !res.error) return res;
+    const friendly = new Error(await describeEdgeError(res.error));
+    friendly.name = res.error?.name || "FunctionsError";
+    friendly.status = res.error?.context?.status ?? res.error?.status ?? 0;
+    friendly.context = res.error?.context;
+    friendly.raw = res.error;
+    return { data: res.data, error: friendly };
+  };
+  Object.defineProperty(proto, "__inktrackerEdgeErrors", { value: true });
+}
+installEdgeErrorTranslation(supabase);
 
 // Bust any cached reads (cachedFilter/cachedList in lib/queries/cachedEntity)
 // for a table after a write, so a freshly created/updated/deleted row never

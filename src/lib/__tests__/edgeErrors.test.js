@@ -75,12 +75,18 @@ describe("guard — supabase.functions.invoke is globally translated", () => {
     "utf8",
   );
 
-  it("supabase.functions.invoke is patched, and the patch runs describeEdgeError", () => {
-    const idx = src.indexOf("supabase.functions.invoke =");
+  it("the FunctionsClient PROTOTYPE is patched at load, and the patch runs describeEdgeError", () => {
+    // Patching `supabase.functions.invoke` directly does nothing: the getter
+    // returns a new FunctionsClient each access (the 2026-10-01 bug this
+    // guard used to pin). Behaviour is tested in src/api/__tests__/edgeErrorPatch.test.js.
+    expect(src).not.toMatch(/supabase\.functions\.invoke\s*=/);
+    const idx = src.indexOf("export function installEdgeErrorTranslation");
     expect(idx, "the global invoke patch must exist").toBeGreaterThan(-1);
-    const patchBlock = src.slice(idx, idx + 600);
+    const patchBlock = src.slice(idx, idx + 900);
+    expect(patchBlock).toMatch(/Object\.getPrototypeOf\(client\.functions\)/);
     expect(patchBlock).toMatch(/describeEdgeError/);
     // Must preserve context so self-unwrapping money-flow callers keep working.
     expect(patchBlock).toMatch(/\.context/);
+    expect(src).toMatch(/^installEdgeErrorTranslation\(supabase\);/m);
   });
 });

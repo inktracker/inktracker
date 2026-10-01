@@ -45,7 +45,7 @@ import { accountStatusFields, readStripeList } from "../_shared/stripeWebhookAda
 import { choosePayTarget, NOT_PAYABLE } from "../_shared/payinPlan.js";
 import { formatRatePct, normalizePayMethod } from "../_shared/paymentsPricing.js";
 import { getShopQb, qbListAccounts, qbGetInvoice, type QbConn } from "../_shared/qbShopClient.ts";
-import { stripeApi, type StripeApi } from "../_shared/stripeApi.ts";
+import { stripeApi, StripeError, type StripeApi } from "../_shared/stripeApi.ts";
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
@@ -591,6 +591,12 @@ if (import.meta.main) {
       });
     } catch (err) {
       console.error("[stripePayments]", err);
+      // Stripe refused the request (4xx): say why, in Stripe's words, instead
+      // of a bare server error. Its messages are written for end users.
+      if (err instanceof StripeError && err.status >= 400 && err.status < 500) {
+        const why = String(err.message).replace(/^Stripe \w+ \S+ → \d+: /, "").slice(0, 200);
+        return json({ error: `Stripe couldn't do that: ${why}` }, 400);
+      }
       return json({ error: "Something went wrong. Try again in a moment." }, 500);
     }
   });
