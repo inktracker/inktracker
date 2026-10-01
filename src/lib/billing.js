@@ -64,7 +64,7 @@ export function getEffectiveTier(user, nowOverride) {
   if (!user) return "expired";
   if (user.role === "admin") return "shop";
 
-  if (user.subscription_status === "canceled") return "expired";
+  if (LAPSED_SUB_STATUSES.includes(user.subscription_status)) return "expired";
 
   const tier = user.subscription_tier;
   if (tier === "expired") return "expired";
@@ -139,8 +139,16 @@ export function getTierColor(tier) {
 // has_active_subscription() grace window — keep all three in lockstep.
 export const PAST_DUE_GRACE_DAYS = 7;
 
+// Terminally lapsed Stripe statuses — hard read-only, no grace. Dunning
+// escalates past_due → `unpaid` (and incomplete → `incomplete_expired`,
+// paused trials → `paused`); only checking `canceled` meant those statuses
+// RESTORED write access to a non-payer (audit 2026-09-30). Lockstep with
+// _shared/billingLogic.js LAPSED_SUB_STATUSES, subscriptionGuard.ts, and the
+// SQL has_active_subscription().
+export const LAPSED_SUB_STATUSES = Object.freeze(["canceled", "unpaid", "incomplete_expired", "paused"]);
+
 export function isReadOnly(tier, status, pastDueSince, now = Date.now()) {
-  if (status === "canceled") return true;
+  if (LAPSED_SUB_STATUSES.includes(status)) return true;
   if (tier === "expired") return true;
   // past_due is read-only only AFTER the grace window; within grace (or with no
   // stamped start) the shop keeps full read-write access (BILL-03).

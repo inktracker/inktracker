@@ -24,7 +24,7 @@ function serverAllowsWrite(user, now = NOW) {
   const lapsed =
     tier === "expired" ||
     tier === "incomplete" ||
-    status === "canceled" ||
+    ["canceled", "unpaid", "incomplete_expired", "paused"].includes(status) ||
     (tier === "trial" && trial !== null && trial < now) ||
     (status === "past_due" && pastDue !== null && pastDue < now - 7 * DAY);
   return !lapsed;
@@ -40,6 +40,13 @@ const CASES = [
   { name: "past_due no stamp", user: { role: "shop", subscription_tier: "shop", subscription_status: "past_due" }, expectReadOnly: false },
   { name: "past_due beyond grace (10d)", user: { role: "shop", subscription_tier: "shop", subscription_status: "past_due", past_due_since: iso(NOW - 10 * DAY) }, expectReadOnly: true },
   { name: "canceled", user: { role: "shop", subscription_tier: "shop", subscription_status: "canceled" }, expectReadOnly: true },
+  // BILL-04: Stripe's OTHER terminal statuses. The sharp one is unpaid —
+  // dunning escalates past_due → unpaid, and before the fix that RESTORED
+  // write access (past_due no longer matched, canceled never matched).
+  { name: "unpaid (dunning exhausted) — the fail-open case", user: { role: "shop", subscription_tier: "shop", subscription_status: "unpaid", past_due_since: iso(NOW - 10 * DAY) }, expectReadOnly: true },
+  { name: "unpaid with no past_due stamp", user: { role: "shop", subscription_tier: "shop", subscription_status: "unpaid" }, expectReadOnly: true },
+  { name: "incomplete_expired (checkout never completed)", user: { role: "shop", subscription_tier: "shop", subscription_status: "incomplete_expired" }, expectReadOnly: true },
+  { name: "paused (trial ended, no payment method)", user: { role: "shop", subscription_tier: "shop", subscription_status: "paused" }, expectReadOnly: true },
   { name: "expired tier", user: { role: "shop", subscription_tier: "expired", subscription_status: "active" }, expectReadOnly: true },
   { name: "admin, even if canceled/expired", user: { role: "admin", subscription_tier: "expired", subscription_status: "canceled" }, expectReadOnly: false },
   { name: "broker, even if canceled/expired", user: { role: "broker", subscription_tier: "expired", subscription_status: "canceled" }, expectReadOnly: false },
