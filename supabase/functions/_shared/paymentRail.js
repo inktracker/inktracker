@@ -18,6 +18,27 @@ export const RAIL = Object.freeze({ QB: "qb", PROCESSOR: "processor" });
 /** Reason code returned instead of a QB pay link when the shop is on the processor rail. */
 export const PROCESSOR_LINK_REASON = "processor_mode";
 
+/**
+ * After a shop's InkTracker plan lapses, customers can keep paying on
+ * InkTracker for this long (the owner is warned with the exact date); then
+ * NEW payments go back to QuickBooks. Payouts, refunds and disputes are never
+ * cut off — only new payments move.
+ */
+export const PLAN_GRACE_DAYS = 14;
+
+/** Date (YYYY-MM-DD) new InkTracker payments stop for a lapsed shop, or null. */
+export function paymentsPauseDate(account) {
+  const t = account?.plan_lapsed_at ? new Date(account.plan_lapsed_at).getTime() : NaN;
+  if (!Number.isFinite(t)) return null;
+  return new Date(t + PLAN_GRACE_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** True once a lapsed shop's grace period is over. */
+export function planGraceOver(account, now = Date.now()) {
+  const t = account?.plan_lapsed_at ? new Date(account.plan_lapsed_at).getTime() : NaN;
+  return Number.isFinite(t) && now - t > PLAN_GRACE_DAYS * 24 * 60 * 60 * 1000;
+}
+
 /** Merchant statuses (normalised by the Rainforest adapter) that can take payments. */
 export const ACTIVE_MERCHANT_STATUSES = Object.freeze(["active"]);
 
@@ -32,9 +53,10 @@ export function flagOn(raw) {
  * @param {object|null} a.account  processor_accounts row
  * @param {boolean} [a.broker]     broker invoice/quote → always QB
  */
-export function resolvePaymentRail({ envEnabled, account, broker = false }) {
+export function resolvePaymentRail({ envEnabled, account, broker = false, now = Date.now() }) {
   if (broker || !envEnabled || !account) return RAIL.QB;
   if (account.enabled !== true || !account.merchant_id) return RAIL.QB;
+  if (planGraceOver(account, now)) return RAIL.QB; // plan lapsed > 14 days ago
   if (!ACTIVE_MERCHANT_STATUSES.includes(String(account.merchant_status ?? "").toLowerCase())) return RAIL.QB;
   return RAIL.PROCESSOR;
 }
@@ -77,7 +99,7 @@ export async function loadPaymentRailState(supabase, shopOwner, { envEnabled, br
   try {
     const { data, error } = await supabase
       .from("processor_accounts")
-      .select("shop_owner, merchant_id, merchant_status, enabled, processor_used_at")
+      .select("shop_owner, merchant_id, merchant_status, enabled, processor_used_at, plan_lapsed_at")
       .eq("shop_owner", shopOwner)
       .maybeSingle();
     if (error) {
@@ -103,7 +125,7 @@ export async function loadPaymentRail(supabase, shopOwner, { envEnabled, broker 
   try {
     const { data, error } = await supabase
       .from("processor_accounts")
-      .select("shop_owner, merchant_id, merchant_status, enabled")
+      .select("shop_owner, merchant_id, merchant_status, enabled, plan_lapsed_at")
       .eq("shop_owner", shopOwner)
       .maybeSingle();
     if (error) {

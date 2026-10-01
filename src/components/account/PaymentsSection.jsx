@@ -216,6 +216,14 @@ export default function PaymentsSection() {
         </div>
       )}
 
+      {state.planLapsed && state.enabled && (
+        <div className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          {state.paymentsPausedForPlan
+            ? "Your InkTracker plan has ended, so new quotes and invoices use QuickBooks pay links. Payouts, refunds and disputes below still work. Renew in Billing & Plan to switch InkTracker payments back on."
+            : `Your InkTracker plan has ended. Customers can keep paying on InkTracker until ${state.paymentsPauseOn}; after that, new quotes and invoices use QuickBooks pay links. Renew in Billing & Plan to keep them.`}
+        </div>
+      )}
+
       {state.enabled && !approved && state.canToggle && (
         <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
           <span>InkTracker payments are switched on but paused until your account is active again. Customers pay through QuickBooks meanwhile.</span>

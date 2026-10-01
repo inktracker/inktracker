@@ -86,7 +86,7 @@ export type Deps = {
 async function loadAccount(admin: Any, shopOwner: string) {
   const { data, error } = await admin
     .from("processor_accounts")
-    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, processor_used_at, qb_bank_account_id, qb_fee_account_id")
+    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, processor_used_at, plan_lapsed_at, qb_bank_account_id, qb_fee_account_id")
     .eq("shop_owner", shopOwner)
     .maybeSingle();
   if (error) throw new Error(`Couldn't read payment settings: ${error.message}`);
@@ -442,7 +442,7 @@ export async function handle(req: Request, deps: Deps) {
 
   if (action === "setEnabled") {
     const want = body.enabled === true;
-    const gate = want ? checkCanEnable({ envEnabled, account, viewer }) : checkCanDisable({ viewer });
+    const gate = want ? checkCanEnable({ envEnabled, account, viewer, payingPlan: isPayingShop(shop) }) : checkCanDisable({ viewer });
     if (!gate.ok) return json({ error: gate.error }, want ? 400 : 403);
     if (!account && !want) return status();
     const now = new Date().toISOString();

@@ -53,6 +53,8 @@ import { captureError } from "../_shared/observability.ts";
 import { planPayoutDeposit, PAYOUT_PLAN } from "../_shared/rainforestPayout.js";
 import { shopTimezone, localDate } from "../_shared/shopDate.js";
 import { merchantStatusFields } from "../_shared/rainforestAccount.js";
+import { isPayingShop } from "../_shared/rainforestRequests.js";
+import { paymentsPauseDate, planGraceOver } from "../_shared/paymentRail.js";
 import {
   getShopQb,
   qbGetInvoice,
@@ -652,6 +654,61 @@ export async function payoutFailed(deps: Deps, depositId: string): Promise<strin
   return "failed_notified";
 }
 
+/**
+ * InkTracker plan lapse. A switched-on shop whose plan lapses keeps taking
+ * payments on InkTracker for a 14-day grace period (owner warned with the
+ * date), then NEW payments go back to QuickBooks pay links. Payouts, refunds
+ * and disputes never stop. Renewing clears it.
+ */
+export async function checkPlanLapses(deps: Deps): Promise<{ lapsed: number; paused: number; renewed: number }> {
+  const { admin } = deps;
+  const out = { lapsed: 0, paused: 0, renewed: 0 };
+  const { data: accts } = await admin.from("processor_accounts")
+    .select("shop_owner, enabled, plan_lapsed_at, plan_paused_notified_at")
+    .or("enabled.eq.true,plan_lapsed_at.not.is.null")
+    .limit(1000);
+  const now = new Date();
+  for (const a of accts ?? []) {
+    const { data: profile } = await admin.from("profiles")
+      .select("role, subscription_tier, subscription_status").eq("email", a.shop_owner).maybeSingle();
+    if (!profile) continue;
+    const paying = isPayingShop(profile);
+    if (paying && a.plan_lapsed_at) {
+      await admin.from("processor_accounts").update({ plan_lapsed_at: null, plan_paused_notified_at: null, updated_at: now.toISOString() }).eq("shop_owner", a.shop_owner);
+      if (a.enabled) {
+        await notifyShop(deps, <Any>{
+          shopOwner: a.shop_owner, eventType: "payments_plan_renewed", severity: "info",
+          title: "InkTracker payments are back on",
+          body: "Thanks for renewing. New quotes and invoices you send take payment on InkTracker again.",
+          metadata: { processor: SOURCE },
+        });
+      }
+      out.renewed++;
+    } else if (!paying && !a.plan_lapsed_at && a.enabled) {
+      const lapsedAt = now.toISOString();
+      await admin.from("processor_accounts").update({ plan_lapsed_at: lapsedAt, updated_at: lapsedAt }).eq("shop_owner", a.shop_owner);
+      const pauseOn = paymentsPauseDate({ plan_lapsed_at: lapsedAt });
+      await notifyShop(deps, <Any>{
+        shopOwner: a.shop_owner, eventType: "payments_plan_lapsed", severity: "alert",
+        title: `Your InkTracker plan has ended: online payments stop on ${pauseOn}`,
+        body: `Customers can keep paying on InkTracker until ${pauseOn}. After that, quotes and invoices you send go back to QuickBooks pay links. Your payouts, refunds and dispute tools keep working either way. Renew your plan in Account → Billing & Plan to keep InkTracker payments.`,
+        metadata: { processor: SOURCE, pause_on: pauseOn },
+      });
+      out.lapsed++;
+    } else if (!paying && a.plan_lapsed_at && planGraceOver(a, now.getTime()) && !a.plan_paused_notified_at) {
+      await admin.from("processor_accounts").update({ plan_paused_notified_at: now.toISOString(), updated_at: now.toISOString() }).eq("shop_owner", a.shop_owner);
+      await notifyShop(deps, <Any>{
+        shopOwner: a.shop_owner, eventType: "payments_plan_paused", severity: "alert",
+        title: "InkTracker payments are paused",
+        body: "New quotes and invoices you send now use QuickBooks pay links. Re-send any open ones from InkTracker so customers get a QuickBooks link. Payouts, refunds and disputes still work in Account → Payments. Renew your plan to switch InkTracker payments back on.",
+        metadata: { processor: SOURCE },
+      });
+      out.paused++;
+    }
+  }
+  return out;
+}
+
 /** Nightly: recover anything missed, then retry what couldn't be booked. */
 export async function sweep(deps: Deps): Promise<Record<string, number>> {
   const { admin } = deps;
@@ -664,6 +721,9 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
       opsAlert(`sweep: ${name} failed: ${(err as Error)?.message ?? err}`);
     }
   };
+
+  // 0a. InkTracker plan lapses (grace, pause, renewal).
+  await step("plan lapse check", async () => { await checkPlanLapses(deps); });
 
   // 0. Merchant status, in case a merchant event was lost.
   await step("merchant sync", async () => {

@@ -50,6 +50,11 @@ create table if not exists public.processor_accounts (
   -- Claim while the Rainforest merchant is being created, so two clicks
   -- can't create two merchants.
   merchant_creating_at timestamptz,
+  -- When the shop's InkTracker plan was found lapsed (nightly sweep);
+  -- cleared on renewal. NEW payments move back to QuickBooks 14 days after
+  -- (paymentRail.PLAN_GRACE_DAYS); payouts, refunds and disputes never stop.
+  plan_lapsed_at       timestamptz,
+  plan_paused_notified_at timestamptz,
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
 );

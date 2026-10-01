@@ -63,6 +63,10 @@ The fee is the merchant's **all-in** price. Rainforest keeps its cost and pays I
 `card_rate: 2990`, `card_fee: 0`, `card_amex_rate_surcharge: 0`, `card_business_rate_surcharge: 0`, `card_international_rate_surcharge: 0`, `ach_rate: 1000`, `ach_rate_cap: 0` (confirm 0 = no cap), `ach_fee: 0`. Leaving the surcharges at 0 keeps it a flat 2.99% like QuickBooks, which charges no Amex premium.
 Create it first: a billing profile must exist before the first merchant.
 
+### When a shop's InkTracker plan lapses
+
+Nightly sweep (`checkPlanLapses`): a switched-on shop that stops paying is warned once with a date. Customers keep paying on InkTracker for 14 days (`PLAN_GRACE_DAYS`), then NEW quotes/invoices go back to QuickBooks pay links (a second notice tells them to re-send open ones). Payouts, refunds and disputes never stop. Account → Payments stays reachable in read-only mode. Renewing switches it straight back on. A lapsed shop can't switch payments on. Terms to be written into the Payment Processing Agreement; ask Rainforest whether they require tool access to continue after a merchant leaves.
+
 ### Rainforest rules that affect rollout
 
 * InkTracker's own company has to be the first production merchant, and that sets the residuals bank account.
