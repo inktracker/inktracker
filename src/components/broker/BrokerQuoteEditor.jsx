@@ -806,25 +806,12 @@ export default function BrokerQuoteEditor({
                 </>
               )}
 
-              <div className="flex justify-between items-center text-sm gap-2">
-                <span className="text-slate-500 whitespace-nowrap">Tax Rate</span>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    step="0.001"
-                    value={0}
-                    disabled
-                    className="w-20 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 bg-slate-100 text-slate-500"
-                  />
-                  <span className="text-slate-500 text-xs">%</span>
-                </div>
-              </div>
-
-              <div className="flex justify-between text-xs text-slate-500 italic">
-                <span>Tax</span>
-                <span>{fmtMoney(0)}</span>
-              </div>
-
+              {/* No Tax Rate / Tax rows here on purpose: "Your Price" is what
+                  the SHOP charges the broker, and the shop never taxes the
+                  broker (B2B). A disabled "Tax Rate 0%" + "Tax $0.00" here just
+                  read as the place to set tax and always stay zero (Joe,
+                  2026-10-01). The broker's client tax lives on the Client Total
+                  panel below, where it's editable. */}
               <div className="border-t border-slate-200 pt-2.5 flex justify-between items-center">
                 <span className="font-bold text-slate-800">Your Price</span>
                 <span className="font-bold text-2xl text-slate-900">
