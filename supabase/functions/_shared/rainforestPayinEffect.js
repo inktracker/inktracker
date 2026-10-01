@@ -203,7 +203,7 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     notify = {
       severity: "alert",
       title: `Card payment disputed: ${label ?? "a payment"}`,
-      body: `Your customer disputed a $${(amt / 100).toFixed(2)} card payment. Respond with proof of the order (approval, proof, delivery) before the deadline in your payments portal.`,
+      body: `Your customer disputed a $${(amt / 100).toFixed(2)} card payment. Respond with proof of the order (approval, proof, delivery) before the deadline: Account → Payments → Payments & payouts, open the payment, then Respond.`,
       metadata: { processor: "rainforest", payin_id: event.payinId },
     };
   } else if (!mismatch && advances && kind === PAYIN_EVENT.PROCESSING && event.method === "ach") {
@@ -220,7 +220,7 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     notify = {
       severity: "alert",
       title: `Payment received that needs matching: $${(amt / 100).toFixed(2)}`,
-      body: `A customer paid $${(amt / 100).toFixed(2)} online${md.quote_number ? ` for ${md.quote_number}` : ""}, but it no longer matches an open invoice, so it was NOT recorded in QuickBooks. Record it on the right invoice in QuickBooks, or refund it.`,
+      body: `A customer paid $${(amt / 100).toFixed(2)} online${md.quote_number ? ` for ${md.quote_number}` : ""}, but it no longer matches an open invoice, so it was NOT recorded in QuickBooks. Record it on the right invoice in QuickBooks, or refund it from Account → Payments → Payments & payouts.`,
       metadata: { processor: "rainforest", payin_id: event.payinId, reason: mismatch },
     };
   }

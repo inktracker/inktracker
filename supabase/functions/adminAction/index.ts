@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { checkAdminTargetAccess, isAssignableRole } from "../_shared/adminTargetAccess.js";
-import { authorizeShopPurge, SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, ARTWORK_SOURCE_TABLES, extractArtworkPaths } from "../_shared/shopPurge.js";
+import { authorizeShopPurge, SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, ARTWORK_SOURCE_TABLES, extractArtworkPaths, purgeBlockedByPayments } from "../_shared/shopPurge.js";
 import Stripe from "npm:stripe@14.25.0";
 
 const corsHeaders = {
@@ -595,6 +595,15 @@ serve(async (req) => {
         return json({ error: messages[authz.reason] ?? "Purge refused." }, status);
       }
       const target = String(shopOwner).trim();
+
+      // An open Rainforest merchant blocks deletion (money may be in flight).
+      // A missing table (payments migration not applied) is simply no merchant.
+      const { data: payAcct } = await adminClient.from("processor_accounts")
+        .select("merchant_id, merchant_status").eq("shop_owner", target).maybeSingle();
+      const paymentsBlock = purgeBlockedByPayments(payAcct ?? null);
+      // 200 + error (not 409) so the delete screen shows this message instead
+      // of a generic "non-2xx" failure.
+      if (paymentsBlock) return json({ error: paymentsBlock, blockedBy: "payments" });
 
       // Count what would be deleted (dry-run output + pre-apply verification).
       const counts: Record<string, number | string> = {};

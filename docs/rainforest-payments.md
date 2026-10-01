@@ -154,6 +154,13 @@ Each item needs a pass in the Rainforest sandbox **and** the QuickBooks sandbox 
 - [ ] Invoice (order-then-invoice): `/invoicepayment` link from SendInvoiceModal + PDF; payment posts against the invoice
 - [ ] Payout: QB Deposit equals the sandbox payout amount to the cent; bank feed matches
 
+**Shop tools**
+- [ ] Account → Payments → Payments & payouts: owner can refund (full + partial) and respond to a dispute; a manager sees the reports but no Refund/Respond; the report only ever shows that shop's merchant
+- [ ] Account deletion is refused while the merchant is open, with the "turn off and contact support" message
+
+**Devices**
+- [ ] Customer pays inside the iOS app's web view (card, and the Plaid bank-login popup); onboarding form there too
+
 **Backstops**
 - [ ] Nightly sweep's Rainforest backstop: `GET /v1/payins?created_at.start=…` response shape (`results` + `last_key`?) — kill the webhook mid-payment in sandbox and confirm the sweep records and books it
 - [ ] Onboarding adopt: `GET /v1/merchants?name=…` returns our `metadata` and the application id (or `/applications` does)
@@ -188,3 +195,4 @@ Four passes (sign-up/settings, customer pays, payouts/reversals/sweep, security)
 - Pay-link throttle (90s session reuse); race-safe invoice token
 - Sign-up: merchants matched by name + email (Rainforest merchants have no metadata); closed applications can be restarted; application status read from `latest_merchant_application`
 - Owner alerts: needs-information, approved, payout returned, dispute won
+- Follow-up pass: shops had no way to refund or answer disputes (Rainforest's portal is platform-only) → embedded payment/payout reports in Account → Payments; account deletion now refuses while the merchant is open and purges the payment tables

@@ -262,7 +262,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
         eventType: "payment_overpaid",
         severity: "alert",
         title: `Customer overpaid by $${(app.unappliedCents / 100).toFixed(2)}`,
-        body: "This invoice was already paid when another payment came in. The extra is sitting as a customer credit in QuickBooks. Refund it to the customer.",
+        body: "This invoice was already paid when another payment came in. The extra is sitting as a customer credit in QuickBooks. Refund it to the customer from Account → Payments → Payments & payouts (open the payment, then Refund).",
         metadata: { processor: SOURCE, payin_id: payinId, qb_payment_id: qbPaymentId },
       });
     }

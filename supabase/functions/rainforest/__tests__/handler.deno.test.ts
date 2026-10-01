@@ -376,3 +376,18 @@ Deno.test("refreshStatus reads the application status from latest_merchant_appli
   assertEquals(j.stage, "in_review");
   assertEquals(fake.tables.processor_accounts[0].merchant_application_status, "processing");
 });
+
+Deno.test("activitySession: owner can refund/respond, manager views, employee refused", async () => {
+  const calls: RfCall[] = [];
+  const own = await (await call(db(ACTIVE), "own-auth", { action: "activitySession" }, undefined, calls)).json();
+  assertEquals(own.canAct, true);
+  assertEquals(own.merchantId, "mid_1");
+  const ownPerms = (calls.find((c) => c.path === "/v1/sessions")!.body as any).statements[0].permissions;
+  assert(ownPerms.includes("group#payment_report_component.create_refund"));
+  const mgrCalls: RfCall[] = [];
+  const mgr = await (await call(db(ACTIVE), "mgr-auth", { action: "activitySession" }, undefined, mgrCalls)).json();
+  assertEquals(mgr.canAct, false);
+  assert(!(mgrCalls[0].body as any).statements[0].permissions.includes("group#payment_report_component.create_refund"));
+  assertEquals((await call(db(ACTIVE), "emp-auth", { action: "activitySession" })).status, 403);
+  assertEquals((await call(db(null), "own-auth", { action: "activitySession" })).status, 400);
+});

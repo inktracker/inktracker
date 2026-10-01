@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, authorizeShopPurge, extractArtworkPaths, ARTWORK_SOURCE_TABLES } from "../shopPurge.js";
+import { SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, authorizeShopPurge, extractArtworkPaths, ARTWORK_SOURCE_TABLES, purgeBlockedByPayments } from "../shopPurge.js";
 
 describe("extractArtworkPaths", () => {
   it("pulls bucket paths from public + signed URLs in row JSON, deduped", () => {
@@ -85,5 +85,19 @@ describe("authorizeShopPurge", () => {
   });
   it("refuses with no target", () => {
     expect(authorizeShopPurge({ callerRole: "admin", targetEmail: "", confirm: "" }).reason).toBe("no_target");
+  });
+});
+
+describe("purge vs InkTracker payments", () => {
+  it("includes the payment tables", () => {
+    const names = SHOP_PURGE_TABLES.map((t) => t.table);
+    for (const t of ["processor_accounts", "processor_payments", "processor_payouts"]) expect(names).toContain(t);
+  });
+  it("refuses while the Rainforest merchant is open; allows once closed or never started", () => {
+    expect(purgeBlockedByPayments(null)).toBeNull();
+    expect(purgeBlockedByPayments({ merchant_id: null })).toBeNull();
+    expect(purgeBlockedByPayments({ merchant_id: "m", merchant_status: "active" })).toMatch(/still open/);
+    expect(purgeBlockedByPayments({ merchant_id: "m", merchant_status: "pending" })).toMatch(/still open/);
+    expect(purgeBlockedByPayments({ merchant_id: "m", merchant_status: "canceled" })).toBeNull();
   });
 });

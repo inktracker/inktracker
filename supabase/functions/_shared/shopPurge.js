@@ -38,6 +38,11 @@ export const SHOP_PURGE_TABLES = Object.freeze([
   { table: "broker_performance",   column: "shop_owner" },
   { table: "broker_documents",     column: "shop_owner" },
   { table: "broker_files",         column: "shop_owner" },
+  // InkTracker payments (Rainforest). Only reached once the merchant is
+  // closed — purgeBlockedByPayments refuses while it's open.
+  { table: "processor_payments", column: "shop_owner" },
+  { table: "processor_payouts",  column: "shop_owner" },
+  { table: "processor_accounts", column: "shop_owner" },
   { table: "orders",           column: "shop_owner" },
   { table: "quotes",           column: "shop_owner" },
   { table: "customers",        column: "shop_owner" },
@@ -115,4 +120,19 @@ export function authorizeShopPurge({ callerRole, callerShop, targetEmail, confir
   if (callerRole === "admin") return { ok: true };
   if (String(callerShop ?? "").trim().toLowerCase() === target) return { ok: true };
   return { ok: false, reason: "forbidden" };
+}
+
+/**
+ * Deleting a shop while its Rainforest merchant is open would leave a live
+ * merchant (customer payments, payouts, possible disputes) with every
+ * InkTracker record of it gone. Refuse until the merchant is closed —
+ * closing is a deliberate step (support), since money may be in flight.
+ * @param {object|null} account processor_accounts row
+ * @returns {string|null} message to show, or null when OK to delete
+ */
+export function purgeBlockedByPayments(account) {
+  if (!account?.merchant_id) return null;
+  const st = String(account.merchant_status ?? "").toLowerCase();
+  if (["canceled", "deactivated"].includes(st)) return null;
+  return "Your InkTracker payments account is still open. Turn off InkTracker payments, then email support@inktracker.app to close it (payments or payouts may still be on the way). After that you can delete your account.";
 }
