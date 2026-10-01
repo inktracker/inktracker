@@ -147,9 +147,15 @@ export default function OrderInvoiceActions({
               <>
                 {/* click-away layer */}
                 <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                {/* Mobile: a FIXED bottom sheet — the old absolute popover was
+                    anchored inside the modal's scroll container, so on phones
+                    it rendered clipped/off-screen and needed a swipe to find
+                    (Joe, 2026-10-01). Fixed positioning escapes the scroll
+                    container and lands thumb-reachable at the bottom edge.
+                    sm+ keeps the anchored popover above the button. */}
                 <div
                   role="menu"
-                  className="absolute bottom-full left-0 mb-2 z-50 min-w-[240px] max-h-[70vh] overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl py-1.5"
+                  className="fixed left-3 right-3 bottom-3 z-50 max-h-[70vh] overflow-y-auto bg-white border border-slate-200 rounded-2xl shadow-2xl py-1.5 sm:absolute sm:left-0 sm:right-auto sm:bottom-full sm:mb-2 sm:min-w-[240px] sm:rounded-xl sm:shadow-xl"
                 >
                   {plan.menu.map((item) =>
                     item.divider ? (
