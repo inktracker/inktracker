@@ -65,10 +65,15 @@ export default function MessagesTab({ threadId, currentUserEmail, replyContext }
 
     let unsub;
     try {
-      unsub = base44.entities.Message.subscribe?.((event) => {
-        if (event.data?.thread_id !== threadId) return;
-        if (event.type === "create") {
-          setMessages((prev) => prev.some((m) => m.id === event.data.id) ? prev : [...prev, event.data]);
+      // Raw postgres_changes payload: { eventType, new, old } — the old
+      // event.data/event.type reads never matched anything, so live messages
+      // never appeared without a reload (same dead-handler class as the
+      // BrokerDashboard order/quote subscriptions; audit 2026-09-30).
+      unsub = base44.entities.Message.subscribe?.((payload) => {
+        const row = payload?.new;
+        if (row?.thread_id !== threadId) return;
+        if (payload.eventType === "INSERT") {
+          setMessages((prev) => prev.some((m) => m.id === row.id) ? prev : [...prev, row]);
         }
       });
     } catch { /* subscribe not available — ignore */ }

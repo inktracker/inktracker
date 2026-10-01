@@ -4,7 +4,7 @@ import { Mail, Loader2, CheckCircle2, X, AlertCircle } from "lucide-react";
 import { fmtMoney, buildQBInvoicePayload } from "../shared/pricing";
 import { buildFallbackInvoiceLines } from "@/lib/invoices/fallbackInvoiceLines";
 import { exportInvoiceToPDF } from "../shared/pdfExport";
-import { isValidEmail } from "@/lib/email";
+import { isValidEmail, assertEmailDelivered } from "@/lib/email";
 import { invoiceThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { deriveQbSendState } from "@/lib/quotes/qbSendState";
 import { describeEdgeError } from "@/lib/edgeErrors";
@@ -246,6 +246,11 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
 
       if (invokeErr) throw new Error(await describeEdgeError(invokeErr));
       if (res?.error) throw new Error(res.error);
+      // Delivery failure comes back HTTP 200 with { sent:false, results } —
+      // without this, a Resend rejection still flipped the invoice to "Sent"
+      // and logged an outbound message the customer never got (the exact
+      // regression the quote modal fixed after the 2026-09-25 incident).
+      assertEmailDelivered(res, "invoice email");
 
       await base44.entities.Invoice.update(invoice.id, { status: "Sent" });
 

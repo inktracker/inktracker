@@ -120,26 +120,32 @@ async function captureCancellationState(customerId: string, sub: Stripe.Subscrip
     // transition (Stripe fires 'updated' for many unrelated reasons).
     const { data: prof } = await supabase
       .from("profiles")
-      .select("cancel_at_period_end, shop_owner, shop_name")
+      .select("cancel_at_period_end, email, shop_owner, shop_name")
       .eq("id", profileId)
       .maybeSingle();
     const wasPending = Boolean(prof?.cancel_at_period_end);
+    // Recipient: profiles.shop_owner is the MEMBERSHIP pointer and is NULL
+    // for owners (shopScope.js documents this) — and every Stripe-linked
+    // profile IS an owner, so keying the send on shop_owner meant this email
+    // never sent to anyone (verified live 2026-09-30: 5/5 Stripe-linked
+    // profiles have shop_owner blank). The owner's own email is the shop key.
+    const cancelRecipient = prof?.email || prof?.shop_owner;
 
     const fields = cancellationFieldsFromSubscription(sub);
     const { error } = await supabase.from("profiles").update(fields).eq("id", profileId);
     if (error) console.error("[billingWebhook] cancellation state update failed:", error.message);
 
-    if (isCancellationNewlyScheduled(wasPending, fields.cancel_at_period_end) && prof?.shop_owner) {
+    if (isCancellationNewlyScheduled(wasPending, fields.cancel_at_period_end) && cancelRecipient) {
       const endsAt = fields.subscription_ends_at ? new Date(fields.subscription_ends_at) : null;
       const endsOn = endsAt && Number.isFinite(endsAt.getTime())
         ? endsAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
         : null;
       const { subject, html } = buildCancellationScheduledEmail({ shopName: prof.shop_name, endsOn } as any);
       await sendAndLogApprovalNotification(supabase, {
-        shop_owner: prof.shop_owner,
+        shop_owner: cancelRecipient,
         event_type: "cancellation_scheduled",
         recipient_role: "shop_owner",
-        to: prof.shop_owner,
+        to: cancelRecipient,
         subject,
         html,
       } as any);
@@ -297,15 +303,18 @@ Deno.serve(async (req) => {
           const supabase = adminClient();
           const profileId = await profileIdForCustomer(supabase, customerId);
           const { data: profile } = profileId
-            ? await supabase.from("profiles").select("shop_owner, shop_name").eq("id", profileId).maybeSingle()
+            ? await supabase.from("profiles").select("email, shop_owner, shop_name").eq("id", profileId).maybeSingle()
             : { data: null };
-          if (profile?.shop_owner) {
+          // Owners have shop_owner NULL — their own email is the recipient
+          // (see the cancellation handler above; verified live 2026-09-30).
+          const winbackRecipient = profile?.email || profile?.shop_owner;
+          if (winbackRecipient) {
             const { subject, html } = buildWinBackEmail({ shopName: profile.shop_name });
             await sendAndLogApprovalNotification(supabase, {
-              shop_owner: profile.shop_owner,
+              shop_owner: winbackRecipient,
               event_type: "winback",
               recipient_role: "shop_owner",
-              to: profile.shop_owner,
+              to: winbackRecipient,
               subject,
               html,
             } as any);
@@ -349,11 +358,15 @@ Deno.serve(async (req) => {
           const { data: profile } = profileId
             ? await supabase
                 .from("profiles")
-                .select("shop_owner, shop_name, trial_ends_at")
+                .select("email, shop_owner, shop_name, trial_ends_at")
                 .eq("id", profileId)
                 .maybeSingle()
             : { data: null };
-          const recipient = profile?.shop_owner;
+          // Owners have shop_owner NULL — their own email is the recipient.
+          // Using email also aligns the trial_reminder dedup key with
+          // lifecycleDrip (which logs shop_owner: p.email), so the two paths
+          // actually share the "whichever reaches a shop first wins" dedup.
+          const recipient = profile?.email || profile?.shop_owner;
           if (recipient) {
             const trialEnd = sub.trial_end
               ? new Date(sub.trial_end * 1000)

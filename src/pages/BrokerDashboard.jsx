@@ -876,70 +876,81 @@ export default function BrokerDashboard({ initialTab } = {}) {
   useEffect(() => {
     if (!user) return;
 
-    const unsubOrders = base44.entities.Order.subscribe((event) => {
-      const eventBrokerId = event?.data?.broker_id;
+    // Raw postgres_changes payload shape: { eventType: "INSERT"|"UPDATE"|
+    // "DELETE", new, old }. These handlers used to read event.data /
+    // event.type / event.id — fields that NEVER exist on the payload — so
+    // every branch was unreachable and the broker dashboard silently dropped
+    // ALL realtime order/quote events (same bug class BrokerMessaging fixed;
+    // the Message handler below was converted, these two were missed —
+    // audit 2026-09-30).
+    const unsubOrders = base44.entities.Order.subscribe((payload) => {
+      const row = payload?.new || {};
+      const rowId = payload?.new?.id ?? payload?.old?.id;
+      if (!rowId) return;
 
       setOrders((prev) => {
-        const alreadyExists = prev.some((o) => o.id === event.id);
-        const belongsToBroker = eventBrokerId === user.email || alreadyExists;
+        const alreadyExists = prev.some((o) => o.id === rowId);
+        const belongsToBroker = row?.broker_id === user.email || alreadyExists;
 
         if (!belongsToBroker) return prev;
 
-        if (event.type === "update") {
-          return prev.map((o) => (o.id === event.id ? { ...o, ...event.data } : o));
+        if (payload.eventType === "UPDATE") {
+          return prev.map((o) => (o.id === rowId ? { ...o, ...row } : o));
         }
 
-        if (event.type === "create") {
-          return [{ ...event.data }, ...prev.filter((o) => o.id !== event.id)];
+        if (payload.eventType === "INSERT") {
+          return [{ ...row }, ...prev.filter((o) => o.id !== rowId)];
         }
 
-        if (event.type === "delete") {
-          return prev.filter((o) => o.id !== event.id);
+        if (payload.eventType === "DELETE") {
+          return prev.filter((o) => o.id !== rowId);
         }
 
         return prev;
       });
     });
 
-    const unsubQuotes = base44.entities.Quote.subscribe((event) => {
-      const eventData = event?.data || {};
+    const unsubQuotes = base44.entities.Quote.subscribe((payload) => {
+      const row = payload?.new || {};
+      const rowId = payload?.new?.id ?? payload?.old?.id;
+      if (!rowId) return;
 
       setQuotes((prev) => {
-        const alreadyExists = prev.some((q) => q.id === event.id);
+        const alreadyExists = prev.some((q) => q.id === rowId);
 
         const belongsToBroker =
-          eventData?.broker_id === user.email ||
-          eventData?.broker_email === user.email ||
-          eventData?.brokerId === user.email ||
-          eventData?.created_by === user.email ||
-          eventData?.shop_owner === `broker:${user.email}` ||
+          row?.broker_id === user.email ||
+          row?.broker_email === user.email ||
+          row?.brokerId === user.email ||
+          row?.created_by === user.email ||
+          row?.shop_owner === `broker:${user.email}` ||
           alreadyExists;
 
         if (!belongsToBroker) return prev;
 
-        if (event.type === "update") {
-          return prev.map((q) => (q.id === event.id ? { ...q, ...eventData } : q));
+        if (payload.eventType === "UPDATE") {
+          return prev.map((q) => (q.id === rowId ? { ...q, ...row } : q));
         }
 
-        if (event.type === "create") {
-          return [{ ...eventData }, ...prev.filter((q) => q.id !== event.id)];
+        if (payload.eventType === "INSERT") {
+          return [{ ...row }, ...prev.filter((q) => q.id !== rowId)];
         }
 
-        if (event.type === "delete") {
-          return prev.filter((q) => q.id !== event.id);
+        if (payload.eventType === "DELETE") {
+          return prev.filter((q) => q.id !== rowId);
         }
 
         return prev;
       });
 
       setSelectedQuote((prev) => {
-        if (!prev || prev.id !== event.id) return prev;
+        if (!prev || prev.id !== rowId) return prev;
 
-        if (event.type === "update") {
-          return { ...prev, ...eventData };
+        if (payload.eventType === "UPDATE") {
+          return { ...prev, ...row };
         }
 
-        if (event.type === "delete") {
+        if (payload.eventType === "DELETE") {
           return null;
         }
 
