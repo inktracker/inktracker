@@ -22,7 +22,7 @@ import { toCustomerFacingQuote, isBrokerQuote } from "@/lib/quotes/customerFacin
 import { useBillingGate } from "@/lib/billing-gate";
 import { DEPOSITS_ENABLED, depositAmountFor } from "@/lib/deposits";
 import { qbTaxHoldState } from "@/lib/quotes/qbTaxHold";
-import { usePaymentRail, fetchPaymentStatus } from "@/lib/payment/usePaymentRail";
+import { usePaymentRail, fetchPaymentStatus, railForDocument } from "@/lib/payment/usePaymentRail";
 
 // Saved totals win over live recompute — keeps the email's number
 // pinned to what the editor stamped on the row, so the customer
@@ -110,7 +110,8 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // Which way the customer pays: the QuickBooks link ("qb", default) or
   // InkTracker's own payment page ("processor"). The status call gives the
   // starting value; a qbSync response (which re-reads it server-side) wins.
-  const { rail: statusRail } = usePaymentRail();
+  const { status: payStatus } = usePaymentRail();
+  const statusRail = payStatus ? railForDocument(payStatus, quote) : null;
   const [railFromSync, setRailFromSync] = useState(null);
   const paymentRail = railFromSync || statusRail || "qb";
   const onlinePay = paymentRail === "processor";
@@ -696,7 +697,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     // route the shop to the "get payment link" retry instead.
     if (onlinePay && !isBrokerQuote(quote)) {
       const fresh = await fetchPaymentStatus({ fresh: true });
-      if (!fresh.unavailable && fresh.rail !== "processor") {
+      if (!fresh.unavailable && railForDocument(fresh, quote) !== "processor") {
         setRailFromSync("qb");
         const hasLink = depositMode ? Boolean(qbDepositLink) : Boolean(qbPaymentLink);
         if (!hasLink) {

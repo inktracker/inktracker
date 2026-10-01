@@ -11,7 +11,7 @@ import { describeEdgeError } from "@/lib/edgeErrors";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
 import { depositAmountFor } from "@/lib/deposits";
 import ModalBackdrop from "../shared/ModalBackdrop";
-import { usePaymentRail, fetchPaymentStatus } from "@/lib/payment/usePaymentRail";
+import { usePaymentRail, fetchPaymentStatus, railForDocument } from "@/lib/payment/usePaymentRail";
 import { invoicePaymentUrl } from "@/lib/publicUrls";
 
 export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess }) {
@@ -93,8 +93,8 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
 
   // Processor rail: the customer pays on InkTracker's own invoice page, not a
   // QuickBooks link. Broker invoices always stay on QuickBooks.
-  const { rail: statusRail } = usePaymentRail();
-  const paymentRail = invoice?.broker_id ? "qb" : (statusRail || "qb");
+  const { status: payStatus } = usePaymentRail();
+  const paymentRail = invoice?.broker_id ? "qb" : railForDocument(payStatus, invoice);
   const onlinePay = paymentRail === "processor";
 
   const qbState = deriveQbSendState({
@@ -241,7 +241,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       if (!isPaid && !invoice?.broker_id) {
         const fresh = await fetchPaymentStatus({ fresh: true });
         // Couldn't reach the server → keep what this tab knew.
-        sendRail = fresh.unavailable ? paymentRail : fresh.rail;
+        sendRail = fresh.unavailable ? paymentRail : railForDocument(fresh, invoice);
       }
       const sendOnline = sendRail === "processor";
       if (!isPaid && sendOnline && qbInvoiceId) {

@@ -83,6 +83,7 @@ export function buildCheckoutSession({ doc, docType, target, method, shopName, c
   const { key, expiresAt } = payinIdempotencyKey({ quoteId: doc?.id, qbInvoiceId: target.qbInvoiceId, amountCents: target.amountCents, method, attempt, nowMs });
   const metadata = buildPayinMetadata({ quote: doc, target, docType });
   const email = clean(customer.email, 254);
+  const validEmail = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
   const back = String(payPageUrl);
   const join = back.includes("?") ? "&" : "?";
   const params = dropUndefined({
@@ -101,13 +102,36 @@ export function buildCheckoutSession({ doc, docType, target, method, shopName, c
       ...(fee > 0 ? { application_fee_amount: fee } : {}),
       description: what,
       metadata,
+      // A new Stripe account doesn't email receipts by default; asking for
+      // one per payment sends it regardless of the shop's settings.
+      receipt_email: validEmail,
     },
     metadata,
     client_reference_id: String(doc?.id ?? ""),
-    customer_email: email && email.includes("@") ? email : undefined,
+    customer_email: validEmail,
     success_url: `${back}${join}paid=${method}`,
     cancel_url: back,
     expires_at: expiresAt,
   });
   return { params, idempotencyKey: key, platformFeeCents: fee };
+}
+
+/**
+ * "Connect my existing Stripe account" (Connect OAuth for Standard
+ * accounts). Stripe sends the owner back to Account → Payments with
+ * ?payments=oauth&code=…&state=…; `state` is one-time and checked server-side.
+ * The redirect URI must be registered in the platform's Connect settings.
+ */
+export function buildConnectOAuthUrl({ clientId, state, appUrl, shopOwner, shopName }) {
+  const base = String(appUrl || "https://www.inktracker.app").replace(/\/$/, "");
+  const q = new URLSearchParams({
+    response_type: "code",
+    client_id: String(clientId),
+    scope: "read_write",
+    state: String(state),
+    redirect_uri: `${base}/Account?payments=oauth`,
+  });
+  if (shopOwner) q.set("stripe_user[email]", String(shopOwner));
+  if (shopName) q.set("stripe_user[business_name]", String(shopName).slice(0, 100));
+  return `https://connect.stripe.com/oauth/authorize?${q.toString()}`;
 }

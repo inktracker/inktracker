@@ -58,7 +58,7 @@ import { planPayoutDeposit, PAYOUT_PLAN } from "../_shared/payoutPlan.js";
 import { shopTimezone, localDate } from "../_shared/shopDate.js";
 import { isPayingShop } from "../_shared/stripeRequests.js";
 import { stripeApi, type StripeApi } from "../_shared/stripeApi.ts";
-import { paymentsPauseDate, planGraceOver } from "../_shared/paymentRail.js";
+import { paymentsPauseDate, planGraceOver, flagOn } from "../_shared/paymentRail.js";
 import {
   getShopQb,
   qbGetInvoice,
@@ -130,6 +130,17 @@ function opsAlert(message: string, context: Record<string, unknown> = {}) {
   captureError(new Error(message), { fn: "stripeConnectWebhook", ...context }).catch(() => {});
 }
 
+/**
+ * May this run write to the shop's QuickBooks? Not in Stripe TEST mode: test
+ * payments would land as real payments and deposits in the shop's real
+ * books. Allowed only on purpose (STRIPE_TEST_BOOKS_TO_QB=true, e.g. a shop
+ * connected to a QuickBooks sandbox company).
+ */
+function booksAllowed(deps: Deps): boolean {
+  return deps.stripe.live || flagOn(deps.env("STRIPE_TEST_BOOKS_TO_QB"));
+}
+const TEST_MODE_NOT_BOOKED = "Stripe test mode: not recorded in QuickBooks";
+
 /** The shop's timezone, for QuickBooks transaction dates. */
 async function loadShopTz(admin: Any, shopOwner: string): Promise<string> {
   const [{ data: shop }, { data: profile }] = await Promise.all([
@@ -192,6 +203,11 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     await notifyShop(deps, n);
     await admin.from("processor_payments").update({ qb_post_notified_at: now.toISOString() }).eq("processor_payin_id", payinId);
   };
+
+  if (!booksAllowed(deps)) {
+    await release({ qb_post_error: TEST_MODE_NOT_BOOKED });
+    return "test_mode";
+  }
 
   try {
     const conn = await deps.qb.connect(row.shop_owner);
@@ -312,6 +328,14 @@ export async function processPayout(deps: Deps, accountId: string, payoutId: str
       status: payout.status,
     }, { onConflict: "processor_payout_id" });
     if (error) throw new Error(`payout row write failed: ${error.message}`);
+  }
+
+  // Stripe test mode: recorded, never booked into the shop's real books, and
+  // no "needs recording" alerts for test money. (review_notified_at keeps the
+  // nightly sweep from picking it up again.)
+  if (!booksAllowed(deps)) {
+    await admin.from("processor_payouts").update({ qb_post_error: TEST_MODE_NOT_BOOKED, review_notified_at: now.toISOString(), updated_at: now.toISOString() }).eq("processor_payout_id", payoutId);
+    return "test_mode";
   }
 
   // Everything in the payout, paged. The PaymentIntent is expanded so a sale
@@ -477,9 +501,12 @@ export async function markDisconnected(deps: Deps, merchantId: string): Promise<
 export async function syncMerchant(deps: Deps, merchantId: string): Promise<string> {
   const { admin } = deps;
   const { data: before } = await admin.from("processor_accounts")
-    .select("shop_owner, merchant_status, merchant_application_status, enabled, onboarded_at")
+    .select("shop_owner, merchant_status, merchant_application_status, enabled, onboarded_at, stripe_livemode")
     .eq("merchant_id", merchantId).maybeSingle();
   if (!before) return "unknown_merchant";
+  // Made under the other Stripe mode: not readable with this key, and not
+  // "disconnected" either — the owner sets up again (Account → Payments).
+  if (!sameMode(deps, before)) return "other_mode";
   let current: Any;
   try {
     current = await deps.stripe.get(`/v1/accounts/${encodeURIComponent(merchantId)}`);
@@ -594,11 +621,46 @@ export async function applyPayinEvent(deps: Deps, event: Any): Promise<{ kind: s
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Connected accounts InkTracker knows, for the per-account backstops. */
-async function ourAccounts(admin: Any): Promise<string[]> {
-  const { data } = await admin.from("processor_accounts")
-    .select("merchant_id, merchant_status").not("merchant_id", "is", null).limit(1000);
-  return (data ?? []).filter((a: Any) => a.merchant_status !== "canceled").map((a: Any) => String(a.merchant_id));
+/**
+ * Connected accounts InkTracker knows, for the per-account backstops — only
+ * those made under the Stripe mode in use (a test-mode account doesn't exist
+ * under the live key, and vice versa).
+ */
+async function ourAccounts(deps: Deps): Promise<string[]> {
+  const { data } = await deps.admin.from("processor_accounts")
+    .select("merchant_id, merchant_status, stripe_livemode").not("merchant_id", "is", null).limit(1000);
+  return (data ?? [])
+    .filter((a: Any) => a.merchant_status !== "canceled" && sameMode(deps, a))
+    .map((a: Any) => String(a.merchant_id));
+}
+
+/** Row made under the Stripe mode in use (or from before the mode was recorded). */
+function sameMode(deps: Deps, row: Any): boolean {
+  return typeof row?.stripe_livemode !== "boolean" || row.stripe_livemode === deps.stripe.live;
+}
+
+/**
+ * Every InkTracker PaymentIntent on a connected account since `since` (unix),
+ * via Search on our metadata — a busy Stripe account's other sales can't
+ * crowd ours out of a capped list. Search is eventually consistent (about a
+ * minute), which is fine for a nightly backstop.
+ */
+async function searchOurPaymentIntents(deps: Deps, accountId: string, since: number): Promise<Any[]> {
+  const out: Any[] = [];
+  for (const docType of ["quote", "invoice"]) {
+    let page: string | null = null;
+    for (let i = 0; i < 50; i++) {
+      const res: Any = await deps.stripe.get("/v1/payment_intents/search", {
+        query: `metadata['inktracker_doc_type']:'${docType}' AND created>=${since}`,
+        limit: 100,
+        ...(page ? { page } : {}),
+      }, { account: accountId });
+      out.push(...(Array.isArray(res?.data) ? res.data : []));
+      if (!res?.has_more || !res?.next_page) break;
+      page = String(res.next_page);
+    }
+  }
+  return out;
 }
 
 /** Every page of a list on a connected account (starting_after paging). */
@@ -626,8 +688,8 @@ export async function reconcileRecentPayins(deps: Deps, sinceIso: string): Promi
   const { admin } = deps;
   const out = { checked: 0, replayed: 0 };
   const since = Math.floor(new Date(sinceIso).getTime() / 1000);
-  for (const accountId of await ourAccounts(admin)) {
-    const pis = await listAll(deps, "/v1/payment_intents", { "created[gte]": since }, accountId);
+  for (const accountId of await ourAccounts(deps)) {
+    const pis = await searchOurPaymentIntents(deps, accountId, since);
     for (const pi of pis) {
       if (!isOurs(pi?.metadata)) continue; // the shop's own non-InkTracker sales
       const kind = kindForPaymentIntentStatus(pi?.status);
@@ -652,7 +714,7 @@ async function reconcileRecentDisputes(deps: Deps, sinceIso: string): Promise<nu
   const { admin } = deps;
   const since = Math.floor(new Date(sinceIso).getTime() / 1000);
   let replayed = 0;
-  for (const accountId of await ourAccounts(admin)) {
+  for (const accountId of await ourAccounts(deps)) {
     for (const d of await listAll(deps, "/v1/disputes", { "created[gte]": since }, accountId, 5)) {
       const payinId = typeof d?.payment_intent === "string" ? d.payment_intent : d?.payment_intent?.id;
       if (!payinId) continue;
@@ -677,7 +739,7 @@ async function reconcileRecentPayouts(deps: Deps, sinceIso: string): Promise<num
   const { admin } = deps;
   const since = Math.floor(new Date(sinceIso).getTime() / 1000);
   let found = 0;
-  for (const accountId of await ourAccounts(admin)) {
+  for (const accountId of await ourAccounts(deps)) {
     for (const po of await listAll(deps, "/v1/payouts", { status: "paid", "created[gte]": since }, accountId, 5)) {
       if (!po?.id) continue;
       const { data: row } = await admin.from("processor_payouts").select("processor_payout_id").eq("processor_payout_id", String(po.id)).maybeSingle();
@@ -928,6 +990,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   let evt: Any;
   try { evt = JSON.parse(rawBody); } catch { return ok({ error: "bad json" }, 400); }
 
+  // Test events go to test endpoints and live to live, but guard anyway: a
+  // test event must never act under the live configuration (or vice versa).
+  if (typeof evt?.livemode === "boolean" && evt.livemode !== deps.stripe.live) return ok({ ok: true, ignored: "other_mode" });
   const route: Any = routeStripeEvent(evt);
   if (route.route === "ignore") return ok({ ok: true, ignored: route.reason });
   if (!evt?.id) return ok({ ok: true, ignored: "no event id" });

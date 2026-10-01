@@ -53,6 +53,13 @@ create table if not exists public.processor_accounts (
   -- Claim while the Stripe account is being created, so two clicks
   -- can't create two accounts.
   merchant_creating_at timestamptz,
+  -- Which Stripe mode the account belongs to (true = live). A test-mode
+  -- account doesn't exist once the live key is in; the shop sets up again.
+  stripe_livemode     boolean,
+  -- "Connect my existing Stripe account" (OAuth): one-time state checked on
+  -- the way back from Stripe, and when it was issued (30 min to use it).
+  oauth_state         text,
+  oauth_state_at      timestamptz,
   -- When the shop's InkTracker plan was found lapsed (nightly sweep);
   -- cleared on renewal. NEW payments move back to QuickBooks 14 days after
   -- (paymentRail.PLAN_GRACE_DAYS); payouts, refunds and disputes never stop.

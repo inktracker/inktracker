@@ -42,6 +42,26 @@ export function planGraceOver(account, now = Date.now()) {
 /** Account statuses (stripeWebhookAdapter.accountStatusFields) that can take payments. */
 export const ACTIVE_MERCHANT_STATUSES = Object.freeze(["active"]);
 
+/** "live" | "test" | null for a Stripe secret key (mode decides what's real). */
+export function stripeKeyMode(key) {
+  const k = String(key ?? "");
+  if (/^(sk|rk)_live_/.test(k)) return "live";
+  if (/^(sk|rk)_test_/.test(k)) return "test";
+  return null;
+}
+
+/**
+ * A test document by the shop's own convention: TEST or DEMO in the
+ * customer, company or job name. While Stripe is in TEST mode only these use
+ * InkTracker payments — every real quote and invoice stays on QuickBooks, so
+ * testing never sends a real customer a checkout they can't pay.
+ */
+export function isTestDocument(doc) {
+  const re = /\b(TEST|DEMO)\b/i;
+  return [doc?.customer_name, doc?.company, doc?.job_title, doc?.title, doc?.project_name]
+    .some((v) => re.test(String(v ?? "")));
+}
+
 export function flagOn(raw) {
   const v = String(raw ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes";
@@ -52,10 +72,18 @@ export function flagOn(raw) {
  * @param {boolean} a.envEnabled   STRIPE_PAYMENTS_ENABLED
  * @param {object|null} a.account  processor_accounts row
  * @param {boolean} [a.broker]     broker invoice/quote → always QB
+ * @param {string|null} [a.keyMode] mode of the Stripe key in use ("live" | "test")
+ * @param {object} [a.doc]         the quote/invoice being paid or sent; omit
+ *        for the shop-level status
  */
-export function resolvePaymentRail({ envEnabled, account, broker = false, now = Date.now() }) {
+export function resolvePaymentRail({ envEnabled, account, broker = false, now = Date.now(), keyMode = null, doc = undefined }) {
   if (broker || !envEnabled || !account) return RAIL.QB;
   if (account.enabled !== true || !account.merchant_id) return RAIL.QB;
+  // An account made under the other Stripe mode (a test account once the
+  // live key is in) doesn't exist there → QuickBooks until set up again.
+  if (keyMode && typeof account.stripe_livemode === "boolean" && account.stripe_livemode !== (keyMode === "live")) return RAIL.QB;
+  // Test mode: TEST/DEMO documents only.
+  if (keyMode !== "live" && doc !== undefined && !isTestDocument(doc)) return RAIL.QB;
   if (planGraceOver(account, now)) return RAIL.QB; // plan lapsed > 14 days ago
   if (!ACTIVE_MERCHANT_STATUSES.includes(String(account.merchant_status ?? "").toLowerCase())) return RAIL.QB;
   return RAIL.PROCESSOR;
@@ -94,19 +122,24 @@ export function restoreQbOnlinePayFields(liveInvoice, restore) {
  * Rail plus whether QuickBooks online payment needs restoring (see
  * restoreQbOnlinePayFields). Fails to { rail: qb, restore: false }.
  */
-export async function loadPaymentRailState(supabase, shopOwner, { envEnabled, broker = false }) {
+/**
+ * @param {any} supabase
+ * @param {string} shopOwner
+ * @param {{ envEnabled: boolean, broker?: boolean, keyMode?: string|null, doc?: object }} opts
+ */
+export async function loadPaymentRailState(supabase, shopOwner, { envEnabled, broker = false, keyMode = null, doc = undefined }) {
   if (broker || !shopOwner) return { rail: RAIL.QB, restore: false };
   try {
     const { data, error } = await supabase
       .from("processor_accounts")
-      .select("shop_owner, merchant_id, merchant_status, enabled, processor_used_at, plan_lapsed_at")
+      .select("shop_owner, merchant_id, merchant_status, enabled, processor_used_at, plan_lapsed_at, stripe_livemode")
       .eq("shop_owner", shopOwner)
       .maybeSingle();
     if (error) {
       console.error(`[paymentRail] read failed for ${shopOwner}: ${error.message ?? error} — using QuickBooks rail`);
       return { rail: RAIL.QB, restore: false };
     }
-    const rail = resolvePaymentRail({ envEnabled, account: data ?? null, broker });
+    const rail = resolvePaymentRail({ envEnabled, account: data ?? null, broker, keyMode, doc });
     return { rail, restore: rail === RAIL.QB && Boolean(data?.processor_used_at) };
   } catch (err) {
     console.error(`[paymentRail] read threw for ${shopOwner}: ${err} — using QuickBooks rail`);
@@ -118,21 +151,21 @@ export async function loadPaymentRailState(supabase, shopOwner, { envEnabled, br
  * Read the shop's rail. Fails to the QuickBooks rail on any error.
  * @param {object} supabase service-role client
  * @param {string} shopOwner
- * @param {{ envEnabled: boolean, broker?: boolean }} opts
+ * @param {{ envEnabled: boolean, broker?: boolean, keyMode?: string|null, doc?: object }} opts
  */
-export async function loadPaymentRail(supabase, shopOwner, { envEnabled, broker = false }) {
+export async function loadPaymentRail(supabase, shopOwner, { envEnabled, broker = false, keyMode = null, doc = undefined }) {
   if (broker || !envEnabled || !shopOwner) return RAIL.QB;
   try {
     const { data, error } = await supabase
       .from("processor_accounts")
-      .select("shop_owner, merchant_id, merchant_status, enabled, plan_lapsed_at")
+      .select("shop_owner, merchant_id, merchant_status, enabled, plan_lapsed_at, stripe_livemode")
       .eq("shop_owner", shopOwner)
       .maybeSingle();
     if (error) {
       console.error(`[paymentRail] read failed for ${shopOwner}: ${error.message ?? error} — using QuickBooks rail`);
       return RAIL.QB;
     }
-    return resolvePaymentRail({ envEnabled, account: data ?? null, broker });
+    return resolvePaymentRail({ envEnabled, account: data ?? null, broker, keyMode, doc });
   } catch (err) {
     console.error(`[paymentRail] read threw for ${shopOwner}: ${err} — using QuickBooks rail`);
     return RAIL.QB;

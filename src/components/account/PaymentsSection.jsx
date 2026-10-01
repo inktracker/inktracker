@@ -36,16 +36,18 @@ async function call(action, extra = {}) {
   return data;
 }
 
-// Back from Stripe's sign-up page (?payments=return|refresh): re-read the
-// account, and drop the marker so a refresh doesn't repeat it.
+// Back from Stripe (?payments=return|refresh after sign-up, or
+// ?payments=oauth&code&state after "I already have a Stripe account"):
+// read it once and drop it from the address bar so a refresh doesn't repeat it.
 function takeReturnMarker() {
   try {
     const url = new URL(window.location.href);
     const v = url.searchParams.get("payments");
     if (!v) return null;
-    url.searchParams.delete("payments");
+    const out = { kind: v, code: url.searchParams.get("code"), state: url.searchParams.get("state"), error: url.searchParams.get("error_description") || url.searchParams.get("error") };
+    for (const k of ["payments", "code", "state", "scope", "error", "error_description"]) url.searchParams.delete(k);
     window.history.replaceState(null, "", url.pathname + url.search + url.hash);
-    return v;
+    return out;
   } catch {
     return null;
   }
@@ -67,7 +69,12 @@ export default function PaymentsSection() {
   useEffect(() => {
     let alive = true;
     const back = takeReturnMarker();
-    call(back ? "refreshStatus" : "status")
+    const first = back?.kind === "oauth"
+      ? (back.code && back.state
+        ? call("finishConnect", { code: back.code, state: back.state }).then((d) => { notify.success("Stripe account connected"); return d; })
+        : (back.error && notify.error("Stripe account not connected", back.error), call("status")))
+      : call(back ? "refreshStatus" : "status");
+    first
       .then((d) => { if (alive) { setState(d); setBankId(d.qbBankAccountId || ""); setFeeId(d.qbFeeAccountId || ""); } })
       .catch(() => { if (alive) setState(null); })
       .finally(() => { if (alive) setLoading(false); });
@@ -93,6 +100,8 @@ export default function PaymentsSection() {
 
   // Stripe hosts the sign-up; we come back to ?payments=return.
   const openSignUp = () => run("startOnboarding", {}, (d) => { window.location.assign(d.url); });
+  // An existing Stripe account: Stripe's connect page, back to ?payments=oauth.
+  const connectExisting = () => run("connectExisting", {}, (d) => { window.location.assign(d.url); });
 
   if (loading) return <div className="text-xs text-slate-400">Loading payments…</div>;
   if (!state) return <div className="text-xs text-slate-500">Payments settings couldn't be loaded. Refresh to try again.</div>;
@@ -127,6 +136,12 @@ export default function PaymentsSection() {
           ? <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">Payments ON</span>
           : <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">Using QuickBooks</span>}
       </div>
+
+      {state.testMode && (
+        <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          Stripe is in test mode. Only quotes and invoices with TEST or DEMO in the customer or job name use Stripe; everything else keeps paying through QuickBooks, and test payments aren't recorded in your QuickBooks.
+        </div>
+      )}
 
       {!state.payingPlan && (
         <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
@@ -180,12 +195,22 @@ export default function PaymentsSection() {
                     ) : ["not_started", "in_progress", "needs_information"].includes(stage) && (
                       <>
                         {stage === "not_started" && (
-                          <div>About 10 minutes on Stripe's site. Have your EIN, the owner's date of birth and your bank details ready. We fill in your shop details for you.</div>
+                          <div>
+                            About 10 minutes on Stripe's site. Have your EIN, the owner's date of birth and your bank details ready. We fill in your shop details for you.
+                            {state.canConnectExisting && " Already on Stripe? Connect that account instead. Payouts that mix in your other Stripe sales are left for you to record in QuickBooks."}
+                          </div>
                         )}
                         {state.canToggle ? (
-                          <button className={btn} disabled={!!busy} onClick={openSignUp}>
-                            {busy === "startOnboarding" ? "Opening Stripe…" : stage === "not_started" ? "Set up with Stripe" : "Continue sign-up"}
-                          </button>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <button className={btn} disabled={!!busy} onClick={openSignUp}>
+                              {busy === "startOnboarding" ? "Opening Stripe…" : stage === "not_started" ? "Set up with Stripe" : "Continue sign-up"}
+                            </button>
+                            {stage === "not_started" && state.canConnectExisting && (
+                              <button className={ghost} disabled={!!busy} onClick={connectExisting}>
+                                {busy === "connectExisting" ? "Opening Stripe…" : "I already have a Stripe account"}
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <div>The shop owner sets this up.</div>
                         )}

@@ -21,12 +21,31 @@ Anything unknown or unreadable resolves to the QuickBooks rail
 QuickBooks like today. A wrong "processor" would mean an invoice nobody can
 pay, so it is never the fallback.
 
+### Test mode is safe for real customers and real books
+
+While `STRIPE_CONNECT_SECRET_KEY` is a **test** key:
+
+* only quotes/invoices with **TEST** or **DEMO** in the customer, company or
+  job name use Stripe (`paymentRail.isTestDocument`, applied in qbSync, the
+  pay pages and both send screens). Every real quote and invoice keeps its
+  QuickBooks pay link, so no real customer is sent a test checkout;
+* test payments and payouts are recorded in InkTracker but **never posted
+  to the shop's QuickBooks** (`qb_post_error` says so), unless
+  `STRIPE_TEST_BOOKS_TO_QB=true` is set on purpose (a shop connected to a
+  QuickBooks sandbox company).
+
+**Going live:** every account remembers its Stripe mode
+(`processor_accounts.stripe_livemode`). Under the live key a test-mode
+account reads as "not set up" (rail = QuickBooks, no false "disconnected"
+alert); the owner runs the sign-up once more and a live account replaces it.
+
 ## The Stripe model
 
 **Connect Standard accounts + direct charges + application fee.**
 
 * Each shop gets **its own Stripe account** (created by InkTracker, finished
-  on Stripe's hosted sign-up). The shop is merchant of record: its own
+  on Stripe's hosted sign-up), or connects one it already has ("I already
+  have a Stripe account", Connect OAuth with a one-time state). The shop is merchant of record: its own
   Stripe dashboard, its own payouts, its own disputes and refunds.
   InkTracker carries no loss risk.
 * Checkout Sessions are created **on the shop's account** (`Stripe-Account`
@@ -169,6 +188,11 @@ maps QB accounts. **Only the owner** signs up and switches it on or off.
    with the events listed above. Its signing secret →
    `STRIPE_CONNECT_WEBHOOK_SECRET`.
 4. Branding (Settings → Connect → Branding) so the sign-up page says InkTracker.
+4a. For "I already have a Stripe account": Settings → Connect → Onboarding
+   options → OAuth: copy the **client id** (`ca_…`) into
+   `STRIPE_CONNECT_CLIENT_ID` and add the redirect URI
+   `https://www.inktracker.app/Account?payments=oauth`. Without the client id
+   the option simply doesn't show.
 5. InkTracker's terms should say shops pay QuickBooks-matched rates and that
    InkTracker keeps the difference over Stripe's fee (Stripe requires
    platforms to disclose their fees). Stripe's own Connected Account
@@ -203,6 +227,10 @@ Stripe test cards: `4242 4242 4242 4242` (success), `4000 0000 0000 0002`
 - [ ] Checkout with `us_bank_account` works on a fresh Standard account (or ACH must be enabled first → the "pay by card" message)
 - [ ] `GET /v1/balance_transactions?payout=…&expand[]=data.source.payment_intent` returns the PaymentIntent metadata
 - [ ] `account.application.deauthorized` arrives on the Connect endpoint
+- [ ] `GET /v1/payment_intents/search` with `Stripe-Account` finds InkTracker payments by metadata (the nightly backstop)
+- [ ] Checkout's `receipt_email` gets the customer a Stripe receipt
+- [ ] "I already have a Stripe account": the OAuth round trip links it; a second shop can't link the same account
+- [ ] A real (non-TEST) quote sent while in test mode still carries its QuickBooks pay link
 
 **Happy paths**
 - [ ] Card, full invoice: charge = live Balance; ledger `succeeded`; QB Payment gross into Undeposited Funds, method "Credit Card"; quote → order; shop notified once

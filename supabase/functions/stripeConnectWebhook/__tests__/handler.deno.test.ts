@@ -65,7 +65,7 @@ const evt = (type: string, object: Any, id = `evt_${++evtSeq}`, extra: Record<st
 let accountNow: Any = { id: ACCT, charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements: { currently_due: [] } };
 const ACTIVE_ACCOUNT = accountNow;
 
-function setup({ qbConnected = true, qbPostFails = false, balance = 1643, payout = null as Any, bts = [] as Any[] } = {}) {
+function setup({ qbConnected = true, qbPostFails = false, balance = 1643, payout = null as Any, bts = [] as Any[], live = true, env = {} as Record<string, string> } = {}) {
   const db = fakeSupabase({
     processor_accounts: [{ shop_owner: OWNER, merchant_id: ACCT, merchant_status: "active", enabled: true, qb_bank_account_id: "35", qb_fee_account_id: "88" }],
     processor_payouts: [],
@@ -78,18 +78,24 @@ function setup({ qbConnected = true, qbPostFails = false, balance = 1643, payout
   const deposits: unknown[] = [];
   const emails: Record<string, Any>[] = [];
   const stripeCalls: { path: string; query?: Any; opts?: Any }[] = [];
-  const lists: Record<string, Any[]> = { "/v1/payment_intents": [], "/v1/disputes": [], "/v1/payouts": [] };
+  const lists: Record<string, Any[]> = { "/v1/payment_intents/search": [], "/v1/disputes": [], "/v1/payouts": [] };
   let piNow: Any = pi();
   let failNext = qbPostFails;
   const deps: Deps & { setPi: (p: Any) => void; lists: typeof lists; stripeCalls: typeof stripeCalls } = {
     admin: db,
-    env: (k) => (k === "STRIPE_CONNECT_WEBHOOK_SECRET" ? SECRET : k === "CRON_SECRET" ? "cron-secret-value" : undefined),
+    env: (k) => (k === "STRIPE_CONNECT_WEBHOOK_SECRET" ? SECRET : k === "CRON_SECRET" ? "cron-secret-value" : env[k]),
     now: () => NOW,
     sendEmail: (payload) => { emails.push(payload); return Promise.resolve({ ok: true }); },
     stripe: {
-      live: false,
+      live,
+      oauthToken: () => Promise.reject(new Error("the webhook never connects accounts")),
       get: (path: string, query?: Any, opts?: Any) => {
         stripeCalls.push({ path, query, opts });
+        if (path === "/v1/payment_intents/search") {
+          // Stripe Search: our fake honours the doc-type part of the query.
+          const want = /inktracker_doc_type'\]:'(\w+)'/.exec(String(query?.query))?.[1];
+          return Promise.resolve({ data: lists[path].filter((p: Any) => p?.metadata?.inktracker_doc_type === want), has_more: false });
+        }
         if (path.startsWith("/v1/payment_intents/")) return Promise.resolve(piNow);
         if (path === `/v1/accounts/${ACCT}`) return accountNow instanceof Error ? Promise.reject(accountNow) : Promise.resolve(accountNow);
         if (path.startsWith("/v1/payouts/")) return Promise.resolve(payout);
@@ -546,7 +552,7 @@ Deno.test("backstop: a payment the webhook never recorded (crash after claim) is
   assertEquals((await dropped.json()).duplicate, true);
   assertEquals(db.tables.processor_payments.length, 0);
 
-  (deps as Any).lists["/v1/payment_intents"] = [pi(), pi({ id: "pi_shop", metadata: { order_id: "1001" } })];
+  (deps as Any).lists["/v1/payment_intents/search"] = [pi(), pi({ id: "pi_shop", metadata: { order_id: "1001" } })];
   const out = await sweep(deps);
   assertEquals(out.backstopReplayed, 1);
   assertEquals(db.tables.processor_payments.length, 1); // only InkTracker's payment
@@ -597,4 +603,58 @@ Deno.test("plan lapse: warned once with the date; paused notice after grace; ren
   await checkPlanLapses(deps);
   assertEquals(db.tables.processor_accounts[0].plan_lapsed_at, null);
   assert(db.tables.notifications.some((n) => n.event_type === "payments_plan_renewed"));
+});
+
+// ── Test mode and the live switch-over ──────────────────────────────────
+Deno.test("test mode: payments are recorded but NEVER posted to the shop's real QuickBooks", async () => {
+  const { db, deps, posted, deposits, emails } = setup({ live: false, payout: cleanPayout, bts: [chargeBt()] });
+  const testEvt = { ...evt("payment_intent.succeeded", pi()), livemode: false };
+  const r = await handle(await request(testEvt), deps);
+  assertEquals((await r.json()).posted, "test_mode");
+  assertEquals(db.tables.processor_payments[0].status, "succeeded");
+  assertEquals(db.tables.processor_payments[0].qb_post_error, "Stripe test mode: not recorded in QuickBooks");
+  const p = await handle(await request({ ...evt("payout.paid", { id: "po_1" }), livemode: false }), deps);
+  assertEquals((await p.json()).payout, "test_mode");
+  db.tables.processor_payments[0].updated_at = "2026-10-01T00:00:00Z";
+  await sweep(deps);
+  assertEquals(posted.length, 0);
+  assertEquals(deposits.length, 0);
+  assertEquals(emails.length, 0); // no "not recorded" alarms for test money
+});
+
+Deno.test("test mode: booking can be allowed on purpose (a QuickBooks sandbox shop)", async () => {
+  const { deps, posted } = setup({ live: false, env: { STRIPE_TEST_BOOKS_TO_QB: "true" } });
+  await handle(await request({ ...evt("payment_intent.succeeded", pi()), livemode: false }), deps);
+  assertEquals(posted.length, 1);
+});
+
+Deno.test("an event from the other Stripe mode is ignored", async () => {
+  const { db, deps } = setup(); // live key
+  const r = await handle(await request({ ...evt("payment_intent.succeeded", pi()), livemode: false }), deps);
+  assertEquals((await r.json()).ignored, "other_mode");
+  assertEquals(db.tables.processor_payments.length, 0);
+});
+
+Deno.test("going live: test-mode accounts are skipped by the nightly sync (no false 'disconnected' alert)", async () => {
+  const { db, deps, emails } = setup(); // live key
+  db.tables.processor_accounts[0].stripe_livemode = false;
+  accountNow = Object.assign(new Error("404 No such account"), { status: 404 });
+  try {
+    await sweep(deps);
+    assertEquals(db.tables.processor_accounts[0].merchant_status, "active");
+    assertEquals(db.tables.notifications.length, 0);
+    assertEquals(emails.length, 0);
+    assertEquals((deps as Any).stripeCalls.filter((c: Any) => c.path === `/v1/accounts/${ACCT}`).length, 0);
+  } finally {
+    accountNow = ACTIVE_ACCOUNT;
+  }
+});
+
+Deno.test("backstop finds InkTracker payments by SEARCH (a busy account's other sales can't crowd them out)", async () => {
+  const { deps } = setup();
+  await sweep(deps);
+  const searches = (deps as Any).stripeCalls.filter((c: Any) => c.path === "/v1/payment_intents/search");
+  assertEquals(searches.length, 2); // quotes and invoices
+  assert(searches.every((c: Any) => c.opts.account === ACCT && /created>=\d+/.test(c.query.query)));
+  assertEquals((deps as Any).stripeCalls.filter((c: Any) => c.path === "/v1/payment_intents").length, 0);
 });

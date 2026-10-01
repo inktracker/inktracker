@@ -101,6 +101,7 @@ import {
   applyRailToInvoiceBody,
   flagOn,
   loadPaymentRailState,
+  stripeKeyMode,
   restoreQbOnlinePayFields,
 } from "../_shared/paymentRail.js";
 import {
@@ -3875,6 +3876,9 @@ Deno.serve(async (req) => {
         const railState = await loadPaymentRailState(adminClient, shopOwnerEmail, {
           envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
           broker: Boolean(params?.billBroker || params?.brokerClientInvoice),
+          // Stripe test mode: only TEST/DEMO documents leave QuickBooks.
+          keyMode: stripeKeyMode(Deno.env.get("STRIPE_CONNECT_SECRET_KEY")),
+          doc: quote,
         });
         const invoiceRail = railState.rail;
         const auditCtx = {
@@ -3949,6 +3953,8 @@ Deno.serve(async (req) => {
         const depShop = depQuote?.shop_owner || shopOwnerEmail;
         const depRailState = await loadPaymentRailState(depAdmin, shopOwnerEmail, {
           envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
+          keyMode: stripeKeyMode(Deno.env.get("STRIPE_CONNECT_SECRET_KEY")),
+          doc: depQuote,
         });
         const depRail = depRailState.rail;
         const depIdempKey = params?.idempotencyKey ?? (depQuote?.id ? `createDepositInvoice:${depQuote.id}` : null);

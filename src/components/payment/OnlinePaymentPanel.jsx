@@ -22,7 +22,7 @@ export function PaidNotice({ method }) {
         <div className="mt-0.5 text-emerald-800">
           {bank
             ? "Thanks! Bank payments usually clear in about 4 business days. You don't need to do anything else."
-            : "Thanks! Your card payment went through. A receipt is on its way to your email."}
+            : "Thanks! Your card payment went through."}
         </div>
       </div>
     </div>

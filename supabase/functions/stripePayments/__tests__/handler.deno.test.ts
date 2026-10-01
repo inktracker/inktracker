@@ -41,10 +41,17 @@ type StripeCall = { method: string; path: string; params?: Any; opts?: Any };
 let existingAccounts: Any[] = [];
 let accountOnRead: Any = { id: "acct_1", charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements: { currently_due: [] } };
 let postImpl: ((path: string, params: Any, opts: Any) => Promise<Any>) | null = null;
+let oauthAccountId = "acct_existing";
 
-function fakeStripe(calls: StripeCall[] = [], live = false) {
+function fakeStripe(calls: StripeCall[] = [], live = true) {
   return {
     live,
+    oauthToken: (code: string) => {
+      calls.push({ method: "OAUTH", path: "/oauth/token", params: { code } });
+      return code === "ac_good"
+        ? Promise.resolve({ stripe_user_id: oauthAccountId, livemode: live })
+        : Promise.reject(Object.assign(new Error("400 invalid_grant"), { status: 400 }));
+    },
     get: (path: string, params?: Any, opts?: Any) => {
       calls.push({ method: "GET", path, params, opts });
       if (path === "/v1/accounts") return Promise.resolve({ data: existingAccounts, has_more: false });
@@ -64,7 +71,8 @@ function fakeStripe(calls: StripeCall[] = [], live = false) {
 let liveInvoice: Record<string, unknown> | null = null;
 let qbConnected = true;
 
-function call(fake: unknown, authId: string, body: Record<string, unknown>, env: Record<string, string> = { STRIPE_PAYMENTS_ENABLED: "true" }, calls: StripeCall[] = [], live = false) {
+// Live key by default; test-mode behaviour is exercised explicitly.
+function call(fake: unknown, authId: string, body: Record<string, unknown>, env: Record<string, string> = { STRIPE_PAYMENTS_ENABLED: "true" }, calls: StripeCall[] = [], live = true) {
   const req = new Request("http://x/stripePayments", {
     method: "POST",
     headers: authId ? { Authorization: "Bearer t" } : {},
@@ -101,9 +109,9 @@ Deno.test("status: enabled + active → processor rail; never leaks the Stripe a
   assertEquals(j.pricing.card, "2.99%");
   assertEquals(j.pricing.ach, "1%");
   assertEquals(j.canToggle, false); // employee
-  assertEquals(j.testMode, true);
+  assertEquals(j.testMode, false);
   assert(!JSON.stringify(j).includes("acct_1"));
-  assertEquals((await (await call(db(ACTIVE), "own-auth", { action: "status" }, undefined, [], true)).json()).testMode, false);
+  assertEquals((await (await call(db(ACTIVE), "own-auth", { action: "status" }, undefined, [], false)).json()).testMode, true);
 });
 
 Deno.test("setEnabled: owner only", async () => {
@@ -382,4 +390,81 @@ Deno.test("payinSession: a hammered pay link reuses the recent checkout — same
   assertEquals(calls.filter((c) => c.path === "/v1/checkout/sessions").length, 1);
   await call(fake, "", { action: "payinSession", id: QUOTE_ID, token: "tok", method: "ach" }, undefined, calls);
   assertEquals(calls.filter((c) => c.path === "/v1/checkout/sessions").length, 2);
+});
+
+// ── Test mode, live switch-over, existing Stripe accounts ───────────────
+Deno.test("test mode: only TEST/DEMO documents use Stripe; a real customer's quote stays on QuickBooks", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 1643, Balance: 1643, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  const real = withQuote({ ...ACTIVE, enabled: true, stripe_livemode: false });
+  const calls: StripeCall[] = [];
+  assertEquals(await (await call(real, "", { action: "payRail", id: QUOTE_ID, token: "tok" }, undefined, calls, false)).json(), { rail: "qb" });
+  assertEquals(await (await call(real, "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls, false)).json(), { rail: "qb" });
+  assertEquals(calls.length, 0);
+  const test = withQuote({ ...ACTIVE, enabled: true, stripe_livemode: false }, { customer_name: "TEST Tahoe Gift Co" });
+  const j = await (await call(test, "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls, false)).json();
+  assertEquals(j.payable, true);
+});
+
+Deno.test("going live: a test-mode account reads as not set up (no false 'disconnected'), and sign-up makes a live one", async () => {
+  const fake = db({ ...ACTIVE, enabled: true, stripe_livemode: false });
+  const st = await (await call(fake, "own-auth", { action: "status" })).json();
+  assertEquals(st.stage, "not_started");
+  assertEquals(st.rail, "qb");
+  const calls: StripeCall[] = [];
+  const r = await call(fake, "own-auth", { action: "startOnboarding" }, undefined, calls);
+  assertEquals(r.status, 200);
+  assertEquals(calls.filter((c) => c.method === "POST" && c.path === "/v1/accounts").length, 1);
+  assertEquals(fake.tables.processor_accounts[0].merchant_id, "acct_new");
+  assertEquals(fake.tables.processor_accounts[0].stripe_livemode, true);
+  assertEquals(fake.tables.processor_accounts[0].enabled, false);
+});
+
+Deno.test("connect an existing Stripe account: one-time state, linked to THIS shop, not switched on yet", async () => {
+  const fake = db(null);
+  const env = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_test123" };
+  assertEquals((await call(fake, "mgr-auth", { action: "connectExisting" }, env)).status, 403);
+  const start = await (await call(fake, "own-auth", { action: "connectExisting" }, env)).json();
+  const url = new URL(start.url);
+  assertEquals(url.origin + url.pathname, "https://connect.stripe.com/oauth/authorize");
+  assertEquals(url.searchParams.get("client_id"), "ca_test123");
+  assertEquals(url.searchParams.get("redirect_uri"), "https://www.inktracker.app/Account?payments=oauth");
+  const state = url.searchParams.get("state")!;
+  assertEquals(fake.tables.processor_accounts[0].oauth_state, state);
+
+  // Wrong state → refused, nothing linked.
+  const bad = await call(fake, "own-auth", { action: "finishConnect", code: "ac_good", state: "forged" }, env);
+  assertEquals(bad.status, 400);
+  assertEquals(fake.tables.processor_accounts[0].merchant_id ?? null, null);
+
+  const ok = await (await call(fake, "own-auth", { action: "finishConnect", code: "ac_good", state }, env)).json();
+  assertEquals(ok.stage, "active");
+  assertEquals(fake.tables.processor_accounts[0].merchant_id, "acct_existing");
+  assertEquals(fake.tables.processor_accounts[0].enabled, false);
+  assertEquals(fake.tables.processor_accounts[0].oauth_state, null); // used up
+  // Replaying the same redirect does nothing.
+  assertEquals((await call(fake, "own-auth", { action: "finishConnect", code: "ac_good", state }, env)).status, 400);
+});
+
+Deno.test("connect existing: expired state, a Stripe account another shop uses, and no client id are refused", async () => {
+  const env = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_test123" };
+  const stale = db({ merchant_id: null, oauth_state: "s1", oauth_state_at: new Date(Date.now() - 31 * 60 * 1000).toISOString() });
+  assertEquals((await call(stale, "own-auth", { action: "finishConnect", code: "ac_good", state: "s1" }, env)).status, 400);
+
+  const taken = db({ merchant_id: null, oauth_state: "s2", oauth_state_at: new Date().toISOString() });
+  taken.tables.processor_accounts.push({ shop_owner: "other@shop.com", merchant_id: "acct_existing" });
+  const r = await call(taken, "own-auth", { action: "finishConnect", code: "ac_good", state: "s2" }, env);
+  assertEquals(r.status, 409);
+  assert((await r.json()).error.includes("another InkTracker shop"));
+
+  assertEquals((await call(db(null), "own-auth", { action: "connectExisting" })).status, 400);
+  const st = await (await call(db(null), "own-auth", { action: "status" }, env)).json();
+  assertEquals(st.canConnectExisting, true);
+  assertEquals((await (await call(db(ACTIVE), "own-auth", { action: "status" }, env)).json()).canConnectExisting, false);
+});
+
+Deno.test("checkout asks Stripe to email the customer a receipt", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 1643, Balance: 1643, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  const calls: StripeCall[] = [];
+  await call(withQuote({ ...ACTIVE, enabled: true }), "", { action: "payinSession", id: QUOTE_ID, token: "tok" }, undefined, calls);
+  assertEquals(calls.find((c) => c.path === "/v1/checkout/sessions")!.params.payment_intent_data.receipt_email, "buyer@tahoegift.com");
 });

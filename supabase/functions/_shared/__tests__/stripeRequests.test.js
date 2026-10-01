@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession } from "../stripeRequests.js";
+import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession, buildConnectOAuthUrl } from "../stripeRequests.js";
 import { formEncode } from "../stripeForm.js";
 
 describe("isPayingShop — payments are a paid-plan feature", () => {
@@ -59,6 +59,8 @@ describe("buildCheckoutSession", () => {
     expect(params.payment_intent_data.application_fee_amount).toBe(71);
     expect(params.payment_intent_data.metadata).toMatchObject({ inktracker_doc_type: "quote", inktracker_quote_id: "q-uuid", qb_invoice_id: "3815", pay_kind: "full" });
     expect(params.customer_email).toBe("buyer@tahoegift.com");
+    // New Stripe accounts don't email receipts by default; ask per payment.
+    expect(params.payment_intent_data.receipt_email).toBe("buyer@tahoegift.com");
     expect(params.success_url).toBe(`${page}&paid=card`);
     expect(params.cancel_url).toBe(page);
     expect(idempotencyKey).toMatch(/^it-checkout:q-uuid:3815:112648:card:w\d+$/);
@@ -96,5 +98,17 @@ describe("formEncode — Stripe's nested form format", () => {
   });
   it("encodes metadata values safely", () => {
     expect(formEncode({ metadata: { note: "a&b=c" } })).toBe("metadata%5Bnote%5D=a%26b%3Dc");
+  });
+});
+
+describe("buildConnectOAuthUrl — connect an existing Stripe account", () => {
+  it("Standard OAuth with state, our redirect, and the shop prefilled", () => {
+    const u = new URL(buildConnectOAuthUrl({ clientId: "ca_1", state: "st", appUrl: "https://www.inktracker.app", shopOwner: "joe@biotamfg.co", shopName: "Biota Mfg" }));
+    expect(u.origin + u.pathname).toBe("https://connect.stripe.com/oauth/authorize");
+    expect(Object.fromEntries(u.searchParams)).toEqual({
+      response_type: "code", client_id: "ca_1", scope: "read_write", state: "st",
+      redirect_uri: "https://www.inktracker.app/Account?payments=oauth",
+      "stripe_user[email]": "joe@biotamfg.co", "stripe_user[business_name]": "Biota Mfg",
+    });
   });
 });

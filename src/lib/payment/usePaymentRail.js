@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import { isTestDocument } from "../../../supabase/functions/_shared/paymentRail.js";
 
 // Which way this shop's customers pay: "qb" (the QuickBooks invoice link —
 // every shop today) or "processor" (InkTracker's own payment page). Read from
@@ -39,6 +40,17 @@ export function resetPaymentStatus() {
 }
 
 /** @returns {{ rail: "qb"|"processor"|null, status: object|null }} rail is null while loading */
+/**
+ * The rail for ONE quote/invoice. In Stripe test mode only TEST/DEMO
+ * documents use InkTracker payments (the server applies the same rule), so a
+ * real customer never gets a test checkout.
+ */
+export function railForDocument(status, doc) {
+  const rail = status?.rail === "processor" ? "processor" : "qb";
+  if (rail === "processor" && status?.testMode && !isTestDocument(doc)) return "qb";
+  return rail;
+}
+
 export function usePaymentRail() {
   const [status, setStatus] = useState(null);
   useEffect(() => {

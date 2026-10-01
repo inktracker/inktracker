@@ -18,6 +18,8 @@ export type StripeOpts = { account?: string | null; idempotencyKey?: string };
 export type StripeApi = {
   get: (path: string, query?: Any, opts?: StripeOpts) => Promise<Any>;
   post: (path: string, params?: Any, opts?: StripeOpts) => Promise<Any>;
+  /** OAuth: trade the code from "connect my existing Stripe account" for its id. */
+  oauthToken: (code: string) => Promise<Any>;
   live: boolean;
 };
 
@@ -55,7 +57,23 @@ export function stripeApi(env: (k: string) => string | undefined, fetchImpl: typ
     }
     return j;
   };
+  const oauthToken = async (code: string) => {
+    if (!key) throw new StripeError("STRIPE_CONNECT_SECRET_KEY is not set", 500);
+    const res = await fetchImpl("https://connect.stripe.com/oauth/token", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: formEncode({ grant_type: "authorization_code", code }),
+    });
+    const text = await res.text();
+    let j: Any = {};
+    try { j = text ? JSON.parse(text) : {}; } catch { /* non-JSON */ }
+    if (!res.ok || j?.error) {
+      throw new StripeError(`Stripe OAuth → ${res.status}: ${String(j?.error_description ?? j?.error ?? text).slice(0, 300)}`, res.status, j?.error ?? null);
+    }
+    return j;
+  };
   return {
+    oauthToken,
     live: key.startsWith("sk_live_") || key.startsWith("rk_live_"),
     get: (p, q, o) => call("GET", p, q, o),
     post: (p, b, o) => call("POST", p, b, o),

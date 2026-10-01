@@ -5,6 +5,8 @@
 //   startOnboarding  → OWNER, paying plan only: create the shop's Stripe
 //                      account (Standard, prefilled) once, then a
 //                      Stripe-hosted sign-up link
+//   connectExisting  → OWNER: "I already have a Stripe account" (Connect OAuth)
+//   finishConnect    → OWNER: back from Stripe with ?code&state → link it
 //   refreshStatus    → re-read the account from Stripe (after sign-up returns)
 //   qbAccounts       → the shop's QuickBooks bank / expense accounts to pick from
 //   saveQbAccounts   → map payout bank account + fee expense account (owner/manager)
@@ -25,7 +27,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadProfileWithSecrets, loadShopProfileForUser } from "../_shared/profileSecrets.ts";
-import { flagOn, loadPaymentRail, RAIL } from "../_shared/paymentRail.js";
+import { flagOn, loadPaymentRail, RAIL, stripeKeyMode } from "../_shared/paymentRail.js";
 import {
   buildStatusPayload,
   canViewPayments,
@@ -38,7 +40,7 @@ import {
   onboardingStage,
   canStartOver,
 } from "../_shared/paymentsAccount.js";
-import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession } from "../_shared/stripeRequests.js";
+import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession, buildConnectOAuthUrl } from "../_shared/stripeRequests.js";
 import { accountStatusFields, readStripeList } from "../_shared/stripeWebhookAdapter.js";
 import { choosePayTarget, NOT_PAYABLE } from "../_shared/payinPlan.js";
 import { formatRatePct, normalizePayMethod } from "../_shared/paymentsPricing.js";
@@ -79,15 +81,26 @@ export type Deps = {
   };
 };
 
-async function loadAccount(admin: Any, shopOwner: string) {
+/**
+ * The shop's payments row, as seen under the Stripe key in use. An account
+ * made under the OTHER mode (a test-mode account once the live key is in)
+ * doesn't exist here: treat it as not set up (the owner sets up again)
+ * rather than as a live account that "disappeared".
+ */
+async function loadAccount(admin: Any, shopOwner: string, live: boolean) {
   const { data, error } = await admin
     .from("processor_accounts")
-    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, processor_used_at, plan_lapsed_at, qb_bank_account_id, qb_fee_account_id")
+    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, processor_used_at, plan_lapsed_at, qb_bank_account_id, qb_fee_account_id, stripe_livemode, oauth_state, oauth_state_at")
     .eq("shop_owner", shopOwner)
     .maybeSingle();
   if (error) throw new Error(`Couldn't read payment settings: ${error.message}`);
+  if (data && typeof data.stripe_livemode === "boolean" && data.stripe_livemode !== live) {
+    return { ...data, merchant_id: null, merchant_status: null, merchant_application_status: null, enabled: false, modeMismatch: true };
+  }
   return data ?? null;
 }
+
+const OAUTH_STATE_TTL_MS = 30 * 60 * 1000;
 
 // Customer-facing reasons, in plain words. Never a raw error.
 const CUSTOMER_REASON: Record<string, string> = {
@@ -144,6 +157,8 @@ async function payRail(body: Any, deps: Deps) {
   const rail = await loadPaymentRail(deps.admin, doc.shop_owner, {
     envEnabled: flagOn(deps.env("STRIPE_PAYMENTS_ENABLED")),
     broker: Boolean(doc.broker_id || doc.broker_email),
+    keyMode: stripeKeyMode(deps.env("STRIPE_CONNECT_SECRET_KEY")) ?? (deps.stripe.live ? "live" : "test"),
+    doc,
   });
   if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
   const { display } = await loadDisplay(deps.admin, doc, docType);
@@ -186,7 +201,12 @@ async function payinSession(body: Any, deps: Deps) {
 
   const envEnabled = flagOn(deps.env("STRIPE_PAYMENTS_ENABLED"));
   const broker = Boolean(doc.broker_id || doc.broker_email);
-  const rail = await loadPaymentRail(admin, doc.shop_owner, { envEnabled, broker });
+  const rail = await loadPaymentRail(admin, doc.shop_owner, {
+    envEnabled,
+    broker,
+    keyMode: stripeKeyMode(deps.env("STRIPE_CONNECT_SECRET_KEY")) ?? (deps.stripe.live ? "live" : "test"),
+    doc,
+  });
   if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
   // Tax-mismatch hold: QuickBooks computed a different tax than the shop
   // billed. The QB rail mints no link in this state; neither do we.
@@ -197,7 +217,7 @@ async function payinSession(body: Any, deps: Deps) {
     return json({ rail: "processor", payable: false, message: "This quote isn't ready to pay yet. Please contact the shop." });
   }
 
-  const account = await loadAccount(admin, doc.shop_owner);
+  const account = await loadAccount(admin, doc.shop_owner, deps.stripe.live);
   if (!account?.merchant_id) return json({ rail: "qb" });
 
   const { display } = await loadDisplay(admin, doc, docType);
@@ -302,13 +322,22 @@ export async function handle(req: Request, deps: Deps) {
   if (!shop?.email) return json({ error: "Shop not found" }, 404);
   const shopOwner = String(shop.email);
   const envEnabled = flagOn(deps.env("STRIPE_PAYMENTS_ENABLED"));
-  const account = await loadAccount(admin, shopOwner);
-  const status = async () => json({
-    ...buildStatusPayload({ envEnabled, account: await loadAccount(admin, shopOwner), viewer }),
-    payingPlan: isPayingShop(shop),
-    // Test-mode key: the card says so, so nobody mistakes test payments for real ones.
-    testMode: !deps.stripe.live,
-  });
+  const live = deps.stripe.live;
+  const account = await loadAccount(admin, shopOwner, live);
+  const clientId = deps.env("STRIPE_CONNECT_CLIENT_ID") ?? "";
+  const status = async () => {
+    const acct = await loadAccount(admin, shopOwner, live);
+    return json({
+      ...buildStatusPayload({ envEnabled, account: acct, viewer }),
+      payingPlan: isPayingShop(shop),
+      // Test-mode key: the card says so, and only TEST/DEMO documents use
+      // Stripe (paymentRail.isTestDocument), so testing never touches a real
+      // customer.
+      testMode: !live,
+      // "I already have a Stripe account" needs the platform's Connect client id.
+      canConnectExisting: Boolean(clientId) && canTogglePayments(viewer) && (!acct?.merchant_id || canStartOver(acct)),
+    });
+  };
 
   if (action === "status") return status();
 
@@ -316,8 +345,9 @@ export async function handle(req: Request, deps: Deps) {
     if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can sign up for payments." }, 403);
     if (!envEnabled) return json({ error: "InkTracker payments aren't available yet." }, 400);
     if (!isPayingShop(shop)) return json({ error: "InkTracker payments are available on a paid plan." }, 403);
-    // A closed account (rejected / disconnected) is replaced with a new one.
-    const startOver = canStartOver(account);
+    // A closed account (rejected / disconnected), or one from the other
+    // Stripe mode, is replaced with a new one.
+    const startOver = canStartOver(account) || Boolean(account?.modeMismatch);
     let accountId = startOver ? null : (account?.merchant_id ?? null);
     if (onboardingStage(account) === "active") return json({ error: "Your Stripe account is already set up." }, 400);
     if (!accountId) {
@@ -364,6 +394,7 @@ export async function handle(req: Request, deps: Deps) {
         ...(startOver ? { enabled: false, enabled_at: null, onboarded_at: null } : {}),
         merchant_id: accountId,
         merchant_application_id: null,
+        stripe_livemode: live,
         ...accountStatusFields(acct),
         merchant_creating_at: null,
         updated_at: new Date().toISOString(),
@@ -380,6 +411,64 @@ export async function handle(req: Request, deps: Deps) {
     const link = await deps.stripe.post("/v1/account_links", buildAccountLink(accountId, appUrl(deps)));
     if (!link?.url) throw new Error("Stripe returned no sign-up link");
     return json({ url: link.url });
+  }
+
+  if (action === "connectExisting") {
+    if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can connect a Stripe account." }, 403);
+    if (!envEnabled) return json({ error: "InkTracker payments aren't available yet." }, 400);
+    if (!isPayingShop(shop)) return json({ error: "InkTracker payments are available on a paid plan." }, 403);
+    if (!clientId) return json({ error: "Connecting an existing Stripe account isn't available yet." }, 400);
+    if (account?.merchant_id && !canStartOver(account)) {
+      return json({ error: "This shop already has a Stripe account set up for InkTracker." }, 400);
+    }
+    const state = crypto.randomUUID();
+    const { error } = await admin.from("processor_accounts").upsert({
+      shop_owner: shopOwner, oauth_state: state, oauth_state_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }, { onConflict: "shop_owner" });
+    if (error) return json({ error: `Couldn't start: ${error.message}` }, 500);
+    return json({ url: buildConnectOAuthUrl({ clientId, state, appUrl: appUrl(deps), shopOwner, shopName: shop.shop_name }) });
+  }
+
+  if (action === "finishConnect") {
+    if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can connect a Stripe account." }, 403);
+    const code = String(body.code ?? "");
+    const st = String(body.state ?? "");
+    // One-time, unexpired, and issued to THIS shop — else someone could link
+    // their Stripe account to another shop with a stolen redirect.
+    const issued = account?.oauth_state ? String(account.oauth_state) : "";
+    const fresh = account?.oauth_state_at && Date.now() - new Date(account.oauth_state_at).getTime() < OAUTH_STATE_TTL_MS;
+    if (!code || !st || !issued || !safeEquals(st, issued) || !fresh) {
+      return json({ error: "That Stripe connection link expired. Click \"I already have a Stripe account\" again." }, 400);
+    }
+    await admin.from("processor_accounts").update({ oauth_state: null, oauth_state_at: null }).eq("shop_owner", shopOwner);
+    let tok: Any;
+    try {
+      tok = await deps.stripe.oauthToken(code);
+    } catch (err) {
+      console.error("[stripePayments] oauth token exchange failed:", (err as Error).message);
+      return json({ error: "Stripe didn't confirm the connection. Try connecting again." }, 400);
+    }
+    const accountId = String(tok?.stripe_user_id ?? "");
+    if (!accountId) return json({ error: "Stripe didn't confirm the connection. Try connecting again." }, 400);
+    const { data: taken } = await admin.from("processor_accounts").select("shop_owner").eq("merchant_id", accountId).maybeSingle();
+    if (taken && taken.shop_owner !== shopOwner) {
+      return json({ error: "That Stripe account is already connected to another InkTracker shop." }, 409);
+    }
+    const acct = await deps.stripe.get(`/v1/accounts/${encodeURIComponent(accountId)}`);
+    const fields = accountStatusFields(acct);
+    const { error } = await admin.from("processor_accounts").upsert({
+      shop_owner: shopOwner,
+      merchant_id: accountId,
+      merchant_application_id: null,
+      stripe_livemode: live,
+      enabled: false,
+      enabled_at: null,
+      ...fields,
+      ...(fields.merchant_status === "active" ? { onboarded_at: new Date().toISOString() } : {}),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "shop_owner" });
+    if (error) return json({ error: `Couldn't save: ${error.message}` }, 500);
+    return status();
   }
 
   if (action === "refreshStatus") {

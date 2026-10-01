@@ -12,6 +12,8 @@ import {
   paymentsPauseDate,
   planGraceOver,
   PLAN_GRACE_DAYS,
+  stripeKeyMode,
+  isTestDocument,
 } from "../paymentRail.js";
 
 const ready = { shop_owner: "joe@biotamfg.co", merchant_id: "mid_1", merchant_status: "active", enabled: true };
@@ -147,5 +149,34 @@ describe("InkTracker plan lapse", () => {
     expect(resolvePaymentRail({ envEnabled: true, account: lapsed, now: Date.parse("2026-10-16T00:00:00Z") })).toBe(RAIL.QB);
     expect(planGraceOver({ plan_lapsed_at: null })).toBe(false);
     expect(paymentsPauseDate({})).toBeNull();
+  });
+});
+
+describe("Stripe test mode and live switch-over", () => {
+  const on = { enabled: true, merchant_id: "acct_1", merchant_status: "active" };
+  it("knows the key's mode", () => {
+    expect(stripeKeyMode("sk_live_abc")).toBe("live");
+    expect(stripeKeyMode("rk_live_abc")).toBe("live");
+    expect(stripeKeyMode("sk_test_abc")).toBe("test");
+    expect(stripeKeyMode("")).toBeNull();
+    expect(stripeKeyMode(undefined)).toBeNull();
+  });
+  it("TEST / DEMO documents by the shop's naming convention (whole word)", () => {
+    expect(isTestDocument({ customer_name: "TEST Tahoe Gift Co" })).toBe(true);
+    expect(isTestDocument({ job_title: "Demo order" })).toBe(true);
+    expect(isTestDocument({ company: "Tahoe Gift Co" })).toBe(false);
+    expect(isTestDocument({ customer_name: "Contest Promotions" })).toBe(false); // not a whole word
+    expect(isTestDocument(null)).toBe(false);
+  });
+  it("test mode: a real document stays on QuickBooks; a TEST one uses Stripe; shop-level status unaffected", () => {
+    expect(resolvePaymentRail({ envEnabled: true, account: on, keyMode: "test", doc: { customer_name: "Tahoe Gift Co" } })).toBe(RAIL.QB);
+    expect(resolvePaymentRail({ envEnabled: true, account: on, keyMode: "test", doc: { customer_name: "TEST Tahoe" } })).toBe(RAIL.PROCESSOR);
+    expect(resolvePaymentRail({ envEnabled: true, account: on, keyMode: "test" })).toBe(RAIL.PROCESSOR);
+    expect(resolvePaymentRail({ envEnabled: true, account: on, keyMode: "live", doc: { customer_name: "Tahoe Gift Co" } })).toBe(RAIL.PROCESSOR);
+  });
+  it("an account from the other mode → QuickBooks", () => {
+    expect(resolvePaymentRail({ envEnabled: true, account: { ...on, stripe_livemode: false }, keyMode: "live" })).toBe(RAIL.QB);
+    expect(resolvePaymentRail({ envEnabled: true, account: { ...on, stripe_livemode: true }, keyMode: "live" })).toBe(RAIL.PROCESSOR);
+    expect(resolvePaymentRail({ envEnabled: true, account: { ...on, stripe_livemode: true }, keyMode: "test" })).toBe(RAIL.QB);
   });
 });
