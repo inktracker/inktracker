@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtDate, sortSizeEntries, O_STATUSES, getDisplayName, getShopPricingConfig, getShortfallQty } from "../components/shared/pricing";
@@ -200,6 +200,14 @@ export default function ShopFloor() {
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState({});
   const [loading, setLoading] = useState(true);
+  // Serializes checklist writes. Every toggle is a whole-column
+  // read-modify-write built from the tapped order snapshot, so two in-flight
+  // writes race on one jsonb column (last write wins) — and a double-tap on
+  // the last Art Approval task fired maybeAutoAdvance twice → two concurrent
+  // changeOrderStatus → duplicate draft POs (ensurePoDraftsForOrder's
+  // idempotency is read-then-write). One guard across all toggles; taps
+  // while busy are dropped, which on a phone reads as "it registered once".
+  const checklistBusyRef = useRef(false);
   const [selected, setSelected] = useState(null);
   // Artwork preview overlay — opens the in-app PDF/image viewer.
   const [previewArt, setPreviewArt] = useState(null);
@@ -422,10 +430,15 @@ export default function ShopFloor() {
   }
 
   async function toggleTask(order, task) {
+    if (checklistBusyRef.current) return;
+    checklistBusyRef.current = true;
     try {
       const step = effectiveStatus(order);
-      const checklist = { ...(order.checklist || {}) };
-      if (!checklist[step]) checklist[step] = {};
+      // DEEP-copy the stage object. The old shallow copy mutated
+      // order.checklist[step] in place, so a FAILED update left the tick
+      // live in local state and the next successful toggle resurrected a
+      // write the DB had rejected.
+      const checklist = { ...(order.checklist || {}), [step]: { ...((order.checklist || {})[step] || {}) } };
       const wasDone = !!checklist[step][task];
       checklist[step][task] = wasDone ? null : {
         by: user?.full_name || user?.email || "Employee",
@@ -437,10 +450,14 @@ export default function ShopFloor() {
       await maybeAutoAdvance(updated);
     } catch (err) {
       notify.error("Update failed", err);
+    } finally {
+      checklistBusyRef.current = false;
     }
   }
 
   async function togglePrint(order, liIdx, size, impIdx) {
+    if (checklistBusyRef.current) return;
+    checklistBusyRef.current = true;
     try {
       const checklist = { ...(order.checklist || {}) };
       const printProgress = { ...(checklist.print_progress || {}) };
@@ -456,6 +473,36 @@ export default function ShopFloor() {
       await maybeAutoAdvance(updated);
     } catch (err) {
       notify.error("Update failed", err);
+    } finally {
+      checklistBusyRef.current = false;
+    }
+  }
+
+  // Clear/set MANY imprint marks for one size in ONE write. The old path
+  // fired togglePrint once per imprint in parallel — each built its payload
+  // from the SAME order snapshot, so last-write-won and tapping an all-done
+  // 3-imprint size cleared exactly one imprint (audit 2026-09-30).
+  async function setPrintMarksBatch(order, liIdx, size, impIdxs, value) {
+    if (checklistBusyRef.current) return;
+    checklistBusyRef.current = true;
+    try {
+      const checklist = { ...(order.checklist || {}) };
+      const printProgress = { ...(checklist.print_progress || {}) };
+      const mark = value
+        ? { by: user?.full_name || user?.email || "Employee", at: new Date().toISOString() }
+        : null;
+      for (const ii of impIdxs) {
+        printProgress[`${liIdx}-${size}-${ii}`] = mark;
+      }
+      checklist.print_progress = printProgress;
+      const updated = await base44.entities.Order.update(order.id, { checklist });
+      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
+      setSelected(updated);
+      await maybeAutoAdvance(updated);
+    } catch (err) {
+      notify.error("Update failed", err);
+    } finally {
+      checklistBusyRef.current = false;
     }
   }
 
@@ -463,6 +510,8 @@ export default function ShopFloor() {
   // (decision in lib/orderGoodsProgress). A `null` return means
   // "clear" — delete the entry so the size goes back to blank.
   async function toggleGoods(order, liIdx, size) {
+    if (checklistBusyRef.current) return;
+    checklistBusyRef.current = true;
     try {
       const checklist = { ...(order.checklist || {}) };
       const goodsProgress = { ...(checklist.goods_progress || {}) };
@@ -484,6 +533,8 @@ export default function ShopFloor() {
       await maybeAutoAdvance(updated);
     } catch (err) {
       notify.error("Update failed", err);
+    } finally {
+      checklistBusyRef.current = false;
     }
   }
 
@@ -492,6 +543,8 @@ export default function ShopFloor() {
   // integration — they couldn't otherwise advance sizes from blank →
   // ordered (the per-size tap only handles ordered → received).
   async function bulkOrderGoodsStep(order, target) {
+    if (checklistBusyRef.current) return;
+    checklistBusyRef.current = true;
     try {
       const checklist = { ...(order.checklist || {}) };
       checklist.goods_progress = bulkSetOrderGoodsStep(
@@ -505,6 +558,8 @@ export default function ShopFloor() {
       await maybeAutoAdvance(updated);
     } catch (err) {
       notify.error("Update failed", err);
+    } finally {
+      checklistBusyRef.current = false;
     }
   }
 
@@ -1205,7 +1260,9 @@ export default function ShopFloor() {
                                       <button
                                         onClick={() => {
                                           if (allDone) {
-                                            imprints.forEach((_, ii) => togglePrint(selected, idx, size, ii));
+                                            // ONE write clearing every imprint — the per-imprint
+                                            // fan-out raced on one jsonb column (see setPrintMarksBatch).
+                                            setPrintMarksBatch(selected, idx, size, imprints.map((_, ii) => ii), false);
                                           } else {
                                             const nextIdx = imprints.findIndex((_, ii) => !printProgress[`${idx}-${size}-${ii}`]);
                                             if (nextIdx !== -1) togglePrint(selected, idx, size, nextIdx);

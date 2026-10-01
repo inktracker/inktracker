@@ -28,9 +28,9 @@ import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
 import { quoteAlreadyApproved, quoteAlreadyPaid } from "@/lib/quotes/approvalState";
 import { anonEdgeResult } from "@/lib/anonEdge";
+import { isQuoteDateExpired } from "@/lib/quotes/quoteExpiry";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
-import { localDateStr } from "@/lib/dateRangeUtils";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
@@ -302,12 +302,10 @@ export default function QuotePayment() {
   const isExpired = (() => {
     if (!quote?.expires_date) return false;
     if (alreadyApproved || alreadyPaid) return false;
-    // expires_date is a date-only string ("2026-08-11"). new Date(str) parses
-    // it as UTC midnight, so `< new Date()` flipped the quote to "expired" the
-    // evening BEFORE its date for any US (negative-offset) customer, costing
-    // them the whole final day. Compare date strings in the viewer's local
-    // date instead: valid through the end of expires_date.
-    return localDateStr(new Date()) > quote.expires_date;
+    // Shared predicate (valid through the END of expires_date, local date) —
+    // the UTC-midnight incident this page fixed inline now lives in
+    // lib/quotes/quoteExpiry so the shop-side surfaces can't drift again.
+    return isQuoteDateExpired(quote.expires_date);
   })();
 
   // ── Payment-provider availability ──────────────────────────────────

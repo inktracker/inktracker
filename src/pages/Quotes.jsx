@@ -25,6 +25,7 @@ import { validateQuoteForSave } from "../lib/quotes/validation";
 import { sentAge } from "../lib/quotes/sentAge";
 import { detectPostSendEditRisk } from "../lib/quotes/editPolicy";
 import { isConvertedToOrder } from "../lib/quotes/approvalState";
+import { isQuoteDateExpired } from "../lib/quotes/quoteExpiry";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
 import { useBillingGate, useReadOnly } from "../lib/billing-gate";
 import ReactivateLink from "../components/shared/ReactivateLink";
@@ -746,7 +747,7 @@ export default function Quotes() {
                           </span>
                         ) : null;
                       })()}
-                      {q.expires_date && new Date(q.expires_date) < new Date() && q.status === "Pending" && (
+                      {isQuoteDateExpired(q.expires_date) && q.status === "Pending" && (
                         <span className="text-[11px] font-semibold text-red-600 whitespace-nowrap">Expired</span>
                       )}
                     </div>
