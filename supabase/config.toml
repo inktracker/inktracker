@@ -129,3 +129,6 @@ verify_jwt = false
 
 [functions.redditScan]
 verify_jwt = false
+
+[functions.artProof]
+verify_jwt = false

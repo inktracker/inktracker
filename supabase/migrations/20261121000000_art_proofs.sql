@@ -73,3 +73,18 @@ create policy art_proofs_team_select on public.art_proofs for select to authenti
 
 comment on table public.art_proofs is
   'Artwork proof versions sent to customers and their responses (approve / request changes / shop override). Service-role writes only (edge fns artProof + createCheckoutSession).';
+
+-- ── Email log: the new proof emails ──────────────────────────────────────
+-- Same list as before, plus art_proof_sent / art_proof_reminder /
+-- artwork_changes_requested — and two names the code already logs that the
+-- old list rejected: deposit_payment (qbDepositPaid; the deposit-email
+-- dedupe reads these rows, so a rejected log let it repeat) and winback
+-- (billingWebhook).
+alter table public.notification_log drop constraint if exists notification_log_event_type_check;
+alter table public.notification_log add constraint notification_log_event_type_check check (event_type = any (array[
+  'quote_approval', 'artwork_approval', 'quote_payment', 'quote_send', 'reply',
+  'payment_confirmation', 'trial_reminder', 'signup_notify', 'welcome_email',
+  'drip_day2', 'status_update',
+  'art_proof_sent', 'art_proof_reminder', 'artwork_changes_requested',
+  'deposit_payment', 'winback'
+]));

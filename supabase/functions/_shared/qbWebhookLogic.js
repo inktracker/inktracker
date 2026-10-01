@@ -1,3 +1,4 @@
+import { quoteProofApproval, artFiles } from "./artApproval.js";
 // Pure logic for the QB webhook handler. Extracted so the cross-tenant
 // scoping, idempotency rules, and payload parsing are unit-testable
 // without spinning up a Deno runtime or a real Supabase client.
@@ -346,6 +347,13 @@ export function buildOrderInsertFromQuote(quote, orderId) {
     deposit_amount:        quote.deposit_amount ?? null,
     qb_deposit_invoice_id: quote.qb_deposit_invoice_id ?? null,
     selected_artwork:   quote.selected_artwork || [],
+    // Quote approved with proofs shown → the art is approved (v1) on the
+    // order; no second sign-off. Twin of src/lib/orders/buildOrderFromQuote.
+    ...(quoteProofApproval({
+      quote: quote,
+      order: { selected_artwork: quote.selected_artwork, line_items: quote.line_items },
+      proofUrls: artFiles(quote).map((f) => f.url || f.key),
+    }) ?? {}),
   };
 }
 
