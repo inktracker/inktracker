@@ -1,3 +1,4 @@
+import { quoteProofApproval } from "@/lib/art/artApproval";
 // Pure builder for the quote→order conversion. Used by Quotes.jsx handleConvert.
 //
 // Carries forward fields that the order downstream needs (especially
@@ -168,6 +169,12 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
     paid: Boolean(q.paid),
     deposit_paid: Boolean(q.deposit_paid),
     selected_artwork: q.selected_artwork || [],
+    // Quote approved with proofs shown → the art is approved (v1) on the
+    // order; no second sign-off. Twin of _shared/qbWebhookLogic.
+    ...(quoteProofApproval({
+      quote: q,
+      order: { selected_artwork: q.selected_artwork, line_items: q.line_items },
+    }) ?? {}),
   };
 }
 

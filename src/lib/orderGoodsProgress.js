@@ -1,3 +1,4 @@
+import { artApprovalState } from "@/lib/art/artApproval";
 // Pure logic for per-size goods tracking, shared across all three
 // surfaces that render Floor Mode (ShopFloor route, OrderDetailModal
 // Floor Mode panel, Production inline detail).
@@ -73,11 +74,19 @@ export const ORDER_GOODS_AUTO_RECEIVE = "Receive goods";
 // order (art_approved, written by the ArtApproval page when the customer
 // signs off). Floor staff can't grant it by tapping; it derives from the
 // record. Returns null for every other task so it stays operator-tickable.
+// "Get approval" is approved art RIGHT NOW (an approval the art has since
+// outgrown doesn't count); "Send proof to customer" ticks itself once a
+// proof version has gone out (src/lib/art/artApproval).
 export const ART_APPROVAL_AUTO_TASK = "Get approval";
+export const ART_SEND_PROOF_AUTO_TASK = "Send proof to customer";
 export function autoCheckArtApprovalTask(step, task, order) {
   if (step !== "Art Approval") return null;
-  if (task !== ART_APPROVAL_AUTO_TASK) return null;
-  return !!order?.art_approved;
+  if (task === ART_APPROVAL_AUTO_TASK) return artApprovalState(order).approved;
+  if (task === ART_SEND_PROOF_AUTO_TASK) {
+    const st = artApprovalState(order);
+    return st.approved || ["sent", "changes_requested"].includes(st.status) || Number(order?.art_proof_version) > 0;
+  }
+  return null;
 }
 
 // One entry point: auto-derived state for any stage's task, or null when the

@@ -46,3 +46,22 @@ jobs:
             echo "::error::lifecycleDrip returned $code (401 = CRON_SECRET mismatch with Supabase)."
             exit 1
           fi
+      - name: Art proof reminders
+        # One reminder to customers who haven't answered a proof in 2 days
+        # (artProof edge fn). 8am Pacific, same as the drip. Off until the
+        # artProof function is deployed:  gh variable set ART_PROOF_REMINDERS --body true
+        if: ${{ always() && vars.ART_PROOF_REMINDERS == 'true' }}
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          code=$(curl -sS -o /tmp/art.json -w "%{http_code}" -X POST \
+            "https://skmltfbibaqcjddmeqvi.supabase.co/functions/v1/artProof" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --data '{"action":"remind"}')
+          echo "HTTP $code"
+          cat /tmp/art.json | head -c 2000; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::artProof remind returned $code."
+            exit 1
+          fi

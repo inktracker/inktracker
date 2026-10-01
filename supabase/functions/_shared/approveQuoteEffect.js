@@ -43,9 +43,13 @@ export const APPROVE_GUARD_OR =
 //               workflow: the clicker is the broker's END CLIENT, and the
 //               broker still has to "Submit to Shop"); direct shop quotes go
 //               straight to "Approved".
+/**
+ * @param {{ status?: string, client_status?: string, broker_id?: string, broker_email?: string, converted_order_id?: string }} [row]
+ * @param {{ nowISO?: string, artFingerprint?: string|null }} [opts]
+ */
 export function resolveApproveQuoteUpdate(
   { status, client_status, broker_id, broker_email, converted_order_id } = {},
-  { nowISO } = {},
+  { nowISO, artFingerprint = null } = {},
 ) {
   const isBroker = Boolean(broker_id || broker_email);
 
@@ -61,14 +65,21 @@ export function resolveApproveQuoteUpdate(
 
   if (locked) return { update: null, isBroker };
 
+  // The customer approved THIS art (fingerprint of the quote's files + print
+  // locations at the moment they clicked). Written only here — never by the
+  // shop's own Approve button — so a converted order can count it as the
+  // customer's art approval only when it really was theirs and the art
+  // hasn't changed since (artApproval.quoteProofApproval).
+  const artSeen = artFingerprint ? { customer_approved_art_fp: artFingerprint } : {};
   return {
     update: isBroker
       ? {
           status: "Client Approved",
           client_status: "Approved",
           client_approved_at: nowISO,
+          ...artSeen,
         }
-      : { status: "Approved" },
+      : { status: "Approved", ...artSeen },
     isBroker,
   };
 }

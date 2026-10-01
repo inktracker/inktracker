@@ -1,3 +1,4 @@
+import { artApprovalState, artFingerprint } from "./artApproval.js";
 // Anonymous-response sanitization (broker security audit 2026-08-13, P1).
 //
 // The token-gated customer pages (QuotePayment / OrderStatus / ArtApproval)
@@ -97,6 +98,8 @@ const PUBLIC_ORDER_FIELDS = [
   "art_approved",
   "art_approved_by",
   "art_approved_at",
+  "art_status",
+  "art_proof_version",
   "broker_id",
   "broker_name",
   "broker_company",
@@ -110,6 +113,12 @@ export function sanitizeOrderForCustomer(order) {
     if (order[k] !== undefined) out[k] = order[k];
   }
   out.line_items = sanitizeLineItems(order.line_items);
+  // Is the art approved RIGHT NOW (an approval the art has since outgrown
+  // doesn't count)? Computed here so the page never needs the fingerprint.
+  const st = artApprovalState(order);
+  // fingerprint: a hash of the art shown (no content) — the page sends it
+  // back with approve / request changes so a stale tab can't answer newer art.
+  out.art_state = { approved: st.approved, status: st.status, changedSinceApproval: st.changedSinceApproval, version: st.version, fingerprint: artFingerprint(order) };
   return out;
 }
 

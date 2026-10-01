@@ -27,6 +27,8 @@ import { changeOrderStatus, effectiveStatus, autoPoToast } from "@/lib/orders/ch
 import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
 import { readyForPress, pressOptions } from "@/lib/floorQueues";
 import { todayInShopTz } from "@/lib/shopTimezone";
+import ArtStatusBadge from "@/components/art/ArtStatusBadge";
+import { artApprovalState, showArtBadgeInList } from "@/lib/art/artApproval";
 
 // Collect every artwork file attached to an order so press operators
 // can preview them inline. Mirrors OrderDetailModal.getOrderArtwork:
@@ -713,6 +715,7 @@ export default function ShopFloor() {
                     {effectiveStatus(order)}
                   </span>
                 </div>
+                {showArtBadgeInList(order) && <div className="mb-1"><ArtStatusBadge order={order} size="xs" /></div>}
                 <div className="flex items-center justify-between text-xs text-slate-500">
                   <span>
                     {order.order_id} · {getQty(order)} pcs
@@ -773,6 +776,15 @@ export default function ShopFloor() {
                   )}
                   {normalizeAssignedPress(selected.assigned_press) && <span>Press: {normalizeAssignedPress(selected.assigned_press)}</span>}
                   {selected.assigned_operator && <span>Operator: {selected.assigned_operator}</span>}
+                </div>
+                <div className="mt-3 flex items-center gap-2 flex-wrap text-sm">
+                  <ArtStatusBadge order={selected} />
+                  {(() => {
+                    const st = artApprovalState(selected);
+                    return st.approved && st.by
+                      ? <span className="text-slate-500">{st.by}{st.at ? ` · ${new Date(st.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}</span>
+                      : null;
+                  })()}
                   <button
                     onClick={() => setReportOpen((v) => !v)}
                     className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-100 transition"
@@ -978,6 +990,19 @@ export default function ShopFloor() {
                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
                       Artwork ({art.length})
                     </h3>
+                    {(() => {
+                      // Approval only counts while these files still match what
+                      // the customer approved, so the list itself says whether
+                      // it's safe to print from.
+                      const st = artApprovalState(selected);
+                      if (st.approved) {
+                        return <p className="text-xs text-emerald-700 mb-3">These are the files the customer approved{st.version ? ` (proof v${st.version})` : ""}.</p>;
+                      }
+                      if (st.changedSinceApproval) {
+                        return <p className="text-xs font-semibold text-red-700 mb-3">These files changed after the customer approved. Check with the office before printing.</p>;
+                      }
+                      return <p className="text-xs text-amber-700 mb-3">Not approved by the customer yet.</p>;
+                    })()}
                     <div className="grid gap-2 sm:grid-cols-2">
                       {art.map((a) => (
                         <button
