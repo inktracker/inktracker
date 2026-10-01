@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { base44, supabase } from "@/api/supabaseClient";
+import { Link } from "react-router-dom";
+import { supabase } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 import { artApprovalState } from "@/lib/art/artApproval";
+import { callArtProof } from "@/lib/art/artProofClient";
+import { createPageUrl } from "@/utils";
 import ArtStatusBadge from "./ArtStatusBadge";
 
 // The order's proof workflow: status, Send proof / Send revised proof (emails
@@ -25,15 +28,6 @@ const STATUS_TEXT = {
   changes_requested: "Changes requested",
   superseded: "Replaced by a newer version",
 };
-
-async function callArtProof(action, extra) {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Your session expired. Refresh the page and sign in again.");
-  const { data, error } = await base44.functions.invoke("artProof", { action, accessToken: session.access_token, ...extra });
-  if (error) throw new Error(error.message || "Request failed");
-  if (data?.error) throw new Error(data.error);
-  return data;
-}
 
 export default function ArtProofPanel({ order, role, readOnly = false, onOrderUpdated }) {
   const [proofs, setProofs] = useState([]);
@@ -101,6 +95,10 @@ export default function ArtProofPanel({ order, role, readOnly = false, onOrderUp
               className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-lg px-3 py-1.5 disabled:opacity-50">
               {hasProof ? "Send revised proof" : "Send proof to customer"}
             </button>
+            <Link to={`${createPageUrl("Mockups")}?order=${order.id}`}
+              className="text-xs font-semibold text-teal-700 hover:text-teal-800">
+              Make a mockup
+            </Link>
             {canOverride && !state.approved && (
               <button type="button" disabled={!!busy}
                 onClick={() => { setOverriding((v) => !v); setComposing(false); }}
