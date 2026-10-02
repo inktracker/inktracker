@@ -1003,15 +1003,29 @@ export default function BrokerQuoteEditor({
           </button>
 
           <button
-            onClick={() => previewPdf(exportQuoteToPDF(q, {
-              mode: "client",
-              shopName: broker?.company_name || broker?.display_name || broker?.full_name || broker?.email || "",
-              // Broker → client: broker brands the PDF, not the shop.
-              // Falls back to the shop logo only if the broker hasn't
-              // uploaded one yet (still better than InkTracker's logo).
-              logoUrl: broker?.logo_url || shop?.logo_url || "",
-              output: "blob",
-            }))}
+            onClick={() => previewPdf(exportQuoteToPDF(
+              {
+                ...q,
+                // Stamp broker identity so isBrokerQuote() is TRUE even on an
+                // unsaved draft (broker_id/broker_email aren't written until
+                // handleSaveQuote). Without it exportQuoteToPDF treats the draft
+                // as non-broker → the client-price branch is skipped and this
+                // "what my client sees" preview renders WHOLESALE (same class as
+                // the client-PDF leak, Joe 2026-10-01). Mirrors the Shop Form
+                // button above.
+                broker_id: q?.broker_id || broker?.email || "broker",
+                broker_email: q?.broker_email || broker?.email || "",
+              },
+              {
+                mode: "client",
+                shopName: broker?.company_name || broker?.display_name || broker?.full_name || broker?.email || "",
+                // Broker → client: broker brands the PDF, not the shop.
+                // Falls back to the shop logo only if the broker hasn't
+                // uploaded one yet (still better than InkTracker's logo).
+                logoUrl: broker?.logo_url || shop?.logo_url || "",
+                output: "blob",
+              }
+            ))}
             className="inline-flex items-center gap-1.5 px-4 border border-slate-300 text-slate-600 text-sm font-semibold py-2.5 rounded-xl hover:bg-slate-100 transition"
             title="Preview clean client-facing version"
           >
