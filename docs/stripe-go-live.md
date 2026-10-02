@@ -15,11 +15,12 @@ signing secret or password ever goes through chat.
   - [x] Debit card: no surcharge (Q-2026-400F, 2026-10-02)
   - [ ] Bank transfer, with the fee as its own line on Stripe's page
   - [ ] QuickBooks chain: one test payment booked on purpose. Set
-    `STRIPE_TEST_BOOKS_TO_QB=pi_3ULz8BEk7szqij6u0Kz4RYUw` (the $848.53
-    payment on Q-2026-37KF / QB invoice 3821). Only the payment named there
-    can be booked; the "true" value would book every test payment. The quote
-    should become a paid order and you should get the paid notice. Then unset
-    the flag and delete that QuickBooks payment.
+    `STRIPE_TEST_BOOKS_TO_QB=pi_…` naming a NEW test payment on a TEST
+    quote that still exists. The earlier TEST quotes were deleted, so their
+    payments can't convert to an order. Only the payment named there can be
+    booked; the "true" value would book every test payment. The quote should
+    become a paid order and you should get the paid notice. Then unset the
+    flag and delete that QuickBooks payment.
 - [ ] **Card surcharge notice**, only if Biota will surcharge credit cards.
   From Biota's own Stripe account, tell Stripe support you'll surcharge
   credit cards at 2.99%, starting 30+ days later (Visa rule). Bank fees
@@ -62,6 +63,9 @@ npx supabase secrets set --project-ref skmltfbibaqcjddmeqvi \
 ```
 
 - [ ] Make sure `STRIPE_TEST_BOOKS_TO_QB` is **not** set.
+- [ ] `STRIPE_PAYMENTS_SHOPS` stays `joe@biotamfg.co` (the pilot list).
+  Add a shop's owner email to open payments to it; `*` opens it to every
+  paying shop. Only do that once the terms are published.
 - [ ] Claude checks:
   - the status card no longer says "Stripe test mode";
   - the 6am health check's "Stripe payments" line reads "live";
@@ -89,8 +93,12 @@ The sandbox account doesn't exist under the live key, so Biota sets up again.
 
 ## First real payment
 
-- [ ] Send a small real invoice ($1–5) to yourself and pay it by card. Check:
-  - Stripe receipt;
+- [ ] Send a small real invoice ($1–5) to yourself and pay it with a
+  **credit** card. This is the only proof that Stripe's surcharge works in
+  live mode (it's a Stripe preview feature). Check:
+  - the confirm step showed the surcharge;
+  - the Stripe receipt lists the surcharge as its own line (Visa requires it);
+  - no "Credit card surcharge not applied" notice;
   - QuickBooks payment on the invoice;
   - quote converts to a paid order;
   - paid notice in InkTracker.
