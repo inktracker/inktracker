@@ -12,6 +12,7 @@ import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { invoiceThreadId } from "@/lib/messageThreads";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
@@ -267,7 +268,10 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         const lines = buildFallbackInvoiceLines(inv.line_items, inv);
 
         const discVal = parseFloat(inv.discount) || 0;
-        const isFlat = inv.discount_type === "flat";
+        // Shared heuristic (not strict) so a legacy flat $150-off / null-type
+        // invoice isn't pushed to QB as a 150% discount — matches the display
+        // path below and the primary builder.
+        const isFlat = isFlatDiscount(inv.discount, inv.discount_type);
         invoicePayload = {
           lines,
           discountPercent: isFlat ? 0 : discVal,
@@ -446,7 +450,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   // Calculate totals from invoice data
   const discVal = parseFloat(invoice?.discount) || 0;
   const sub = invoice?.subtotal || 0;
-  const isFlat = invoice?.discount_type === "flat" || (discVal > 100 && invoice?.discount_type !== "percent");
+  const isFlat = isFlatDiscount(invoice?.discount, invoice?.discount_type);
   const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
   const totals = invoice ? { sub, afterDisc, tax: invoice.tax, total: invoice.total } : null;
 

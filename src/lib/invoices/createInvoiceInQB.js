@@ -1,5 +1,6 @@
 import { buildQBInvoicePayload, getShopPricingConfig } from "@/components/shared/pricing";
 import { buildFallbackInvoiceLines } from "@/lib/invoices/fallbackInvoiceLines";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 
 // Per-shop QB tax mode: "self" pushes the shop's own tax to QB as tracked sales
 // tax; anything else (default) lets QuickBooks' Automated Sales Tax decide.
@@ -52,7 +53,9 @@ export async function createInvoiceInQB({ base44, invoice, customer, session, id
     // `lineTotal` (not just total/amount) and keeps negative discount lines.
     const lines = buildFallbackInvoiceLines(invoice.line_items, invoice);
     const discVal = parseFloat(invoice.discount) || 0;
-    const isFlat = invoice.discount_type === "flat";
+    // Shared heuristic (not strict === "flat"): a legacy flat $150-off with a
+    // null/empty type must NOT be pushed to QB as a 150% discount.
+    const isFlat = isFlatDiscount(invoice.discount, invoice.discount_type);
     invoicePayload = {
       lines,
       discountPercent: isFlat ? 0 : discVal,

@@ -3,6 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { Mail, Loader2, CheckCircle2, X, AlertCircle } from "lucide-react";
 import { fmtMoney, buildQBInvoicePayload } from "../shared/pricing";
 import { buildFallbackInvoiceLines } from "@/lib/invoices/fallbackInvoiceLines";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 import { exportInvoiceToPDF } from "../shared/pdfExport";
 import { isValidEmail, assertEmailDelivered } from "@/lib/email";
 import { invoiceThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
@@ -162,11 +163,15 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
         // Shared with InvoiceDetailModal + createInvoiceInQB — reads each line's
         // `lineTotal` (not just total/amount) and keeps negative discount lines.
         const lines = buildFallbackInvoiceLines(invoice.line_items, invoice);
+        // Shared heuristic (not strict === "flat") so a legacy flat $150-off /
+        // null-type invoice isn't pushed to QB as a 150% discount.
+        const discVal = parseFloat(invoice.discount) || 0;
+        const isFlat = isFlatDiscount(invoice.discount, invoice.discount_type);
         invoicePayload = {
           lines,
-          discountPercent: invoice.discount_type === "flat" ? 0 : (parseFloat(invoice.discount) || 0),
-          discountAmount:  invoice.discount_type === "flat" ? (parseFloat(invoice.discount) || 0) : 0,
-          discountType:    invoice.discount_type === "flat" ? "flat" : "percent",
+          discountPercent: isFlat ? 0 : discVal,
+          discountAmount:  isFlat ? discVal : 0,
+          discountType:    isFlat ? "flat" : "percent",
           taxPercent:      parseFloat(invoice.tax_rate) || 0,
           depositAmount:   0,
         };

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 import { effectiveStatus } from "@/lib/orders/changeOrderStatus";
 import ReactivateLink from "../shared/ReactivateLink";
 import AttachmentGallery from "../shared/AttachmentGallery";
@@ -575,7 +576,7 @@ export default function OrderDetailModal({
     : (order?.job_title || "");
 
   const discVal = parseFloat(order.discount) || 0;
-  const isFlat = order.discount_type === "flat" || (discVal > 100 && order.discount_type !== "percent");
+  const isFlat = isFlatDiscount(order.discount, order.discount_type);
   // A FLAT discount applies to the order once. Per line, prorate it by the
   // line's share of the subtotal so the "After Discount" rows sum to the
   // order discount — not N× the full amount (the bug where every line showed

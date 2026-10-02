@@ -16,6 +16,7 @@ import {
   getShopPricingConfig,
 } from './pricing';
 import { effectiveQuoteTotals } from '../../lib/quotes/effectiveTotals';
+import { isFlatDiscount } from '@/lib/pricing/discountType';
 import { imprintColorLabel, imprintCountText } from '../../lib/quotes/imprintLabels';
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 import { signArtworkUrl } from '../../lib/uploadFile';
@@ -697,7 +698,7 @@ function renderTotals(doc, totals, discount, taxRate, depositInfo, pageWidth, ma
   }
 
   const discVal = parseFloat(discount) || 0;
-  const isFlatDisc = discountType === 'flat' || (discVal > 100 && discountType !== 'percent');
+  const isFlatDisc = isFlatDiscount(discVal, discountType);
 
   if (discVal > 0) {
     const discountAmount = totals.sub - totals.afterDisc;
@@ -983,7 +984,7 @@ export async function exportQuoteToPDF(
     headerPhone
   );
 
-  const quoteDiscType = quote.discount_type || 'percent';
+  const quoteDiscType = isFlatDiscount(quote.discount, quote.discount_type) ? 'flat' : 'percent';
   let quotePdfLineTotals = [];
   if (quote.line_items && quote.line_items.length > 0) {
     const liResult = renderLineItems(
@@ -1151,8 +1152,8 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output, custome
   }
 
   const orderDiscVal = parseFloat(order.discount || 0);
-  const orderDiscType = order.discount_type || 'percent';
-  const orderIsFlat = orderDiscType === 'flat' || (orderDiscVal > 100 && orderDiscType !== 'percent');
+  const orderDiscType = isFlatDiscount(order.discount, order.discount_type) ? 'flat' : 'percent';
+  const orderIsFlat = orderDiscType === 'flat';
   const totals = {
     sub: order.subtotal || 0,
     afterDisc: orderIsFlat
@@ -1698,7 +1699,7 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   // heuristic). Rendered as its own totals row, never baked into line items.
   const discVal = Number(invoice.discount) || 0;
   if (discVal > 0) {
-    const isFlatDisc = invoice.discount_type === 'flat' || (discVal > 100 && invoice.discount_type !== 'percent');
+    const isFlatDisc = isFlatDiscount(discVal, invoice.discount_type);
     const discountAmt = isFlatDisc ? discVal : subtotal * (discVal / 100);
     const baseLabel = isFlatDisc ? 'DISCOUNT' : `DISCOUNT (${discVal}%)`;
     const discLabel = invoice.discount_description ? `${baseLabel} — ${invoice.discount_description}` : baseLabel;

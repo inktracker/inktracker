@@ -2,6 +2,7 @@ import { X, Download } from "lucide-react";
 import { fmtDate, fmtMoney, getQty, activeSizeNames, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP, getOrderDisplayClient, getShopPricingConfig } from "../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { resolveGarmentHeader } from "@/lib/quotes/garmentTitle";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import { StatusChip } from "../shared/chips";
@@ -9,7 +10,7 @@ import { StatusChip } from "../shared/chips";
 export default function BrokerOrderPDFModal({ order, onClose }) {
   const brokerDiscVal = parseFloat(order.discount || 0);
   const brokerDiscType = order.discount_type || 'percent';
-  const brokerIsFlat = brokerDiscType === 'flat' || (brokerDiscVal > 100 && brokerDiscType !== 'percent');
+  const brokerIsFlat = isFlatDiscount(brokerDiscVal, brokerDiscType);
   const totals = {
     sub: order.subtotal || 0,
     afterDisc: brokerIsFlat
