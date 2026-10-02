@@ -261,7 +261,15 @@ Deno.serve(async (req) => {
       const { data: shopRow } = await admin.from("shops").select("shop_name").eq("owner_email", q.shop_owner).maybeSingle();
       const { data: ownerProf } = await admin.from("profiles").select("shop_name, logo_url").eq("email", q.shop_owner).maybeSingle();
       // Prefer the owner's canonical profiles.shop_name over the shops mirror.
-      shopName = (q.broker_id ? (q.broker_company || q.broker_name) : "") || ownerProf?.shop_name || shopRow?.shop_name || shopName || "InkTracker";
+      // WHITE-LABEL: for a broker quote the fallback chain must stop INSIDE
+      // the broker's identity — the old `|| ownerProf?.shop_name` fall-through
+      // put the PRINT SHOP's name on the end client's email whenever the
+      // broker had a blank company+name, the exact leak the logo rule nine
+      // lines down forbids (audit 2026-10-02 F6). "Your vendor" matches
+      // publicSafe.js's fallback so email and payment page agree.
+      shopName = q.broker_id
+        ? (q.broker_company || q.broker_name || "Your vendor")
+        : (ownerProf?.shop_name || shopRow?.shop_name || shopName || "InkTracker");
       if (q.broker_id) {
         // White-label rule (security audit 2026-08-13): a broker quote's
         // email must NEVER carry the print shop's logo — the shop is

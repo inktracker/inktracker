@@ -8,6 +8,7 @@ import { exportInvoiceToPDF } from "../shared/pdfExport";
 import { isValidEmail, assertEmailDelivered } from "@/lib/email";
 import { invoiceThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { deriveQbSendState } from "@/lib/quotes/qbSendState";
+import { MAX_PDF_ATTACHMENT_B64_CHARS } from "@/lib/quotes/sendOrchestration";
 import { describeEdgeError } from "@/lib/edgeErrors";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
 import { depositAmountFor } from "@/lib/deposits";
@@ -302,6 +303,17 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
           feeNote: sendOnline ? (payStatus?.customerFeeNote || '') : '',
         });
       } catch {}
+
+      // Same oversized-attachment guard as the quote send (sendOrchestration
+      // MAX_PDF_ATTACHMENT_B64_CHARS): without it a pathological PDF went on
+      // the wire and OOM'd the edge function AFTER the QB invoice already
+      // existed — a failed send with a live invoice behind it, where the
+      // quote path degrades gracefully to email-without-attachment (audit
+      // 2026-10-02 F7).
+      if (pdfBase64 && pdfBase64.length > MAX_PDF_ATTACHMENT_B64_CHARS) {
+        console.warn(`[SendInvoiceModal] PDF too large to attach (${pdfBase64.length} b64 chars) — sending without attachment`);
+        pdfBase64 = null;
+      }
 
       const taggedSubject = addRefTag(subject, invoice.invoice_id, invoice.shop_owner);
 
