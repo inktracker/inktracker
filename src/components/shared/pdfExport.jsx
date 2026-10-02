@@ -1245,7 +1245,20 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output, custome
       orderDiscType,
       parseFloat(order.rush_rate) || 0,
       orderPdfLineTotals.length > 0 ? orderPdfLineTotals.reduce((s, v) => s + v, 0) : null,
-      [],
+      // Setup + one-off fees — itemized exactly like the quote/invoice PDFs
+      // (and OrderLineItems, which carries the original fix comment). The
+      // empty array here was the one un-fixed copy: an order with fees
+      // printed Subtotal − Discount + Tax ≠ Total, the fee amount
+      // unexplained on a customer-facing ORDER FORM (audit 2026-10-02).
+      [
+        ...((parseFloat(order.setup_total) || 0) > 0
+          ? [{ label: 'Setup & Screen Fees', amount: Number(order.setup_total) }]
+          : []),
+        ...normalizeAdditionalCharges(order.additional_charges).map((c) => ({
+          label: c.label || 'Additional fee',
+          amount: c.amount,
+        })),
+      ],
       order.discount_description || ''
     );
 

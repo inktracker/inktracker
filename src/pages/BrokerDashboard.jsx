@@ -6,6 +6,7 @@ import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
 import { createBrokerClientInvoice } from "@/lib/broker/createBrokerClientInvoice";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
+import { isConvertedToOrder } from "@/lib/quotes/approvalState";
 import { brokerInvoiceSendNotice } from "@/lib/broker/brokerSendInvoiceNotice";
 import { uploadFile } from "@/lib/uploadFile";
 import CollapsibleSection from "@/components/shared/CollapsibleSection";
@@ -182,7 +183,11 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
   // trail (OrderDetailModal looks up quote.id → totals, line items,
   // message thread). Everything else (Draft, Sent to Client, Client
   // Approved/Rejected, Pending, Shop Approved, Declined) is fair game.
-  const canDelete = normalizedStatus !== "Converted to Order";
+  // isConvertedToOrder, not status alone: the approve-replay class desyncs
+  // status while converted_order_id survives — status-only here offered
+  // Delete on a quote with a LIVE Order behind it (orphaning the audit
+  // trail), the exact case the comment above forbids (audit 2026-10-02).
+  const canDelete = !isConvertedToOrder(quote);
   // Shop-visible statuses — warn the broker before yanking it from
   // the shop's queue. The shop will just see it vanish; no cross-
   // tenant notification yet (follow-up).
@@ -211,7 +216,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
   const canMarkClientResponse = sentToClient;
   // Submit to Shop is gated on client approval.
   const canSubmitToShop = clientApproved;
-  const isConverted = quote.status === "Converted to Order";
+  const isConverted = isConvertedToOrder(quote); // status OR converted_order_id (see canDelete)
   // A quote that's been converted to an order can still be awaiting the
   // client's payment — brokers must be able to record it after conversion,
   // not only in the approval window before it.

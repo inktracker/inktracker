@@ -17,7 +17,7 @@ import HintTip from "../components/shared/HintTip";
 import { useBillingGate, useReadOnly } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
-import { changeOrderStatus, nextStatusOf, autoPoToast, assertArtGateFresh } from "@/lib/orders/changeOrderStatus";
+import { changeOrderStatus, nextStatusOf, prevStatusOf, autoPoToast, assertArtGateFresh } from "@/lib/orders/changeOrderStatus";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { shopScope } from "@/lib/shopScope";
 import ArtStatusBadge from "@/components/art/ArtStatusBadge";
@@ -201,11 +201,17 @@ export default function Orders() {
 
   async function handleRevert(id) {
     const order = orders.find((o) => o.id === id);
-    const idx = O_STATUSES.indexOf(order.status);
-    const prevStatus = idx > 0 ? O_STATUSES[idx - 1] : null;
+    // changeOrderStatus is THE one status path (its header: every page calls
+    // it so a re-entered stage's checklist is cleared). This handler was the
+    // last raw Order.update fork: moving a job back from here left the prior
+    // stage fully ticked, so one tap auto-advanced it straight back — the
+    // exact regression the shared path exists to prevent — and raw
+    // order.status (vs effectiveStatus) made the back button dead on
+    // blank/legacy statuses (audit 2026-10-02).
+    const prevStatus = prevStatusOf(order);
     if (!prevStatus) return;
     try {
-      const updated = await base44.entities.Order.update(id, { status: prevStatus });
+      const updated = await changeOrderStatus({ order, newStatus: prevStatus, user, base44 });
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       if (viewing?.id === id) setViewing(updated);
     } catch (err) {
