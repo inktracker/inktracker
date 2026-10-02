@@ -113,6 +113,12 @@ export async function createBrokerClientInvoice({ base44, quote, session }) {
         email: clientEmail,
         company: quote.customer_company || "",
         phone: quote.customer_phone || "",
+        // Propagate the END CLIENT's tax exemption. Without it qbSync computed
+        // isTaxExempt from a customer that never carried the flag → an exempt
+        // broker client could be charged tax (and self-mode's "proper" path
+        // would apply the broker's rate via a tax code). The quote stores it
+        // (BrokerQuoteEditor saves tax_exempt); pass it through.
+        tax_exempt: !!quote.tax_exempt,
       },
     });
 
@@ -138,6 +144,10 @@ export async function createBrokerClientInvoice({ base44, quote, session }) {
       qb_broker_client_doc_number: data?.qbDocNumber || quote.quote_id,
       qb_broker_client_payment_link: data?.paymentLink || data?.qb_payment_link || null,
       qb_broker_client_invoice_synced_at: new Date().toISOString(),
+      // The client total actually pushed to QB, so a later edit that changes
+      // client_total is detectable (isBrokerClientInvoiceStale) and the pay
+      // link can be gated — the broker analogue of qb_total/isQbStale.
+      qb_broker_client_invoice_total: Number(data?.qbTotal ?? clientFacing.total) || null,
     });
 
     return {

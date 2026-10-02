@@ -21,3 +21,21 @@ export function isQbStale(quote) {
   const qbPreTax = qbTotal - (Number(quote.qb_tax_amount) || 0);
   return Math.abs(savedPreTax - qbPreTax) > 0.01;
 }
+
+// Broker analogue of isQbStale for the BROKER→CLIENT invoice. The broker client
+// pay link (QuotePayment) points at an invoice minted in the broker's QB at the
+// client total at mint time (qb_broker_client_invoice_total). If the broker then
+// edits the quote, client_total changes but the minted invoice does NOT
+// (createBrokerClientInvoice skips re-invoicing once stamped) — so the page would
+// show the new total while the link charges the old one. Compare current
+// client_total to the minted total. Null minted total (pre-migration invoices) →
+// not stale (can't tell). Broker self-mode pushes the exact client total, so a
+// direct comparison is tax-safe here.
+export function isBrokerClientInvoiceStale(quote) {
+  if (!quote) return false;
+  const minted = Number(quote.qb_broker_client_invoice_total);
+  if (!Number.isFinite(minted) || minted <= 0) return false;
+  const current = Number(quote.client_total);
+  if (!Number.isFinite(current)) return false;
+  return Math.abs(current - minted) > 0.01;
+}

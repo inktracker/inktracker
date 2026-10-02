@@ -127,11 +127,26 @@ describe("createBrokerClientInvoice — happy path", () => {
     // brokerClientInvoice is set SERVER-SIDE (by role), not by the client.
     expect(p).not.toHaveProperty("brokerClientInvoice");
 
+    // Non-exempt client → tax_exempt:false propagated so qbSync knows.
+    expect(p.customer.tax_exempt).toBe(false);
+
     // Stored on the quote's broker-client columns, never qb_invoice_id.
     const patch = quoteUpdate.mock.calls[0][1];
     expect(patch.qb_broker_client_invoice_id).toBe("BQB-1");
     expect(patch.qb_broker_client_payment_link).toBe("https://broker-pay");
+    // The client total pushed is stamped so a later edit is detectable as stale.
+    // (mock invoke returns no qbTotal → falls back to clientFacing.total = client_total 1043)
+    expect(patch.qb_broker_client_invoice_total).toBe(1043);
     expect(patch).not.toHaveProperty("qb_invoice_id");
+  });
+
+  it("propagates an EXEMPT end client's tax_exempt so qbSync doesn't charge them tax", () => {
+    const { b, invoke } = mockBase44();
+    return createBrokerClientInvoice({ base44: b, quote: { ...brokerQuote, tax_exempt: true }, session })
+      .then((r) => {
+        expect(r.ok).toBe(true);
+        expect(invoke.mock.calls[0][1].customer.tax_exempt).toBe(true);
+      });
   });
 
   it("a 0% broker tax rate still sends self-mode with taxAmount 0 (qbSync then applies no tax)", async () => {

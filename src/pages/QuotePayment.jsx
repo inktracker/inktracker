@@ -25,7 +25,7 @@ import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
 import { artworkProxyUrl } from "@/lib/artwork/proxyUrl";
 import { toCustomerFacingQuote, customerFacingShopName, customerFacingTotals, isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
-import { isQbStale } from "@/lib/quotes/qbStale";
+import { isQbStale, isBrokerClientInvoiceStale } from "@/lib/quotes/qbStale";
 import { quoteAlreadyApproved, quoteAlreadyPaid } from "@/lib/quotes/approvalState";
 import { anonEdgeResult } from "@/lib/anonEdge";
 import { isQuoteDateExpired } from "@/lib/quotes/quoteExpiry";
@@ -317,7 +317,12 @@ export default function QuotePayment() {
   // client pays THAT link here — the broker's invoice, not the shop's. Shown
   // until it's paid; the pay link rides the sanitized quote (it's the broker's
   // own client-facing link, not a shop payable, so publicSafe lets it through).
-  const brokerClientPayLink = isBrokerQuote(quote) && !quote?.broker_client_invoice_paid
+  // Gate the pay link when the quote was edited after the broker client invoice
+  // was minted: the link still charges the OLD invoice amount while the page now
+  // shows the new client_total. Blocking (vs charging the wrong amount) mirrors
+  // the shop-side qbStale gate; the broker re-invoices from their QB to refresh.
+  const brokerClientStale = isBrokerClientInvoiceStale(quote);
+  const brokerClientPayLink = isBrokerQuote(quote) && !quote?.broker_client_invoice_paid && !brokerClientStale
     ? (quote?.qb_broker_client_payment_link || null)
     : null;
 
@@ -918,7 +923,9 @@ export default function QuotePayment() {
                     </a>
                   ) : (
                     <div className="text-sm text-emerald-700">
-                      {DEPOSITS_ENABLED && quote?.deposit_paid && depositAmountFor(quote) > 0
+                      {brokerClientStale
+                        ? `This quote was updated after the invoice was sent. ${customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will send a new invoice for the current total.`
+                        : DEPOSITS_ENABLED && quote?.deposit_paid && depositAmountFor(quote) > 0
                         ? `Your job is in production. ${customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will send the final invoice for the remaining balance.`
                         : `${customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment.`}
                     </div>
