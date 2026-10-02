@@ -6,6 +6,7 @@ import {
   normalizeBankFeePct,
   maxCustomerFeeCents,
   surchargeBannedState,
+  paidBreakdown,
   PLATFORM_PRICING,
   STRIPE_COST,
   platformFeeCents,
@@ -262,5 +263,16 @@ describe("states that ban card surcharges", () => {
     expect(surchargeBannedState("NV")).toBeNull();
     expect(surchargeBannedState("")).toBeNull();
     expect(surchargeBannedState(null)).toBeNull();
+  });
+});
+
+describe("paidBreakdown — why the charged total is higher than the quote", () => {
+  it("card surcharge and bank fee, in dollars", () => {
+    expect(paidBreakdown(84853, 2463, "card")).toBe("$823.90 invoice + $24.63 credit card surcharge = $848.53 charged.");
+    expect(paidBreakdown(57441, 569, "ach")).toBe("$568.72 invoice + $5.69 bank fee = $574.41 charged.");
+  });
+  it("no fee → nothing to explain", () => {
+    expect(paidBreakdown(56872, 0, "card")).toBe("");
+    expect(paidBreakdown(56872, null, "card")).toBe("");
   });
 });

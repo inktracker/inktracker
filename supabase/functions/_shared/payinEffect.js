@@ -19,7 +19,7 @@
 //     undo a "succeeded".
 
 import { planReversal } from "./paymentsQbBooks.js";
-import { maxCustomerFeeCents } from "./paymentsPricing.js";
+import { maxCustomerFeeCents, paidBreakdown } from "./paymentsPricing.js";
 
 /** Normalised event kinds the webhook adapter produces. */
 export const PAYIN_EVENT = Object.freeze({
@@ -230,7 +230,7 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     notify = {
       severity: "info",
       title: `Bank payment started: $${(amt / 100).toFixed(2)}${label ? ` for ${label}` : ""}`,
-      body: "Your customer paid by bank transfer. It usually clears in about 4 business days, then InkTracker records it in QuickBooks and marks the invoice paid. If it doesn't clear, you'll get an alert.",
+      body: `${paidBreakdown(amt, customerFee(md, amt), "ach") ? `${paidBreakdown(amt, customerFee(md, amt), "ach")} ` : ""}Your customer paid by bank transfer. It usually clears in about 4 business days, then InkTracker records it in QuickBooks and marks the invoice paid. If it doesn't clear, you'll get an alert.`,
       metadata: { processor: "stripe", payin_id: event.payinId },
     };
   } else if (mismatch && moneyIn && ledgerRow) {

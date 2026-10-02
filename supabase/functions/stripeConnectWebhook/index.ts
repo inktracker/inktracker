@@ -42,7 +42,7 @@ import {
   readStripeList,
 } from "../_shared/stripeWebhookAdapter.js";
 import { planPayinEffect, planQbApplication, statusesBelow, statusAdvances, BOOKABLE_STATUSES, PAYIN_EVENT } from "../_shared/payinEffect.js";
-import { platformFeeCents } from "../_shared/paymentsPricing.js";
+import { platformFeeCents, paidBreakdown } from "../_shared/paymentsPricing.js";
 import { buildQbPaymentBody, pickQbPaymentMethod, findBookedPayment } from "../_shared/paymentsQbBooks.js";
 import {
   claimWebhookEventDetailed,
@@ -207,6 +207,9 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
     await admin.from("processor_payments").update({ qb_post_notified_at: now.toISOString() }).eq("processor_payin_id", payinId);
   };
 
+  // "$823.90 invoice + $24.63 credit card surcharge = $848.53 charged."
+  const breakdown = paidBreakdown(row.amount_cents, row.customer_fee_cents, row.method);
+
   if (!booksAllowed(deps, row.livemode)) {
     await release({ qb_post_error: TEST_MODE_NOT_BOOKED });
     // Test mode is otherwise silent (the "paid" notice comes from the
@@ -222,7 +225,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
       eventType: "payment_test_received",
       severity: "info",
       title: `Test payment received: $${(row.amount_cents / 100).toFixed(2)}${label ? ` for ${label}` : ""}`,
-      body: "Stripe is in test mode, so this wasn't recorded in your QuickBooks and the quote wasn't marked paid. Live payments are recorded in QuickBooks and marked paid automatically.",
+      body: `${breakdown ? `${breakdown} ` : ""}Stripe is in test mode, so this wasn't recorded in your QuickBooks and the quote wasn't marked paid. Live payments are recorded in QuickBooks (the invoice amount) and marked paid automatically.`,
       metadata: { processor: "stripe", payin_id: payinId, test: true },
     });
     return "test_mode";
@@ -237,7 +240,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
         eventType: "payment_not_booked",
         severity: "alert",
         title: `Payment received but not recorded in QuickBooks: $${(row.amount_cents / 100).toFixed(2)}`,
-        body: `QuickBooks isn't connected, so this online payment couldn't be recorded on invoice #${row.qb_invoice_id} yet. Reconnect QuickBooks in Account settings and InkTracker will record it overnight.`,
+        body: `${breakdown ? `${breakdown} ` : ""}QuickBooks isn't connected, so this online payment couldn't be recorded on invoice #${row.qb_invoice_id} yet. Reconnect QuickBooks in Account settings and InkTracker will record it overnight.`,
         metadata: { processor: SOURCE, payin_id: payinId },
       });
       return "no_qb_connection";
@@ -251,7 +254,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
         eventType: "payment_not_booked",
         severity: "alert",
         title: `Payment received but its QuickBooks invoice is gone: $${(row.amount_cents / 100).toFixed(2)}`,
-        body: `The invoice this payment was for (QuickBooks #${row.qb_invoice_id}) no longer exists. Record the payment on the right invoice in QuickBooks.`,
+        body: `${breakdown ? `${breakdown} ` : ""}The invoice this payment was for (QuickBooks #${row.qb_invoice_id}) no longer exists. Record the payment on the right invoice in QuickBooks.`,
         metadata: { processor: SOURCE, payin_id: payinId },
       });
       return "invoice_missing";
