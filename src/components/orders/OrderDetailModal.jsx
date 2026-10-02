@@ -378,12 +378,18 @@ export default function OrderDetailModal({
       return { ...li, _shortfall: nextShortfall };
     });
     // Optimistic local update so the input doesn't visibly bounce.
+    const prevLineItems = liveOrder.line_items;
     setLiveOrder((prev) => ({ ...prev, line_items: nextLineItems }));
     try {
       const updated = await base44.entities.Order.update(liveOrder.id, { line_items: nextLineItems });
       setLiveOrder((prev) => ({ ...prev, ...updated }));
     } catch (err) {
-      console.error("[saveShortfall] update failed:", err);
+      // Roll back the optimistic value AND say so — the old version kept
+      // displaying the typed count while the DB never got it, so "Reorder
+      // Shortfall" had nothing to reorder and the customer was under-shipped
+      // with zero signal (audit 2026-10-02).
+      setLiveOrder((prev) => ({ ...prev, line_items: prevLineItems }));
+      notify.error("Couldn't save the shortfall count", err);
     }
   }
 

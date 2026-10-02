@@ -159,15 +159,47 @@ export async function changeOrderStatus({ order, newStatus, user, base44, onAuto
     // Idempotent + fire-and-forget: the helper self-checks for an existing PO.
     ensurePoDraftsForOrder(updated, user, autoPoOptions)
       .then((res) => { if (onAutoPo) onAutoPo(res); })
-      .catch((e) => console.warn("[changeOrderStatus] ensurePoDraftsForOrder failed:", e));
+      // A THROW used to bypass onAutoPo entirely (console-only), so the order
+      // sat in Order Goods with no PO and no signal on every page. Route it
+      // into onAutoPo as a warnings-shaped result so the pages surface it.
+      .catch((e) => {
+        console.warn("[changeOrderStatus] ensurePoDraftsForOrder failed:", e);
+        if (onAutoPo) onAutoPo({ created: [], warnings: [{ error: e?.message || String(e) }] });
+      });
   }
   return updated;
 }
 
-/** Standard toast copy for the auto-PO result — shared so the three pages say the same thing. */
+/**
+ * Standard toast descriptor for the auto-PO result — shared so the three pages
+ * say the same thing. Returns { level: "success"|"error", title, description }
+ * or null when nothing happened at all. The old string-only version returned
+ * null whenever nothing was CREATED — discarding the `warnings` array, so a
+ * failed PO build (supplier error, unresolved styles) left the order in Order
+ * Goods with no PO and no signal on Orders/ShopFloor (audit 2026-10-02;
+ * Production had its own correct handler).
+ */
 export function autoPoToast(res, orderLabel) {
   const created = res?.created || [];
-  if (!created.length) return null;
-  const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
-  return `${label} created for ${orderLabel || "this order"} — review on Purchase Orders.`;
+  const warnings = (res?.warnings || []).filter(
+    (w) => w?.error || w?.unresolved?.length || w?.lookupErrors?.length
+  );
+  if (created.length) {
+    const label = created.length === 1 ? "Draft PO" : `${created.length} draft POs`;
+    return {
+      level: "success",
+      title: `${label} created for ${orderLabel || "this order"} — review on Purchase Orders.`,
+      description: warnings.length ? "Some items couldn't be added — check the PO." : undefined,
+    };
+  }
+  if (warnings.length) {
+    return {
+      level: "error",
+      title: `Couldn't auto-build the PO for ${orderLabel || "this order"}`,
+      description:
+        (warnings[0].error || "Some styles couldn't be resolved with the supplier.") +
+        " Create the PO manually from the order, or retry.",
+    };
+  }
+  return null;
 }

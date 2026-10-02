@@ -212,7 +212,16 @@ function ReplyBox({ replyContext, threadId, currentUserEmail, onPosted }) {
           body: `${INTERNAL_PREFIX}${body.trim()}`,
           shopOwner: currentUserEmail,
         });
-        if (row) onPosted?.(row);
+        // logOutboundMessage is best-effort (null on failure) — fine for the
+        // email branches where the Message row is a bonus, but HERE the row IS
+        // the entire artifact. The old path cleared the textarea on null, so
+        // the note AND the typed text silently vanished (audit 2026-10-02).
+        // Keep the text and say so instead.
+        if (!row) {
+          setError("Couldn't save the note — your text is still here, try again.");
+          return;
+        }
+        onPosted?.(row);
         setBody("");
         setInternal(false);
         return;

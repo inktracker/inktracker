@@ -72,8 +72,15 @@ describe("changeOrderStatus side effects", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(ensurePoDraftsForOrder).toHaveBeenCalledTimes(1);
     expect(onAutoPo).toHaveBeenCalledWith({ created: [{ id: "po-1" }], warnings: [] });
-    expect(autoPoToast({ created: [{ id: "po-1" }] }, "ORD-1")).toMatch(/Draft PO created for ORD-1/);
+    expect(autoPoToast({ created: [{ id: "po-1" }] }, "ORD-1").title).toMatch(/Draft PO created for ORD-1/);
+    expect(autoPoToast({ created: [{ id: "po-1" }] }, "ORD-1").level).toBe("success");
+    // nothing created AND no warnings → truly nothing happened → null
     expect(autoPoToast({ created: [] }, "ORD-1")).toBeNull();
+    // nothing created but a build FAILED → error descriptor, never silent
+    const failed = autoPoToast({ created: [], warnings: [{ supplier: "SanMar", error: "lookup failed" }] }, "ORD-1");
+    expect(failed.level).toBe("error");
+    expect(failed.title).toMatch(/Couldn't auto-build the PO for ORD-1/);
+    expect(failed.description).toMatch(/lookup failed/);
   });
 
   it("other transitions are a plain status write with no PO side effect", async () => {

@@ -14,17 +14,23 @@
 //     (shop_owner: null) always failed silently and stranded the quote.
 //   - Order not created from a quote → nothing to restore.
 //
-// Best-effort: any sub-step failure is logged and swallowed. The order is
-// already deleted by the time this runs; a failed restore shouldn't surprise
-// the shop with an error, but the copy in the delete confirm should stay honest
-// about what happens.
+// Fail-open but NOT silent: the order is already deleted by the time this
+// runs, so a failed restore never blocks the delete — but it MUST be reported.
+// The old fire-and-forget version returned undefined either way while the
+// delete confirm promised "nothing is lost"; on a failed restore the quote
+// kept converted_order_id, the Quotes page filtered it out forever, and
+// handleConvert refused it — the whole job silently vanished (audit,
+// 2026-10-02). Returns { ok, restored, quoteId?, error? } so callers can tell
+// the operator exactly which quote to rescue. The broker NOTIFICATION remains
+// best-effort (the restore is the artifact; the bell is a bonus).
 //
-// Callers: shop-side handleDelete in Orders.jsx + Production.jsx.
+// Callers: shop-side handleDelete in Orders.jsx + Production.jsx (both await
+// this and notify on ok:false).
 
 import { base44, supabase } from "@/api/supabaseClient";
 
 export async function revertQuoteOnOrderDelete(order) {
-  if (!order?.order_id) return;
+  if (!order?.order_id) return { ok: true, restored: false };
 
   const brokerId = order.broker_id || order.broker_email;
 
@@ -35,6 +41,8 @@ export async function revertQuoteOnOrderDelete(order) {
     sourceQuote = matches?.[0] || null;
   } catch (err) {
     console.warn("[revertQuoteOnOrderDelete] source-quote lookup failed:", err);
+    // Can't tell whether a quote exists — report so the operator can check.
+    return { ok: false, restored: false, error: err?.message || String(err) };
   }
 
   // Restore the quote when we found one. A direct order (no originating quote)
@@ -51,6 +59,12 @@ export async function revertQuoteOnOrderDelete(order) {
       }
     } catch (err) {
       console.warn("[revertQuoteOnOrderDelete] quote restore failed:", err);
+      return {
+        ok: false,
+        restored: false,
+        quoteId: sourceQuote.quote_id || sourceQuote.id,
+        error: err?.message || String(err),
+      };
     }
   }
 
@@ -75,4 +89,6 @@ export async function revertQuoteOnOrderDelete(order) {
       console.warn("[revertQuoteOnOrderDelete] broker notification failed:", err);
     }
   }
+
+  return { ok: true, restored: !!sourceQuote, quoteId: sourceQuote?.quote_id || sourceQuote?.id || null };
 }
