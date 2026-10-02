@@ -27,6 +27,7 @@ import { buildSaleSizePrices } from "@/lib/suppliers/salePricing";
 import { notify } from "@/lib/notify";
 import { customGarmentHeader, getCustomGarmentTitle, customTitleAfterStyleChange } from "@/lib/quotes/garmentTitle";
 import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
+import { resolveSupplierProductName } from "@/lib/quotes/supplierProductName";
 import { getUpchargedSizes } from "@/lib/quotes/sizeUpcharge";
 
 // Query S&S Activewear, AS Colour, and SanMar in parallel and merge results.
@@ -486,25 +487,6 @@ function getPreferredGarmentDescription(li) {
   return "";
 }
 
-// Extract the product description from a resolvedTitle like "Brand — Desc — PartNumber"
-function extractDescFromTitle(title, brand, partNumber) {
-  let t = cleanText(title);
-  if (!t) return "";
-  // Strip leading "Brand — "
-  if (brand) {
-    const esc = brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    t = t.replace(new RegExp(`^${esc}\\s*[-–—]\\s*`, "i"), "");
-  }
-  // Strip trailing " — PartNumber"
-  if (partNumber) {
-    const esc = partNumber.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    t = t.replace(new RegExp(`\\s*[-–—]\\s*${esc}\\s*$`, "i"), "");
-  }
-  t = t.trim();
-  if (!t || looksLikeCode(t) || t.toUpperCase() === partNumber.toUpperCase()) return "";
-  return t;
-}
-
 function getGarmentHeader(li) {
   const number = getPreferredGarmentNumber(li);
   // The shop's own title beats every resolved/supplier field — see
@@ -524,20 +506,10 @@ export function applySelectedMatch(li, selectedMatch) {
   const styleNumber = cleanText(selectedMatch.styleNumber).toUpperCase();
   const brand = cleanText(selectedMatch.brandName || li.brand || "");
 
-  // Use resolvedTitle as the product name (clean title without style code).
-  // Fall back to raw.description only if it's short (S&S uses description as
-  // a style name, but AS Colour puts a full paragraph there).
-  const resolvedTitle = cleanText(selectedMatch.resolvedTitle || selectedMatch.raw?.resolvedTitle || "");
-  const rawDesc = cleanText(selectedMatch.raw?.description || "");
-  const isShortDesc = rawDesc && rawDesc.length < 80 && !looksLikeCode(rawDesc) && rawDesc.toUpperCase() !== styleNumber;
-
-  let productName = resolvedTitle || (isShortDesc ? rawDesc : "");
-
-  // Fall back: extract the middle segment from "Brand — Desc — PartNumber" in resolvedTitle
-  if (!productName) {
-    const rawTitle = cleanText(selectedMatch.raw?.resolvedTitle || selectedMatch.raw?.title || "");
-    productName = extractDescFromTitle(rawTitle, brand, styleNumber);
-  }
+  // Clean garment name via the shared, guarded resolver (same one the broker
+  // editor uses) — prefers the supplier's resolvedTitle and never lets a spec
+  // paragraph become the name.
+  const productName = resolveSupplierProductName(selectedMatch, { brand, styleNumber });
 
   const description = productName;
   const colors = selectedMatch.colors || [];

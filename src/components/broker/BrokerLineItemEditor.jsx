@@ -25,6 +25,7 @@ import { buildSaleSizePrices } from "@/lib/suppliers/salePricing";
 import { notify } from "@/lib/notify";
 import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
 import { customTitleAfterStyleChange } from "@/lib/quotes/garmentTitle";
+import { resolveSupplierProductName } from "@/lib/quotes/supplierProductName";
 
 // Query both S&S Activewear and AS Colour in parallel and merge results,
 // matching the shop-side LineItemEditor. Either supplier failing/returning
@@ -353,14 +354,15 @@ export function applySelectedMatch(li, selectedMatch) {
     selectedMatch.raw?.description ||
     selectedMatch.description
   );
-  // Short garment title for quote headers ("Staple Tee", "Heavyweight Hoodie").
-  // Falls back to longDescription only if no short title is available.
-  const shortTitle = cleanText(
-    selectedMatch.resolvedTitle ||
-    selectedMatch.title ||
-    selectedMatch.styleName ||
-    longDescription
-  );
+  // Short garment name for quote headers ("Staple Tee", "Heavyweight Hoodie").
+  // Shared, guarded resolver (same as the shop LineItemEditor): prefers the
+  // supplier's clean resolvedTitle and NEVER lets the marketing paragraph in
+  // (the old local fallback to longDescription stored "6.1-ounce, 100% US ring
+  // spun cotton…" as the garment name — Joe, 2026-10-01).
+  const shortTitle = resolveSupplierProductName(selectedMatch, {
+    brand: selectedMatch.brandName || li.brand,
+    styleNumber,
+  });
   const colors = selectedMatch.colors || [];
   const firstColor =
     colors.find((c) => c.colorName === li.garmentColor)?.colorName ||
