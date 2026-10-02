@@ -75,13 +75,21 @@ Deno.serve(async (req) => {
     };
 
     // Single write — profile_secrets is the canonical location post the
-    // 20260520_drop_legacy_profile_secret_columns migration.
-    await supabaseAdmin
+    // 20260520_drop_legacy_profile_secret_columns migration. CHECKED, like
+    // the sibling qbOAuthCallback: the Google auth code is already consumed,
+    // so a silently failed upsert told the user "connected" while nothing was
+    // stored — every later scan then failed "Gmail not connected" with no
+    // clue why (audit 2026-10-02 S2).
+    const { error: upsertErr } = await supabaseAdmin
       .from("profile_secrets")
       .upsert(
         { profile_id: secretRow.profile_id, ...tokenFields, updated_at: new Date().toISOString() },
         { onConflict: "profile_id" },
       );
+    if (upsertErr) {
+      console.error("gmailOAuthCallback: token save failed:", upsertErr.message);
+      return Response.redirect(`${APP_URL}/Account?gmail_error=storage_failed`);
+    }
 
     return Response.redirect(`${APP_URL}/Account?gmail_connected=1`);
   } catch (err) {
