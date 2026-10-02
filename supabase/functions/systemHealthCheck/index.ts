@@ -272,7 +272,8 @@ async function probeStripePayments(admin: any): Promise<Probe> {
   const paymentsBefore = new Date(Date.now() - STUCK_PAYMENT_HOURS * 3600 * 1000).toISOString();
   const payoutsBefore = new Date(Date.now() - STUCK_PAYOUT_DAYS * 24 * 3600 * 1000).toISOString();
   const moneyIn = `status.in.(${MONEY_IN_STATUSES.join(",")}),and(status.eq.processing,method.eq.card)`;
-  const [stuck, unmatched, payouts] = await Promise.all([
+  const dayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const [stuck, unmatched, payouts, refused] = await Promise.all([
     admin.from("processor_payments").select("id", { count: "exact", head: true })
       .eq("livemode", true).is("qb_payment_id", null).not("qb_invoice_id", "is", null)
       .or(moneyIn).lt("created_at", paymentsBefore),
@@ -280,11 +281,13 @@ async function probeStripePayments(admin: any): Promise<Probe> {
       .eq("livemode", true).is("qb_payment_id", null).is("qb_invoice_id", null).or(moneyIn),
     admin.from("processor_payouts").select("id", { count: "exact", head: true })
       .eq("livemode", true).eq("status", "paid").is("qb_deposit_id", null).lt("created_at", payoutsBefore),
+    admin.from("notifications").select("id", { count: "exact", head: true })
+      .eq("event_type", "surcharge_refused").gte("created_at", dayAgo),
   ]);
   const latencyMs = Date.now() - t0;
-  const err = stuck.error || unmatched.error || payouts.error;
+  const err = stuck.error || unmatched.error || payouts.error || refused.error;
   if (err) return P("Stripe payments", "secondary", false, `ledger read failed: ${err.message}`, latencyMs);
-  const r = stripePaymentsHealth({ ...base, stuckPayments: stuck.count ?? 0, unmatched: unmatched.count ?? 0, stuckPayouts: payouts.count ?? 0 });
+  const r = stripePaymentsHealth({ ...base, stuckPayments: stuck.count ?? 0, unmatched: unmatched.count ?? 0, stuckPayouts: payouts.count ?? 0, surchargeRefused: refused.count ?? 0 });
   return P("Stripe payments", "secondary", r.ok, r.detail, latencyMs);
 }
 

@@ -26,9 +26,10 @@ export const STUCK_PAYOUT_DAYS = 6;
  * @param {number} [a.stuckPayments]    live, money in, not in QuickBooks after STUCK_PAYMENT_HOURS
  * @param {number} [a.unmatched]        live, money in, matched to no invoice
  * @param {number} [a.stuckPayouts]     live, paid, no QuickBooks deposit after STUCK_PAYOUT_DAYS
+ * @param {number} [a.surchargeRefused] card payments in the last day where Stripe refused the surcharge
  * @returns {{ ok: boolean, detail: string }}
  */
-export function stripePaymentsHealth({ enabled, hasSecretKey, hasWebhookSecret, liveKey, stuckPayments = 0, unmatched = 0, stuckPayouts = 0 }) {
+export function stripePaymentsHealth({ enabled, hasSecretKey, hasWebhookSecret, liveKey, stuckPayments = 0, unmatched = 0, stuckPayouts = 0, surchargeRefused = 0 }) {
   if (!enabled) return { ok: true, detail: "switched off" };
   const problems = [];
   if (!hasSecretKey) problems.push("STRIPE_CONNECT_SECRET_KEY missing");
@@ -36,6 +37,7 @@ export function stripePaymentsHealth({ enabled, hasSecretKey, hasWebhookSecret, 
   if (stuckPayments > 0) problems.push(`${stuckPayments} payment${stuckPayments === 1 ? "" : "s"} not in QuickBooks after ${STUCK_PAYMENT_HOURS}h`);
   if (unmatched > 0) problems.push(`${unmatched} payment${unmatched === 1 ? "" : "s"} matched to no invoice`);
   if (stuckPayouts > 0) problems.push(`${stuckPayouts} payout${stuckPayouts === 1 ? "" : "s"} without a QuickBooks deposit after ${STUCK_PAYOUT_DAYS} days`);
+  if (surchargeRefused > 0) problems.push(`Stripe refused the credit card surcharge on ${surchargeRefused} payment${surchargeRefused === 1 ? "" : "s"} (24h)`);
   if (problems.length) return { ok: false, detail: problems.join("; ") };
   return { ok: true, detail: liveKey ? "live: all payments and payouts booked" : "test mode (nothing is booked)" };
 }

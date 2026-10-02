@@ -634,6 +634,15 @@ Deno.test("test mode: booking can be allowed on purpose (a QuickBooks sandbox sh
   assertEquals(posted.length, 1);
 });
 
+Deno.test("test mode: booking ONE named test payment books that one only", async () => {
+  const one = setup({ live: false, env: { STRIPE_TEST_BOOKS_TO_QB: "pi_1" } });
+  await handle(await request({ ...evt("payment_intent.succeeded", pi()), livemode: false }), one.deps);
+  assertEquals(one.posted.length, 1);
+  const other = setup({ live: false, env: { STRIPE_TEST_BOOKS_TO_QB: "pi_somethingelse" } });
+  await handle(await request({ ...evt("payment_intent.succeeded", pi()), livemode: false }), other.deps);
+  assertEquals(other.posted.length, 0);
+});
+
 Deno.test("an event from the other Stripe mode is ignored", async () => {
   const { db, deps } = setup(); // live key
   const r = await handle(await request({ ...evt("payment_intent.succeeded", pi()), livemode: false }), deps);

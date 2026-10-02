@@ -16,4 +16,7 @@ describe("Stripe payments in the daily health check", () => {
     expect(r.ok).toBe(false);
     expect(r.detail).toBe("STRIPE_CONNECT_WEBHOOK_SECRET missing; 2 payments not in QuickBooks after 24h; 1 payment matched to no invoice; 1 payout without a QuickBooks deposit after 6 days");
   });
+  it("a refused surcharge shows up", () => {
+    expect(stripePaymentsHealth({ ...ON, surchargeRefused: 1 }).detail).toBe("Stripe refused the credit card surcharge on 1 payment (24h)");
+  });
 });

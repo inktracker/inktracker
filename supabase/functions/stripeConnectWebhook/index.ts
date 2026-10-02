@@ -133,14 +133,23 @@ function opsAlert(message: string, context: Record<string, unknown> = {}) {
 /**
  * May this run write to the shop's QuickBooks? Not in Stripe TEST mode: test
  * payments would land as real payments and deposits in the shop's real
- * books. Allowed only on purpose (STRIPE_TEST_BOOKS_TO_QB=true, e.g. a shop
- * connected to a QuickBooks sandbox company).
+ * books. Allowed only on purpose, through STRIPE_TEST_BOOKS_TO_QB:
+ *   - a comma-separated list of PaymentIntent ids (pi_…): only those test
+ *     payments are booked, e.g. one payment to prove the QuickBooks → order →
+ *     notice chain. Never "all test payments" by accident (the nightly sweep
+ *     retries every unbooked row).
+ *   - "true": every test payment and payout (only for a shop connected to a
+ *     QuickBooks SANDBOX company).
  */
-function booksAllowed(deps: Deps, livemode?: boolean | null): boolean {
+function booksAllowed(deps: Deps, livemode?: boolean | null, payinId?: string | null): boolean {
   // The money's own mode wins: a TEST payment recorded before the live key
   // went in must never be booked by a later (live) sweep.
   const live = typeof livemode === "boolean" ? livemode : deps.stripe.live;
-  return live || flagOn(deps.env("STRIPE_TEST_BOOKS_TO_QB"));
+  if (live) return true;
+  const flag = String(deps.env("STRIPE_TEST_BOOKS_TO_QB") ?? "").trim();
+  if (flagOn(flag)) return true;
+  if (!payinId) return false;
+  return flag.split(",").map((x) => x.trim()).filter((x) => /^pi_[A-Za-z0-9]+$/.test(x)).includes(String(payinId));
 }
 const TEST_MODE_NOT_BOOKED = "Stripe test mode: not recorded in QuickBooks";
 
@@ -210,7 +219,7 @@ export async function postQbPaymentOnce(deps: Deps, payinId: string): Promise<st
   // "$823.90 invoice + $24.63 credit card surcharge = $848.53 charged."
   const breakdown = paidBreakdown(row.amount_cents, row.customer_fee_cents, row.method);
 
-  if (!booksAllowed(deps, row.livemode)) {
+  if (!booksAllowed(deps, row.livemode, payinId)) {
     await release({ qb_post_error: TEST_MODE_NOT_BOOKED });
     // Test mode is otherwise silent (the "paid" notice comes from the
     // QuickBooks side, which test money never reaches). Tell the shop once.
@@ -945,7 +954,7 @@ export async function sweep(deps: Deps): Promise<Record<string, number>> {
     .limit(100);
   for (const r of pending ?? []) {
     if (r.status === "processing" && r.method !== "card") continue; // bank not cleared yet
-    if (!booksAllowed(deps, r.livemode)) continue; // test money: never booked
+    if (!booksAllowed(deps, r.livemode, String(r.processor_payin_id))) continue; // test money: never booked
     out.payments++;
     try {
       if ((await postQbPaymentOnce(deps, String(r.processor_payin_id))).startsWith("posted")) out.paymentsBooked++;
