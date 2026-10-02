@@ -40,8 +40,10 @@ function loadStripeJs() {
  * @param {string|null} [props.shopName]   who charges it (Visa: the merchant)
  * @param {(paymentIntentId:string) => void} props.onPaid
  * @param {() => void} props.onBack         back to card / bank choice
+ * @param {() => void} [props.onCheckout]   pay on Stripe's own page instead
+ *        (when the card form can't load: ad blockers, strict networks)
  */
-export default function CardPayForm({ docType, id, token, cardForm, invoiceCents = null, feePct, shopName = null, onPaid, onBack }) {
+export default function CardPayForm({ docType, id, token, cardForm, invoiceCents = null, feePct, shopName = null, onPaid, onBack, onCheckout = null }) {
   const mountRef = useRef(null);
   const stripeRef = useRef(null);
   const elementsRef = useRef(null);
@@ -50,6 +52,7 @@ export default function CardPayForm({ docType, id, token, cardForm, invoiceCents
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [quote, setQuote] = useState(null); // { invoiceCents, surchargeCents, totalCents, funding, brand, last4, token }
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -77,7 +80,7 @@ export default function CardPayForm({ docType, id, token, cardForm, invoiceCents
         stripeRef.current = stripe;
         elementsRef.current = elements;
       })
-      .catch(() => { if (alive) setMessage("The card form couldn't load. Check your connection, or pay by bank transfer."); });
+      .catch(() => { if (alive) setLoadFailed(true); });
     return () => {
       alive = false;
       try { element?.destroy(); } catch { /* already gone */ }
@@ -153,15 +156,23 @@ export default function CardPayForm({ docType, id, token, cardForm, invoiceCents
 
       <div hidden={step !== "enter"}>
         <div ref={mountRef} />
-        {!ready && !message && (
+        {loadFailed && (
+          <div className="space-y-3 text-sm text-slate-700">
+            <div>The card form couldn&rsquo;t load. A browser extension or network filter may be blocking it.</div>
+            {onCheckout && (
+              <button type="button" className={primary} onClick={onCheckout}>Pay on Stripe&rsquo;s secure page instead</button>
+            )}
+          </div>
+        )}
+        {!ready && !message && !loadFailed && (
           <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading card form…</div>
         )}
-        <div className="mt-3 text-xs text-slate-500">
+        {!loadFailed && <div className="mt-3 text-xs text-slate-500">
           {shopName || "The shop"} adds a {feePct}% surcharge to credit cards. Debit cards have no surcharge. You'll see the total before you pay.
-        </div>
-        <button type="button" className={`${primary} mt-4`} disabled={!ready || busy} onClick={review}>
+        </div>}
+        {!loadFailed && <button type="button" className={`${primary} mt-4`} disabled={!ready || busy} onClick={review}>
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Continue
-        </button>
+        </button>}
       </div>
 
       {step === "confirm" && quote && (

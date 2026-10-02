@@ -174,6 +174,18 @@ rules, named in the acknowledgement. Refunds: the shop's refund notice says
 how much of the surcharge goes back (all of it on a full refund, the matching
 share on a partial one) — refunds happen in the shop's Stripe dashboard.
 
+**Pilot list.** `STRIPE_PAYMENTS_SHOPS` (comma-separated shop-owner emails,
+or `*`) decides which shops see payments at all; unset means none
+(`paymentRail.paymentsOpenFor`). It's checked everywhere the platform switch
+was: status, sign-up, the pay page, qbSync, the quote email. Money already
+moving (webhooks, payouts, refunds) is never gated. Today: Biota only.
+
+**Double payments.** The in-flight check reads the payment record, which
+Stripe's webhook writes a few seconds after a card goes through. To cover
+that gap, a paid card (or a confirmed return from Checkout) leaves a
+"just paid" marker on the document for 10 minutes, and new payments are
+refused meanwhile (`markJustPaid`).
+
 Shops choose which ways customers pay (Account → Payments → Accept: Cards /
 Bank transfer; `processor_accounts.accept_card` / `accept_bank`, both on by
 default, at least one on). The pay page only offers those, the server

@@ -68,6 +68,22 @@ export function flagOn(raw) {
 }
 
 /**
+ * Are InkTracker payments open to this shop? The platform switch
+ * (STRIPE_PAYMENTS_ENABLED) AND the pilot list (STRIPE_PAYMENTS_SHOPS:
+ * comma-separated shop-owner emails, or "*" for every paying shop). An unset
+ * list means NO shop: payments only reach shops named on purpose, so turning
+ * the platform on (or going live) never opens them to everyone by accident.
+ * Money already moving (payouts, refunds, disputes) is never gated by this.
+ */
+export function paymentsOpenFor(enabledRaw, shopsRaw, shopOwner) {
+  if (!flagOn(enabledRaw)) return false;
+  const list = String(shopsRaw ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (list.includes("*")) return true;
+  const me = String(shopOwner ?? "").trim().toLowerCase();
+  return Boolean(me) && list.includes(me);
+}
+
+/**
  * @param {object} a
  * @param {boolean} a.envEnabled   STRIPE_PAYMENTS_ENABLED
  * @param {object|null} a.account  processor_accounts row

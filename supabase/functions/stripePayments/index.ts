@@ -32,7 +32,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadProfileWithSecrets, loadShopProfileForUser } from "../_shared/profileSecrets.ts";
-import { flagOn, loadPaymentRail, RAIL, stripeKeyMode } from "../_shared/paymentRail.js";
+import { paymentsOpenFor, loadPaymentRail, RAIL, stripeKeyMode } from "../_shared/paymentRail.js";
 import {
   buildStatusPayload,
   canViewPayments,
@@ -73,6 +73,19 @@ function safeEquals(a: unknown, b: unknown): boolean {
 }
 
 const PAY_SESSION_REUSE_MS = 90 * 1000;
+// After a payment goes through, refuse another one for the same document for
+// this long (Stripe's webhook normally lands in seconds).
+const JUST_PAID_MS = 10 * 60 * 1000;
+
+/** Remember that this document was just paid (see preparePay). Best effort. */
+async function markJustPaid(admin: Any, docId: string, paymentRef: string) {
+  try {
+    await admin.from("processor_pay_sessions")
+      .upsert({ doc_id: docId, response: { paidMarker: true, paymentRef }, created_at: new Date().toISOString() }, { onConflict: "doc_id" });
+  } catch (err) {
+    console.error("[stripePayments] couldn't mark document paid:", (err as Error)?.message);
+  }
+}
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type Deps = {
@@ -170,7 +183,7 @@ async function payRail(body: Any, deps: Deps) {
   if (!found) return json({ error: "Not found" }, 404);
   const { doc, docType } = found;
   const rail = await loadPaymentRail(deps.admin, doc.shop_owner, {
-    envEnabled: flagOn(deps.env("STRIPE_PAYMENTS_ENABLED")),
+    envEnabled: paymentsOpenFor(deps.env("STRIPE_PAYMENTS_ENABLED"), deps.env("STRIPE_PAYMENTS_SHOPS"), doc.shop_owner),
     broker: Boolean(doc.broker_id || doc.broker_email),
     keyMode: stripeKeyMode(deps.env("STRIPE_CONNECT_SECRET_KEY")) ?? (deps.stripe.live ? "live" : "test"),
     doc,
@@ -249,7 +262,7 @@ function payPageUrl(deps: Deps, doc: Any, docType: string) {
     : `${base}/QuotePayment?id=${encodeURIComponent(doc.id)}&token=${encodeURIComponent(doc.public_token)}`;
 }
 
-type Ready = { doc: Any; docType: string; account: Any; display: Any; conn: QbConn };
+type Ready = { doc: Any; docType: string; account: Any; display: Any };
 
 /**
  * The checks every customer payment action makes: right document + token,
@@ -262,7 +275,7 @@ async function preparePay(body: Any, deps: Deps, opts: { throttleMethod?: string
   if (!found) return json({ error: "Not found" }, 404);
   const { doc, docType } = found;
 
-  const envEnabled = flagOn(deps.env("STRIPE_PAYMENTS_ENABLED"));
+  const envEnabled = paymentsOpenFor(deps.env("STRIPE_PAYMENTS_ENABLED"), deps.env("STRIPE_PAYMENTS_SHOPS"), doc.shop_owner);
   const broker = Boolean(doc.broker_id || doc.broker_email);
   const rail = await loadPaymentRail(admin, doc.shop_owner, {
     envEnabled,
@@ -298,27 +311,37 @@ async function preparePay(body: Any, deps: Deps, opts: { throttleMethod?: string
     if (inflight?.length) return json({ rail: "processor", payable: false, reason: "in_flight", message: CUSTOMER_REASON.in_flight, display });
   }
 
+  const { data: recent } = await admin.from("processor_pay_sessions")
+    .select("response, created_at").eq("doc_id", doc.id).maybeSingle();
+  const recentAge = recent ? Date.now() - new Date(recent.created_at).getTime() : Infinity;
+  // Just paid (card on this page, or back from Checkout): the payment record
+  // arrives from Stripe a few seconds later, so the in-flight check above
+  // can't see it yet. Don't take a second payment in that window.
+  if (recent?.response?.paidMarker && recentAge < JUST_PAID_MS) {
+    return json({ rail: "processor", payable: false, reason: "in_flight", message: CUSTOMER_REASON.in_flight, display });
+  }
   // Throttle: the same document + method asked again within 90s gets the
   // checkout we just made — no QuickBooks or Stripe calls.
-  if (opts.throttleMethod) {
-    const { data: recent } = await admin.from("processor_pay_sessions")
-      .select("response, created_at").eq("doc_id", doc.id).maybeSingle();
-    if (recent?.response?.method === opts.throttleMethod && Date.now() - new Date(recent.created_at).getTime() < PAY_SESSION_REUSE_MS) {
-      return json(recent.response);
-    }
+  if (opts.throttleMethod && recent?.response?.method === opts.throttleMethod && recentAge < PAY_SESSION_REUSE_MS) {
+    return json(recent.response);
   }
 
-  const conn = await deps.qb.connect(doc.shop_owner);
-  if (!conn) return json({ rail: "processor", payable: false, reason: "qb_unavailable", message: CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT], display });
-  return { doc, docType, account, display, conn };
+  return { doc, docType, account, display };
 }
 
-/** The LIVE QuickBooks amount to pay, and how many payments it already had. */
+/**
+ * The LIVE QuickBooks amount to pay, and how many payments it already had.
+ * This is the only QuickBooks call on the customer's side: callers make
+ * every cheaper check first (a pay link hammered with junk must not use up
+ * the shop's QuickBooks rate limit).
+ */
 async function liveTarget(deps: Deps, r: Ready): Promise<{ error: Response } | { target: Any; attempt: number }> {
   const { doc } = r;
+  const conn = await deps.qb.connect(doc.shop_owner);
+  if (!conn) return { error: json({ rail: "processor", payable: false, reason: "qb_unavailable", message: CUSTOMER_REASON[NOT_PAYABLE.BAD_AMOUNT], display: r.display }) };
   const [liveFinal, liveDeposit] = await Promise.all([
-    doc.qb_invoice_id ? deps.qb.getInvoice(r.conn, String(doc.qb_invoice_id)) : Promise.resolve(null),
-    doc.qb_deposit_invoice_id && !doc.qb_invoice_id ? deps.qb.getInvoice(r.conn, String(doc.qb_deposit_invoice_id)) : Promise.resolve(null),
+    doc.qb_invoice_id ? deps.qb.getInvoice(conn, String(doc.qb_invoice_id)) : Promise.resolve(null),
+    doc.qb_deposit_invoice_id && !doc.qb_invoice_id ? deps.qb.getInvoice(conn, String(doc.qb_deposit_invoice_id)) : Promise.resolve(null),
   ]);
   // Deposit invoices only exist when the deposit path minted one, so the
   // server can always route to them (the frontend kill switch hides the UI).
@@ -406,24 +429,28 @@ const CTOKEN_RE = /^ctoken_[A-Za-z0-9_]+$/;
 
 /**
  * The card behind a ConfirmationToken (made by Stripe's card form on our pay
- * page, on the shop's account) and the surcharge it carries: credit → the
- * shop's 2.99%; debit, prepaid or unknown → none.
+ * page, on the shop's account), or null if Stripe doesn't know the token.
+ * Read BEFORE QuickBooks, so a made-up token costs one Stripe call.
  */
-async function cardPricing(deps: Deps, r: Ready, target: Any, confirmationToken: string) {
-  const ct = await deps.stripe.get(`/v1/confirmation_tokens/${encodeURIComponent(confirmationToken)}`, undefined, { account: r.account.merchant_id });
+async function readCard(deps: Deps, account: Any, confirmationToken: string) {
+  let ct: Any;
+  try {
+    ct = await deps.stripe.get(`/v1/confirmation_tokens/${encodeURIComponent(confirmationToken)}`, undefined, { account: account.merchant_id });
+  } catch (err) {
+    if ((err as Any)?.status === 404 || (err as Any)?.status === 400) return null;
+    throw err;
+  }
   const card = ct?.payment_method_preview?.card ?? null;
-  if (!card) return null;
-  const funding = String(card.funding ?? "unknown");
-  const surchargeCents = customerFeeCents({ balanceCents: target.amountCents, method: "card", funding, settings: customerFeeSettings(r.account) });
-  return {
-    funding,
-    brand: card.brand ?? null,
-    last4: card.last4 ?? null,
-    invoiceCents: target.amountCents,
-    surchargeCents,
-    totalCents: target.amountCents + surchargeCents,
-  };
+  return card ? { funding: String(card.funding ?? "unknown"), brand: card.brand ?? null, last4: card.last4 ?? null } : null;
 }
+
+/** The surcharge a card carries on this amount: credit → the shop's 2.99%; debit, prepaid or unknown → none. */
+function cardPricing(account: Any, target: Any, card: { funding: string; brand: string | null; last4: string | null }) {
+  const surchargeCents = customerFeeCents({ balanceCents: target.amountCents, method: "card", funding: card.funding, settings: customerFeeSettings(account) });
+  return { ...card, invoiceCents: target.amountCents, surchargeCents, totalCents: target.amountCents + surchargeCents };
+}
+
+const CARD_UNREADABLE = { rail: "processor", payable: false, reason: "card_unreadable", message: "That card couldn't be read. Please enter it again." };
 
 /** Customer-facing words for a card the bank turned down. */
 function declineMessage(err: Any) {
@@ -443,11 +470,11 @@ async function cardQuote(body: Any, deps: Deps) {
   if (ready instanceof Response) return ready;
   if (!acceptedMethods(ready.account).card) return json({ rail: "processor", payable: false, reason: "card_not_accepted", message: CUSTOMER_REASON.card_not_accepted, display: ready.display });
   if (!cardFormConfig(ready.account, deps)) return json({ rail: "processor", payable: false, reason: "card_form_off", message: CUSTOMER_REASON.card_form_off, display: ready.display });
+  const card = await readCard(deps, ready.account, confirmationToken);
+  if (!card) return json(CARD_UNREADABLE);
   const live = await liveTarget(deps, ready);
   if ("error" in live) return live.error;
-  const price = await cardPricing(deps, ready, live.target, confirmationToken);
-  if (!price) return json({ rail: "processor", payable: false, reason: "card_unreadable", message: "That card couldn't be read. Please enter it again." });
-  return json({ rail: "processor", payable: true, method: "card", kind: live.target.kind, ...price });
+  return json({ rail: "processor", payable: true, method: "card", kind: live.target.kind, ...cardPricing(ready.account, live.target, card) });
 }
 
 /**
@@ -463,10 +490,11 @@ async function cardPay(body: Any, deps: Deps) {
   const { doc, docType, account } = ready;
   if (!acceptedMethods(account).card) return json({ rail: "processor", payable: false, reason: "card_not_accepted", message: CUSTOMER_REASON.card_not_accepted, display: ready.display });
   if (!cardFormConfig(account, deps)) return json({ rail: "processor", payable: false, reason: "card_form_off", message: CUSTOMER_REASON.card_form_off, display: ready.display });
+  const card = await readCard(deps, account, confirmationToken);
+  if (!card) return json(CARD_UNREADABLE);
   const live = await liveTarget(deps, ready);
   if ("error" in live) return live.error;
-  const price = await cardPricing(deps, ready, live.target, confirmationToken);
-  if (!price) return json({ rail: "processor", payable: false, reason: "card_unreadable", message: "That card couldn't be read. Please enter it again." });
+  const price = cardPricing(account, live.target, card);
   if (Number(body.expectTotalCents) !== price.totalCents) {
     return json({ rail: "processor", payable: true, method: "card", changed: true, kind: live.target.kind, ...price });
   }
@@ -517,7 +545,10 @@ async function cardPay(body: Any, deps: Deps) {
   }
   const charged = Number(pi?.amount) || built.chargeCents;
   const base = { rail: "processor", payable: true, method: "card", paymentIntentId: pi?.id ?? null, amountCents: charged, surchargeCents: charged - live.target.amountCents };
-  if (pi?.status === "succeeded" || pi?.status === "processing") return json({ ...base, state: pi.status === "succeeded" ? "paid" : "processing" });
+  if (pi?.status === "succeeded" || pi?.status === "processing") {
+    await markJustPaid(deps.admin, doc.id, String(pi.id));
+    return json({ ...base, state: pi.status === "succeeded" ? "paid" : "processing" });
+  }
   // The card's bank wants to check it's really them (3-D Secure): the page
   // finishes it with Stripe.js. The client secret only ever goes to the
   // person paying.
@@ -548,8 +579,10 @@ async function paidStatus(body: Any, deps: Deps) {
       return json({ confirmed: false });
     }
     if (String(pi?.metadata?.inktracker_quote_id ?? "") !== String(doc.id)) return json({ confirmed: false });
-    if (pi?.status === "succeeded") return json({ confirmed: true, state: "paid" });
-    if (pi?.status === "processing") return json({ confirmed: true, state: "processing" });
+    if (pi?.status === "succeeded" || pi?.status === "processing") {
+      await markJustPaid(deps.admin, doc.id, piId);
+      return json({ confirmed: true, state: pi.status === "succeeded" ? "paid" : "processing" });
+    }
     return json({ confirmed: false, failed: pi?.status === "requires_payment_method" });
   }
   const sessionId = String(body.sessionId ?? "");
@@ -561,6 +594,7 @@ async function paidStatus(body: Any, deps: Deps) {
     return json({ confirmed: false });
   }
   if (String(cs?.client_reference_id ?? "") !== String(doc.id) || cs?.status !== "complete") return json({ confirmed: false });
+  await markJustPaid(deps.admin, doc.id, sessionId);
   // Card: paid now. Bank: submitted, clears in days.
   return json({ confirmed: true, state: cs.payment_status === "paid" ? "paid" : "processing" });
 }
@@ -587,7 +621,7 @@ export async function handle(req: Request, deps: Deps) {
   const { profile: shop } = await loadShopProfileForUser(admin, user.id);
   if (!shop?.email) return json({ error: "Shop not found" }, 404);
   const shopOwner = String(shop.email);
-  const envEnabled = flagOn(deps.env("STRIPE_PAYMENTS_ENABLED"));
+  const envEnabled = paymentsOpenFor(deps.env("STRIPE_PAYMENTS_ENABLED"), deps.env("STRIPE_PAYMENTS_SHOPS"), shopOwner);
   const live = deps.stripe.live;
   const account = await loadAccount(admin, shopOwner, live);
   const clientId = deps.env("STRIPE_CONNECT_CLIENT_ID") ?? "";

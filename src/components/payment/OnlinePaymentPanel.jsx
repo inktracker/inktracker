@@ -79,8 +79,11 @@ export default function OnlinePaymentPanel({ docType, id, token, kind = null, am
   const [cardOpen, setCardOpen] = useState(false);
   const [paidCard, setPaidCard] = useState(null); // PaymentIntent id paid on this page
 
-  async function pay(method) {
-    if (method === "card" && pricing?.cardForm) { setNotice(""); setCardOpen(true); return; }
+  // viaCheckout: Stripe's own page even when this shop takes cards on ours
+  // (the card form couldn't load). No surcharge there: Checkout can't tell
+  // credit from debit before charging.
+  async function pay(method, { viaCheckout = false } = {}) {
+    if (method === "card" && pricing?.cardForm && !viaCheckout) { setNotice(""); setCardOpen(true); return; }
     setBusy(method);
     setNotice("");
     try {
@@ -113,7 +116,8 @@ export default function OnlinePaymentPanel({ docType, id, token, kind = null, am
     return (
       <CardPayForm docType={docType} id={id} token={token} cardForm={pricing.cardForm}
         invoiceCents={pricing.invoiceCents ?? null} feePct={cardPct} shopName={pricing.shopName ?? null}
-        onPaid={(piId) => setPaidCard(piId)} onBack={() => setCardOpen(false)} />
+        onPaid={(piId) => setPaidCard(piId)} onBack={() => setCardOpen(false)}
+        onCheckout={() => { setCardOpen(false); pay("card", { viaCheckout: true }); }} />
     );
   }
 

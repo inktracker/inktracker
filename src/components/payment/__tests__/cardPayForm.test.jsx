@@ -63,4 +63,14 @@ describe("CardPayForm", { timeout: 20000 }, () => {
     expect(screen.queryByText("Pay $585.72")).toBeNull();
     expect(onPaid).not.toHaveBeenCalled();
   });
+  it("card form blocked (ad blocker): offers Stripe's own page instead", async () => {
+    delete window.Stripe;
+    const onCheckout = vi.fn();
+    render(<CardPayForm {...props} onPaid={() => {}} onCheckout={onCheckout} />);
+    const tag = document.head.querySelector('script[src="https://js.stripe.com/v3/"]');
+    tag.onerror();
+    fireEvent.click(await screen.findByText(/Pay on Stripe.s secure page instead/));
+    expect(onCheckout).toHaveBeenCalled();
+    expect(screen.queryByText("Continue")).toBeNull();
+  });
 });
