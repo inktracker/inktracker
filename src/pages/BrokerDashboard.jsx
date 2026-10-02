@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
 import { createBrokerClientInvoice } from "@/lib/broker/createBrokerClientInvoice";
+import { brokerInvoiceSendNotice } from "@/lib/broker/brokerSendInvoiceNotice";
 import { uploadFile } from "@/lib/uploadFile";
 import CollapsibleSection from "@/components/shared/CollapsibleSection";
 import { DashboardSkeleton } from "@/components/shared/Skeletons";
@@ -234,17 +235,27 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
     // Broker billing (Phase B): if the broker has connected their own
     // QuickBooks, create the client invoice in THEIR realm at the client price
     // and stamp the pay link on the quote — the white-label payment page then
-    // shows the client a "Pay" button. FAIL-OPEN: the send is already
-    // committed, so a broker who hasn't connected QB (or a QB hiccup) just
-    // means the client approves as before; it must never surface an error here.
+    // shows the client a "Pay" button. FAIL-OPEN on the SEND (it's already
+    // committed), but NOT SILENT: a swallowed {ok:false} meant a QB error (or
+    // the broker's monthly invoice-limit) left the client with no pay link and
+    // the broker thinking it worked — "it doesn't work every time" (Joe,
+    // 2026-10-02). Surface every real failure so the broker knows to act.
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
         const res = await createBrokerClientInvoice({ base44, quote: updated, session });
-        if (res?.ok && res.quote) onUpdate(res.quote);
+        if (res?.ok && res.quote) {
+          onUpdate(res.quote);
+        } else if (res && !res.ok && res.error) {
+          // A real error (benign skips like already_invoiced carry no `error`).
+          const n = brokerInvoiceSendNotice(res.error);
+          if (n) notify[n.level](n.title, n.description);
+        }
       }
     } catch (err) {
-      console.error("[BrokerDashboard] client invoice on send failed (non-fatal):", err?.message || err);
+      // A thrown error here used to be swallowed to console only; surface it too.
+      const n = brokerInvoiceSendNotice(err?.message || err);
+      if (n) notify[n.level](n.title, n.description);
     }
     // Leave the send modal open on its confirmation screen; the broker
     // closes it with Close (same behavior as the shop's Send Quote).
