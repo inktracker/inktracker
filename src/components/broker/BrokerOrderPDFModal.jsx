@@ -1,6 +1,7 @@
 import { X, Download } from "lucide-react";
 import { fmtDate, fmtMoney, getQty, activeSizeNames, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP, getOrderDisplayClient, getShopPricingConfig } from "../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
+import { resolveGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import { StatusChip } from "../shared/chips";
@@ -77,7 +78,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
               <div key={li.id || i} className="border border-slate-200 rounded-xl overflow-hidden">
                 <div className="bg-slate-50 px-4 py-3 flex justify-between items-center">
                   <div>
-                    <span className="font-bold text-slate-800 text-sm">{li.style || "Garment"}</span>
+                    <span className="font-bold text-slate-800 text-sm">{resolveGarmentHeader(li)}</span>
                     {li.garmentColor && <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>}
                   </div>
                   {r && <span className="font-bold text-teal-700 text-sm">{fmtMoney(r.lineTotal)}</span>}

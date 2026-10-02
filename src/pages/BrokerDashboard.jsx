@@ -523,6 +523,12 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
                   await exportQuoteToPDF(quote, {
                     mode: "client",
                     shopName: user?.company_name || user?.display_name || user?.full_name || "",
+                    // Broker brands the client PDF. Without a logoUrl, addHeader
+                    // falls back to the INKTRACKER logo on a client-facing doc
+                    // (white-label leak, Joe 2026-10-01) because shopName is
+                    // non-empty. Pass the broker's own logo (empty = no logo,
+                    // never InkTracker's).
+                    logoUrl: user?.logo_url || "",
                   });
                 } catch (err) {
                   console.error("[BrokerDashboard] Client PDF export failed:", err);

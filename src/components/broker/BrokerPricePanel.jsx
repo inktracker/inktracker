@@ -7,107 +7,12 @@ import {
   STANDARD_MARKUP,
   overrideRushFee,
 } from "../shared/pricing";
-import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
-import { cleanText, looksLikeCode, isWarehouseSku, extractTrailingCode, stripTrailingCode } from "@/lib/quotes/lineItemText";
+import { resolveGarmentHeader } from "@/lib/quotes/garmentTitle";
 
 
 
 
 
-
-function getDisplayStyleNumber(li) {
-  const strongCandidates = [
-    li?.supplierStyleNumber,
-    li?.resolvedStyleNumber,
-    li?.styleNumber,
-    li?.garmentNumber,
-    li?.productNumber,
-  ];
-
-  for (const candidate of strongCandidates) {
-    const value = cleanText(candidate).toUpperCase();
-    if (!value) continue;
-    if (isWarehouseSku(value)) continue;
-    if (!looksLikeCode(value)) continue;
-    return value;
-  }
-
-  const productTail = extractTrailingCode(li?.productTitle).toUpperCase();
-  if (productTail && !isWarehouseSku(productTail) && looksLikeCode(productTail)) {
-    return productTail;
-  }
-
-  const resolvedTail = extractTrailingCode(li?.resolvedTitle).toUpperCase();
-  if (resolvedTail && !isWarehouseSku(resolvedTail) && looksLikeCode(resolvedTail)) {
-    return resolvedTail;
-  }
-
-  const rawStyle = cleanText(li?.style).toUpperCase();
-  if (rawStyle && !isWarehouseSku(rawStyle) && looksLikeCode(rawStyle)) {
-    return rawStyle;
-  }
-
-  return rawStyle || "GARMENT";
-}
-
-// Some suppliers (notably AS Colour) return the full marketing description
-// in the "title" / "styleName" fields ("The AS Colour Staple Tee. Enduring
-// comfort in a regular fit, crafted from 5.3 oz..."). For quote headers we
-// only want the first sentence — anything longer turns the header into a
-// paragraph. Existing line items saved with the long text before this fix
-// also get cleaned up by this trim, so users don't have to re-look up
-// every style they've already touched.
-function trimToShortTitle(text) {
-  if (!text) return "";
-  const firstSentence = String(text).split(/(?<=\.)\s+/)[0] || text;
-  const trimmed = firstSentence.replace(/\.$/, "").trim();
-  // Hard cap as a belt-and-suspenders measure for descriptions without
-  // sentence breaks. 80 chars ≈ a long product title; anything longer is
-  // marketing copy.
-  if (trimmed.length > 80) return trimmed.slice(0, 77).trimEnd() + "…";
-  return trimmed;
-}
-
-function getDisplayDescription(li) {
-  const styleNumber = getDisplayStyleNumber(li).toLowerCase();
-
-  const candidates = [
-    stripTrailingCode(li?.productTitle),
-    stripTrailingCode(li?.resolvedTitle),
-    cleanText(li?.styleName),
-    cleanText(li?.resolvedDescription),
-    cleanText(li?.productDescription),
-    cleanText(li?.product_description),
-    cleanText(li?.description),
-    cleanText(li?.garmentName),
-    cleanText(li?.displayName),
-    cleanText(li?.title),
-  ];
-
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const normalized = candidate.toLowerCase();
-
-    if (normalized === styleNumber) continue;
-    if (looksLikeCode(candidate)) continue;
-    if (normalized === "shirt") continue;
-    if (normalized === "garment") continue;
-
-    return trimToShortTitle(candidate);
-  }
-
-  return "";
-}
-
-function getHeaderLine(li) {
-  const styleNumber = getDisplayStyleNumber(li);
-  // Shop's custom title wins over resolved/supplier fields — see
-  // src/lib/quotes/garmentTitle.js.
-  const custom = customGarmentHeader(li, styleNumber);
-  if (custom) return custom;
-  const description = getDisplayDescription(li);
-  return description ? `${styleNumber} - ${description}` : styleNumber;
-}
 
 function getMetaLine(li) {
   const parts = [];
@@ -182,7 +87,10 @@ export default function BrokerPricePanel({
   const profitPerPiece = shopAvgPpp - brokerAvgPpp;
   const orderProfit = shopTotal - brokerTotal;
 
-  const headerLine = getHeaderLine(li);
+  // Shared resolver — the SAME header the saved quote, PDF and client page use,
+  // so this "Display Header Preview" can't drift (this panel used to carry a
+  // 6th forked copy; Joe 2026-10-01).
+  const headerLine = resolveGarmentHeader(li);
   const metaLine = getMetaLine(li);
 
   return (
