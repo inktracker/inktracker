@@ -3026,8 +3026,10 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     );
 
     const totalAmt = Number(qbInv.TotalAmt ?? 0);
-    const balance = Number(qbInv.Balance ?? 0);
-    const isPaid = balance === 0 && totalAmt > 0;
+    // Shared predicate (null-Balance-safe): the old inline `balance === 0 &&
+    // totalAmt > 0` read a SPARSE response (no Balance field) as paid and
+    // imported an owed invoice as paid:true (audit 2026-10-02).
+    const isPaid = isQbInvoicePaid(qbInv);
 
     // Map QB line items. stripQbDiscountNote removes the " (less $X
     // discount)" label OUR push appended for QB's tax math — the local row
