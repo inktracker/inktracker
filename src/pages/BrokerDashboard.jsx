@@ -225,12 +225,23 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
 
   async function handleSendToClientSuccess() {
     // SendQuoteModal already emailed and set status="Sent".
-    // Now update to "Sent to Client" status.
-    const updated = await base44.entities.Quote.update(quote.id, {
-      status: "Sent to Client",
-      sent_to_client_at: new Date().toISOString(),
-    });
-    onUpdate(updated);
+    // Now update to "Sent to Client". This write used to be OUTSIDE any
+    // try/catch and onSuccess isn't awaited — so a transient/RLS failure here
+    // became an unhandled rejection: the email was already out, the broker saw
+    // success, but the quote stayed at "Sent" (→ Pending, no Mark-Approved /
+    // Resend affordances) and the client invoice was never attempted. Guard it
+    // and surface the failure (Joe, 2026-10-02).
+    let updated;
+    try {
+      updated = await base44.entities.Quote.update(quote.id, {
+        status: "Sent to Client",
+        sent_to_client_at: new Date().toISOString(),
+      });
+      onUpdate(updated);
+    } catch (err) {
+      notify.error("The quote was emailed, but saving its status failed — reopen it and resend", err);
+      return;
+    }
 
     // Broker billing (Phase B): if the broker has connected their own
     // QuickBooks, create the client invoice in THEIR realm at the client price

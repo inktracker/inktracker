@@ -494,6 +494,12 @@ export default function Production() {
     try {
       await assertArtGateFresh(order, "Completed", base44);
       const updated = await runOrderCompletion({ order, user, base44 });
+      if (updated?._brokerBillingError) {
+        notify.error(
+          "Order completed, but auto-billing the broker failed",
+          updated._brokerBillingError + " — bill them from the order later, or check your QuickBooks connection."
+        );
+      }
       setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
       // Keep the modal open on the just-completed order so its action bar can
       // reveal Create Invoice → Send. Only updates if this order is being viewed.
