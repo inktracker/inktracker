@@ -7,6 +7,7 @@ import {
   maxCustomerFeeCents,
   surchargeBannedState,
   paidBreakdown,
+  acceptedMethods,
   PLATFORM_PRICING,
   STRIPE_COST,
   platformFeeCents,
@@ -274,5 +275,18 @@ describe("paidBreakdown — why the charged total is higher than the quote", () 
   it("no fee → nothing to explain", () => {
     expect(paidBreakdown(56872, 0, "card")).toBe("");
     expect(paidBreakdown(56872, null, "card")).toBe("");
+  });
+});
+
+describe("which ways a shop takes payment", () => {
+  it("both unless turned off", () => {
+    expect(acceptedMethods(null)).toEqual({ card: true, ach: true });
+    expect(acceptedMethods({ accept_card: false, accept_bank: true })).toEqual({ card: false, ach: true });
+  });
+  it("the fee note only mentions the ways the shop takes", () => {
+    const on = customerFeeSettings({ customer_fees_enabled: true, bank_fee_pct: 1 });
+    expect(customerFeeNote(on, { accepts: { card: false, ach: true } })).toBe("Bank transfer payments include a 1% fee. The exact amount is shown before you pay.");
+    expect(customerFeeNote(on, { accepts: { card: true, ach: false } })).toBe("We add a 2.99% surcharge to credit card payments. Debit cards have no surcharge. The exact amount is shown before you pay.");
+    expect(customerFeeNote({ ...on, bankPct: 0 }, { accepts: { card: false, ach: true } })).toBe("");
   });
 });

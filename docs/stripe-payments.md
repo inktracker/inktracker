@@ -174,6 +174,12 @@ rules, named in the acknowledgement. Refunds: the shop's refund notice says
 how much of the surcharge goes back (all of it on a full refund, the matching
 share on a partial one) — refunds happen in the shop's Stripe dashboard.
 
+Shops choose which ways customers pay (Account → Payments → Accept: Cards /
+Bank transfer; `processor_accounts.accept_card` / `accept_bank`, both on by
+default, at least one on). The pay page only offers those, the server
+refuses the others (`card_not_accepted` / `bank_not_accepted`), and the fee
+note only mentions them.
+
 Checkout hides Link (`wallet_options.link.display=never`): the customer
 already chose card or bank. Apple/Google Pay stay (they're cards). If an
 account rejects the parameter, the session is retried without it.
