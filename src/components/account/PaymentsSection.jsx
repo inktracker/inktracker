@@ -280,10 +280,15 @@ export default function PaymentsSection() {
                         <label className="flex items-center gap-2 font-semibold text-slate-700">
                           <input type="checkbox" checked={feesOn} disabled={Boolean(state.surchargeBannedIn) && !state.customerFees?.enabled}
                             onChange={(e) => { setFeesOn(e.target.checked); setFeesAck(false); }} />
-                          Customers pay the processing fee
+                          Pass processing fees to customers where card rules allow
                         </label>
+                        <ul className="space-y-1">
+                          <li><span className="font-semibold text-slate-700">Credit cards:</span> the customer pays a {state.pricing?.card || "2.99%"} surcharge. Costs you nothing.</li>
+                          <li><span className="font-semibold text-slate-700">Debit and prepaid cards:</span> card rules don&rsquo;t allow a surcharge, so <span className="font-semibold text-slate-700">you still pay the {state.pricing?.card || "2.99%"} fee</span>, same as today.</li>
+                          <li><span className="font-semibold text-slate-700">Bank transfer:</span> the customer pays your bank fee below. Costs you nothing when it&rsquo;s 1%.</li>
+                        </ul>
                         <div>
-                          Quotes and invoices show your price with a note about the fee. On the pay page the customer sees the exact amount before paying: a {state.pricing?.card || "2.99%"} surcharge on credit cards (none on debit cards, by card network rules) and your bank fee below. QuickBooks still records the invoice amount; what customers pay on top is booked on the payout deposit.
+                          Quotes and invoices show your price with a note about the fees, and the customer sees the exact amount before paying. QuickBooks records the invoice amount; what customers pay on top is booked on the payout deposit.
                         </div>
                         {state.surchargeBannedIn && (
                           <div className="text-slate-700">Card surcharges aren&rsquo;t allowed in {state.surchargeBannedIn}, so this isn&rsquo;t available for your shop.</div>
@@ -313,7 +318,7 @@ export default function PaymentsSection() {
                             || (feesOn && !state.customerFees?.enabled && !feesAck)
                             || (feesOn === Boolean(state.customerFees?.enabled) && Number(bankFeePct) === Number(state.customerFees?.bankFeeSetting ?? 1))}
                           onClick={() => run("setCustomerFees", { enabled: feesOn, bankFeePct: Number(bankFeePct), acknowledged: feesAck },
-                            (d) => { apply(d); syncFees(d); notify.success(feesOn ? "Customers now pay the processing fee" : "Processing fee off: you pay it"); })}>
+                            (d) => { apply(d); syncFees(d); notify.success(feesOn ? "Fees passed to credit card and bank payers (debit cards excluded)" : "Fees off: you pay them on every payment"); })}>
                           {busy === "setCustomerFees" ? "Saving…" : "Save"}
                         </button>
                       </div>
