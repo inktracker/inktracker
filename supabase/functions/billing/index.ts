@@ -146,16 +146,24 @@ Deno.serve(async (req) => {
                 subscription_status: fields.subscription_status,
               })
               .eq("id", profile.id);
-            if (profErr) console.error("[billing] self-heal profiles update failed:", profErr.message);
-            try {
-              await updateProfileSecrets(admin, profile.id, {
-                stripe_subscription_id: fields.stripe_subscription_id,
-              });
-            } catch (e) {
-              console.error("[billing] self-heal secrets update failed:", e);
+            if (profErr) {
+              // Do NOT report the healed state we failed to persist — that
+              // told THIS response "active" while every other surface (and
+              // the next load) still read the stale profile (audit 2026-10-02
+              // M8). Fall through to the un-healed truth; the next status
+              // call retries the heal.
+              console.error("[billing] self-heal profiles update failed:", profErr.message);
+            } else {
+              try {
+                await updateProfileSecrets(admin, profile.id, {
+                  stripe_subscription_id: fields.stripe_subscription_id,
+                });
+              } catch (e) {
+                console.error("[billing] self-heal secrets update failed:", e);
+              }
+              console.log(`[billing] self-healed ${profile.id} → ${fields.subscription_tier}/${fields.subscription_status} from Stripe`);
+              return json(computeTrialMeta({ ...profile, ...fields }));
             }
-            console.log(`[billing] self-healed ${profile.id} → ${fields.subscription_tier}/${fields.subscription_status} from Stripe`);
-            return json(computeTrialMeta({ ...profile, ...fields }));
           }
         } catch (e) {
           // Non-fatal — fall through to the un-reconciled meta. Better to show
@@ -228,7 +236,11 @@ Deno.serve(async (req) => {
                 subscription_status: fields.subscription_status,
               })
               .eq("id", profile.id);
-            if (healErr) console.error("[billing] checkout-guard profile heal failed:", healErr.message);
+            // Refusing checkout stays CORRECT even when this heal write fails
+            // (they genuinely have a live sub — proceeding would double-
+            // subscribe). The stale profile self-repairs via the status
+            // call's self-heal, which now retries on every load (M8a).
+            if (healErr) console.error("[billing] checkout-guard profile heal failed (status self-heal will retry):", healErr.message);
             try {
               await updateProfileSecrets(admin, profile.id, {
                 stripe_subscription_id: fields.stripe_subscription_id,
