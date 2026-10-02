@@ -606,9 +606,16 @@ async function reconcileShop(adminClient: any, profile: any) {
             if (healErr) throw new Error(`penny-drift heal failed: ${healErr.message}`);
             const orderRef = cand.table === "invoices" ? cand.order_id : cand.converted_order_id;
             if (orderRef) {
-              await adminClient.from("orders")
+              // CHECKED like the heal write two lines up: a silent failure
+              // left the order's totals diverged from the just-healed
+              // invoice/quote while logging success — and the scanner never
+              // re-finds it because the mirror row is now "honest" (audit
+              // 2026-10-02). Throw → per-candidate catch logs a real error,
+              // next run retries.
+              const { error: orderAdoptErr } = await adminClient.from("orders")
                 .update({ total: adopt.total, tax: adopt.tax, tax_rate: adopt.tax_rate })
                 .eq("order_id", orderRef).eq("shop_owner", shopOwner);
+              if (orderAdoptErr) throw new Error(`penny-drift order adopt failed: ${orderAdoptErr.message}`);
             }
             await logEvent(adminClient, {
               shop_owner: shopOwner,
@@ -644,9 +651,11 @@ async function reconcileShop(adminClient: any, profile: any) {
             if (adoptErr) throw new Error(`qb-edit adopt failed: ${adoptErr.message}`);
             const adoptOrderRef = cand.table === "invoices" ? cand.order_id : cand.converted_order_id;
             if (adoptOrderRef) {
-              await adminClient.from("orders")
+              // Same contract as the penny-drift order write above.
+              const { error: orderAdoptErr } = await adminClient.from("orders")
                 .update({ total: adoptPatch.total, tax: adoptPatch.tax, tax_rate: adoptPatch.tax_rate })
                 .eq("order_id", adoptOrderRef).eq("shop_owner", shopOwner);
+              if (orderAdoptErr) throw new Error(`qb-edit order adopt failed: ${orderAdoptErr.message}`);
             }
             await recordShopNotification(adminClient, buildQbAutoSyncedNotification({
               shopOwner,
@@ -904,11 +913,17 @@ async function reconcileOneQuote(
   if (classification.kind === DRIFT_KINDS.PAID_NOT_RECORDED) {
     const patch: any = buildQuotePatchFromFreshInvoice(freshInvoice, quote);
     if (patch) {
-      await adminClient
+      // CHECKED: the paid:true write is the entire point of this branch. A
+      // swallowed failure logged "success" + notified the shop, then re-found
+      // the same drift every night and re-nagged while never marking paid
+      // (audit 2026-10-02). Throw → the scan's per-candidate catch logs a
+      // real error and tomorrow's run retries cleanly.
+      const { error: patchErr } = await adminClient
         .from("quotes")
         .update(patch)
         .eq("id", quote.id)
         .eq("shop_owner", shopOwner);
+      if (patchErr) throw new Error(`PAID_NOT_RECORDED quote patch failed: ${patchErr.message}`);
     }
     // Re-read so the order row carries the latest fields.
     const { data: latestQuote } = await adminClient

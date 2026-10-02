@@ -8,6 +8,7 @@
 import { buildDepositPaidPatch } from "./qbDeposit.js";
 import { convertQuoteToOrder } from "./qbConvertQuote.js";
 import { logEvent } from "./qbAudit.js";
+import { insertShopNotification } from "./notifications.js";
 import {
   chooseQuotePaymentRecipient,
   buildQuotePaymentEmail,
@@ -52,11 +53,29 @@ export async function processDepositInvoicePaid(supabase, { quote, qbInvoiceId, 
   if (!updated) return { handled: true, flipped: false, orderId: quote.converted_order_id || null };
 
   let orderId = quote.converted_order_id || null;
+  // Conversion failure must NOT be silent: the flip above already committed
+  // (money collected, deposit_paid=true) and the backstop only scans
+  // deposit_paid=false — so a swallowed throw here meant deposit collected,
+  // NO ORDER, status logged "success", never repaired (audit 2026-10-02).
+  // Don't revert the flip (the payment is real); log status:"error" below and
+  // tell the shop to convert manually.
+  let convertFailed = null;
   if (!orderId) {
     try {
       orderId = await convertQuoteToOrder(supabase, { ...quote, ...patch });
     } catch (convErr) {
-      console.error(`[qbDepositPaid] conversion failed for ${quote.quote_id}:`, convErr?.message || convErr);
+      convertFailed = convErr?.message || String(convErr);
+      console.error(`[qbDepositPaid] conversion failed for ${quote.quote_id}:`, convertFailed);
+      // Best-effort bell — the EVENT LOG error below is the durable record.
+      await insertShopNotification(supabase, {
+        shopOwner,
+        eventType: "deposit_paid_conversion_failed",
+        severity: "error",
+        title: `Deposit received for ${quote.quote_id}, but it couldn't convert to an order`,
+        body: `The deposit was collected and recorded, but creating the order failed (${convertFailed}). Convert the quote to an order manually.`,
+        relatedEntity: "Quote",
+        relatedId: quote.id,
+      }).catch(() => {});
     }
   }
   // Carry the deposit pointer to the order — and CHECK the write. The pointer
@@ -87,14 +106,19 @@ export async function processDepositInvoicePaid(supabase, { quote, qbInvoiceId, 
     }
   }
 
+  const failure = convertFailed
+    ? `quote→order conversion failed: ${convertFailed}`
+    : carryFailed
+      ? `order deposit-pointer carry failed: ${carryFailed}`
+      : null;
   await logEvent(supabase, {
     shop_owner: shopOwner,
     action: source === "reconcile" ? "reconcile_deposit_paid" : "webhook_deposit_paid",
-    status: carryFailed ? "error" : "success",
+    status: failure ? "error" : "success",
     qb_invoice_id: qbInvoiceId,
     quote_id: quote.id,
-    ...(carryFailed ? { error_message: `order deposit-pointer carry failed: ${carryFailed}` } : {}),
-    response_body: { quote_id_human: quote.quote_id, order_id: orderId, collected, source, ...(carryFailed ? { carry_failed: true } : {}) },
+    ...(failure ? { error_message: failure } : {}),
+    response_body: { quote_id_human: quote.quote_id, order_id: orderId, collected, source, ...(carryFailed ? { carry_failed: true } : {}), ...(convertFailed ? { convert_failed: true } : {}) },
   });
 
   try {

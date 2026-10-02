@@ -2729,11 +2729,23 @@ async function handlePushTimeEntries(token: string, realmId: string, supabase: a
       const created = await qbCreate(token, realmId, "timeactivity", body);
       const qbId = created?.TimeActivity?.Id;
       if (!qbId) throw new Error("QB did not return a TimeActivity ID");
-      await supabase.from("time_entries").update({
+      // CHECKED: qb_time_activity_id is the ONLY dedup authority (the
+      // candidate query and the re-read above both key on it). A silently
+      // failed stamp meant the SAME hours were POSTed to QBO Payroll again
+      // on every subsequent push while this run still reported pushed++
+      // (audit 2026-10-02). Surface it as a per-entry failure — the QB-side
+      // TimeActivity id is in the message so the operator can dedup in QBO
+      // if the retry stamps a second one.
+      const { error: stampErr } = await supabase.from("time_entries").update({
         qb_time_activity_id: String(qbId),
         qb_employee_id: String(match.Id),
         qb_synced_at: new Date().toISOString(),
       }).eq("id", entry.id);
+      if (stampErr) {
+        throw new Error(
+          `QB TimeActivity ${qbId} created but the local sync stamp failed (${stampErr.message}) — the next push would DUPLICATE these hours; check QBO for TimeActivity ${qbId}`
+        );
+      }
       pushed++;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -3291,14 +3303,20 @@ async function handleRefreshInvoice(
     };
   }
 
-  // Patch quotes row with fresh QB-side totals + paid state.
+  // Patch quotes row with fresh QB-side totals + paid state. CHECKED: this
+  // patch carries MONEY state (paid:true/paid_date) and the handler reports
+  // `paid: patch?.paid` back to the UI — a swallowed failure said "paid"
+  // while the row stayed unpaid, and the conversion below then built the
+  // order from a stale re-read (audit 2026-10-02). supabase-js doesn't
+  // throw, so read the error and throw into the action's error path.
   const patch: any = buildQuotePatchFromFreshInvoice(freshInvoice, quote);
   if (patch) {
-    await adminClient
+    const { error: patchErr } = await adminClient
       .from("quotes")
       .update(patch)
       .eq("id", quote.id)
       .eq("shop_owner", quote.shop_owner);
+    if (patchErr) throw new Error(`refreshInvoice quote patch failed: ${patchErr.message}`);
   }
 
   // Convert quote → order if newly paid + not already converted.
