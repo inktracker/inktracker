@@ -276,42 +276,36 @@ export default function PaymentsSection() {
                         : "When this is on, quote and invoice emails link to InkTracker's payment page (Stripe checkout) instead of QuickBooks."}
                     </div>
                     {state.canToggle && (
-                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2 max-w-xl">
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2 max-w-md">
                         <label className="flex items-center gap-2 font-semibold text-slate-700">
                           <input type="checkbox" checked={feesOn} disabled={Boolean(state.surchargeBannedIn) && !state.customerFees?.enabled}
                             onChange={(e) => { setFeesOn(e.target.checked); setFeesAck(false); }} />
-                          Pass processing fees to customers where card rules allow
+                          Pass fees to customers
                         </label>
-                        <ul className="space-y-1">
-                          <li><span className="font-semibold text-slate-700">Credit cards:</span> the customer pays a {state.pricing?.card || "2.99%"} surcharge. Costs you nothing.</li>
-                          <li><span className="font-semibold text-slate-700">Debit and prepaid cards:</span> card rules don&rsquo;t allow a surcharge, so <span className="font-semibold text-slate-700">you still pay the {state.pricing?.card || "2.99%"} fee</span>, same as today.</li>
-                          <li><span className="font-semibold text-slate-700">Bank transfer:</span> the customer pays your bank fee below. Costs you nothing when it&rsquo;s 1%.</li>
-                        </ul>
-                        <div>
-                          Quotes and invoices show your price with a note about the fees, and the customer sees the exact amount before paying. QuickBooks records the invoice amount; what customers pay on top is booked on the payout deposit.
-                        </div>
-                        {state.surchargeBannedIn && (
-                          <div className="text-slate-700">Card surcharges aren&rsquo;t allowed in {state.surchargeBannedIn}, so this isn&rsquo;t available for your shop.</div>
-                        )}
-                        {feesOn && (
-                          <label className="flex items-center gap-2 flex-wrap" htmlFor="payments-bank-fee">
-                            <span className="text-slate-700">Bank transfer fee</span>
-                            <input id="payments-bank-fee" type="number" min="0" max="1" step="0.25" inputMode="decimal"
-                              className="w-20 text-sm border border-slate-200 rounded-lg px-2 py-1 bg-white"
-                              value={bankFeePct} onChange={(e) => setBankFeePct(e.target.value)} />
-                            <span>% (0 to 1; a bank payment costs you 1%)</span>
-                          </label>
+                        {state.surchargeBannedIn ? (
+                          <div className="pl-6">Card surcharges aren&rsquo;t allowed in {state.surchargeBannedIn}.</div>
+                        ) : (
+                          <div className="grid grid-cols-[auto,1fr] items-center gap-x-4 gap-y-1.5 pl-6">
+                            <span className="text-slate-700">Credit card</span>
+                            <span>{state.cardSurchargeReady === false ? "not available yet" : `customer pays +${state.pricing?.card || "2.99%"}`}</span>
+                            <span className="text-slate-700">Bank transfer</span>
+                            <span className="flex items-center gap-1">
+                              customer pays +
+                              <input id="payments-bank-fee" aria-label="Bank transfer fee percent" type="number" min="0" max="1" step="0.25" inputMode="decimal"
+                                disabled={!feesOn}
+                                className="w-14 text-xs border border-slate-200 rounded px-1.5 py-0.5 bg-white disabled:bg-slate-50"
+                                value={bankFeePct} onChange={(e) => setBankFeePct(e.target.value)} />
+                              %
+                            </span>
+                            <span className="text-slate-700">Debit card</span>
+                            <span>you pay the fee (card rules don&rsquo;t allow passing it on)</span>
+                          </div>
                         )}
                         {feesOn && !state.customerFees?.enabled && (
-                          <label className="flex items-start gap-2">
+                          <label className="flex items-start gap-2 pl-6">
                             <input type="checkbox" className="mt-0.5" checked={feesAck} onChange={(e) => setFeesAck(e.target.checked)} />
-                            <span>
-                              I&rsquo;ve told Stripe I&rsquo;ll be surcharging at least 30 days before turning this on (Visa requires it), and surcharging is allowed where my business operates. Colorado, Minnesota, New Jersey and New York have extra rules; check yours if you sell there.
-                            </span>
+                            <span>Surcharges are legal where I operate, and I told Stripe at least 30 days ago (Visa requires it).</span>
                           </label>
-                        )}
-                        {feesOn && state.cardSurchargeReady === false && (
-                          <div className="text-slate-500">The card fee isn't available yet. Until it is, only the bank fee applies.</div>
                         )}
                         <button className={ghost}
                           disabled={!!busy
