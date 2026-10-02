@@ -20,7 +20,7 @@ export default function Terms() {
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-6">
         <h1 className="text-3xl font-bold text-slate-900">Terms of Service</h1>
-        <p className="text-sm text-slate-500">Last updated: June 16, 2026</p>
+        <p className="text-sm text-slate-500">Last updated: October 2, 2026</p>
 
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">1. Acceptance of Terms</h2>
@@ -40,8 +40,10 @@ export default function Terms() {
             InkTracker is a print shop management platform that helps decorators manage quotes,
             orders, production, invoicing, and customer relationships. The platform integrates with
             QuickBooks (including QuickBooks Payments, used to collect your customers' payments,
-            where your shop is the merchant of record) and garment suppliers. We separately use
-            Stripe to bill your subscription to us. We may add, change, or remove features at any time.
+            where your shop is the merchant of record) and garment suppliers. Shops can instead
+            collect customer payments through InkTracker Payments, powered by Stripe (Section 5A).
+            We separately use Stripe to bill your subscription to us. We may add, change, or remove
+            features at any time.
           </p>
         </section>
 
@@ -82,11 +84,61 @@ export default function Terms() {
             You connect QuickBooks (including QuickBooks Payments) and garment-supplier accounts to
             InkTracker; by connecting them, you authorize InkTracker to access and act within the
             scope of those integrations on your behalf. We separately use Stripe to process your
-            subscription payments to us — you do not connect a Stripe account. Your use of any
+            subscription payments to us. You connect a Stripe account only if you choose InkTracker
+            Payments (Section 5A). Your use of any
             third-party service is also governed by its own terms. We are not responsible for
             third-party services, their availability, or the accuracy of data they return, and we
             are not liable for actions you direct us to take within them (for example, creating an
             invoice in your QuickBooks account).
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold text-slate-800">5A. InkTracker Payments (Optional)</h2>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">How it works.</span> If you turn on InkTracker Payments,
+            your customers pay your quotes and invoices by card or bank transfer through Stripe.
+            You connect or create your own Stripe account through Stripe Connect. You are the
+            merchant of record for every payment: the money is paid to your Stripe account, and you
+            are responsible for refunds, disputes, chargebacks, and your obligations to your
+            customers. Your use of Stripe is also governed by the Stripe Connected Account Agreement,
+            which you accept with Stripe when you set up your account. InkTracker Payments is
+            available on paid plans only.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Fees.</span> Each payment costs you an all-in rate of
+            2.99% for card payments and 1% for bank transfers, with no fixed fee. Stripe deducts its
+            own processing fee from each payment, and InkTracker collects an application fee equal to
+            the all-in rate minus Stripe&rsquo;s standard fee (never less than zero). Stripe&rsquo;s
+            additional fees, such as for international cards, currency conversion, disputes, and small
+            card payments where Stripe&rsquo;s fee is higher than the all-in rate, are charged to you
+            by Stripe. InkTracker&rsquo;s application fee may not be returned when you refund a
+            payment. We may change these rates with at least 30 days&rsquo; notice.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Passing fees to customers.</span> You may choose to
+            charge your customers a surcharge on credit card payments and a fee on bank transfers.
+            Card network rules and some state laws restrict surcharging. For example, debit and
+            prepaid cards cannot be surcharged, card surcharges are capped, notice to your payment
+            processor may be required before you start, and some states prohibit or limit
+            surcharges. InkTracker provides tools to apply and disclose these fees but does not give
+            legal advice. You are responsible for deciding whether surcharging is lawful for your
+            business and for complying with those rules.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Your books.</span> When QuickBooks is connected,
+            InkTracker records each payment against its QuickBooks invoice and records each Stripe
+            payout as a QuickBooks deposit, with fees booked to the accounts you choose. Sales tax
+            remains as calculated on your QuickBooks invoice. You are responsible for reviewing your
+            books; some transactions, such as refunds, disputes, and returned bank payments, must be
+            recorded by you, and we will notify you when that is needed.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Turning it off.</span> You can switch back to QuickBooks
+            payments at any time. If your InkTracker subscription lapses, new payments move back to
+            QuickBooks after a grace period, while payouts, refunds, and disputes for earlier payments
+            continue to be handled in your Stripe account. If you delete your InkTracker account, we
+            disconnect your Stripe account from InkTracker; your Stripe account itself remains yours.
           </p>
         </section>
 
