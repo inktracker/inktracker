@@ -19,4 +19,7 @@ describe("Stripe payments in the daily health check", () => {
   it("a refused surcharge shows up", () => {
     expect(stripePaymentsHealth({ ...ON, surchargeRefused: 1 }).detail).toBe("Stripe refused the credit card surcharge on 1 payment (24h)");
   });
+  it("fees on but the card form can't run: the surcharge is silently off — say so", () => {
+    expect(stripePaymentsHealth({ ...ON, feesWithoutCardForm: 1 }).detail).toBe("card surcharge OFF for 1 shop passing fees on: STRIPE_CONNECT_PUBLISHABLE_KEY missing or wrong mode");
+  });
 });

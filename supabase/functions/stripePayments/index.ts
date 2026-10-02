@@ -516,10 +516,11 @@ async function cardPay(body: Any, deps: Deps) {
     const e = err as Any;
     // Declined card (402): Stripe's message is written for the cardholder.
     if (e?.status === 402) return json({ rail: "processor", payable: true, declined: true, message: declineMessage(e) });
-    // Stripe won't take the surcharge on this card (its rules, or the
-    // preview isn't on for this account): charge the invoice without it —
-    // never more than the customer agreed to — and tell us.
-    if (price.surchargeCents > 0 && e?.status === 400 && /surcharge/i.test(String(e?.message))) {
+    // Stripe won't take the surcharge on this card (its rules, the preview
+    // isn't on for this account, or the preview API version was retired):
+    // charge the invoice without it — never more than the customer agreed
+    // to — and tell the shop. A retired version must not stop card payments.
+    if (price.surchargeCents > 0 && e?.status === 400 && /surcharge|api version|stripe-version/i.test(String(e?.message))) {
       console.error(`[stripePayments] surcharge refused for ${account.merchant_id}; charging without it: ${String(e?.message).slice(0, 300)}`);
       // Never silent: if Stripe stops taking surcharges, every credit card
       // would quietly go through at the plain price. The shop hears about it
