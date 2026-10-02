@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { decideIdempotencyAction, claimSupplierOrder, finishSupplierOrder } from "../supplierIdempotency";
+import { decideIdempotencyAction, claimSupplierOrder, finishSupplierOrder, STALE_IN_FLIGHT_MS } from "../supplierIdempotency";
 
 describe("decideIdempotencyAction", () => {
   it("replays a succeeded prior attempt (never re-places)", () => {
@@ -15,6 +15,46 @@ describe("decideIdempotencyAction", () => {
     expect(decideIdempotencyAction(null)).toBe("reclaim");
     expect(decideIdempotencyAction({})).toBe("reclaim");
     expect(decideIdempotencyAction({ status: "weird" })).toBe("reclaim");
+  });
+
+  // M7 (audit 2026-10-02): a crash between claim and finish left the row
+  // in_flight FOREVER — every retry 409'd and the PO could never be
+  // re-submitted. A stale in_flight (older than the TTL) is a dead edge
+  // invocation, not a live one, and must become reclaimable.
+  it("a STALE in_flight (past the TTL) is reclaim_stale — no permanent lockout", () => {
+    const now = Date.parse("2026-10-02T12:00:00Z");
+    const dead = new Date(now - STALE_IN_FLIGHT_MS - 60_000).toISOString();
+    expect(decideIdempotencyAction({ status: "in_flight", updated_at: dead }, { nowMs: now })).toBe("reclaim_stale");
+  });
+  it("a FRESH in_flight stays in_flight (live request is never stolen)", () => {
+    const now = Date.parse("2026-10-02T12:00:00Z");
+    const fresh = new Date(now - 30_000).toISOString();
+    expect(decideIdempotencyAction({ status: "in_flight", updated_at: fresh }, { nowMs: now })).toBe("in_flight");
+  });
+  it("in_flight with NO updated_at stays in_flight (can't prove it's dead → conservative)", () => {
+    expect(decideIdempotencyAction({ status: "in_flight" })).toBe("in_flight");
+    expect(decideIdempotencyAction({ status: "in_flight", updated_at: "garbage" })).toBe("in_flight");
+  });
+  it("succeeded ALWAYS replays, no matter how old (a placed order never re-places)", () => {
+    const ancient = "2020-01-01T00:00:00Z";
+    expect(decideIdempotencyAction({ status: "succeeded", updated_at: ancient })).toBe("replay");
+  });
+});
+
+describe("finishSupplierOrder — checked + retried, never silent (M7)", () => {
+  it("returns true when the outcome write lands", async () => {
+    const admin = { from: () => ({ update: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }) }) };
+    await expect(finishSupplierOrder(admin, { shopOwner: "s", key: "k", success: true, supplierOrderId: "SO-1" })).resolves.toBe(true);
+  });
+  it("retries a failing write and returns false after exhausting attempts (CRITICAL logged)", async () => {
+    let calls = 0;
+    const admin = { from: () => ({ update: () => ({ eq: () => ({ eq: async () => { calls++; return { error: { message: "db down" } }; } }) }) }) };
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ok = await finishSupplierOrder(admin, { shopOwner: "s", key: "k", success: true, supplierOrderId: "SO-9" });
+    expect(ok).toBe(false);
+    expect(calls).toBe(3);
+    expect(err.mock.calls.some((c) => String(c[0]).includes("CRITICAL") && String(c[0]).includes("SO-9"))).toBe(true);
+    err.mockRestore();
   });
 });
 
@@ -93,20 +133,24 @@ describe("claimSupplierOrder", () => {
 });
 
 describe("finishSupplierOrder", () => {
-  it("never throws even if the bookkeeping write fails", async () => {
+  it("never throws even if the bookkeeping write fails — but reports false now (M7)", async () => {
     const admin = {
       from() {
         const p = {
           update: () => p,
           eq: () => p,
-          // whole chain is awaited; awaiting rejects → helper swallows it
+          // whole chain is awaited; awaiting rejects → helper retries, then
+          // logs CRITICAL and returns false (old contract swallowed to
+          // undefined — the lockout bug).
           then: (res, rej) => Promise.reject(new Error("db down")).then(res, rej),
         };
         return p;
       },
     };
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(
       finishSupplierOrder(admin, { shopOwner: "a@b.co", key: "k1", success: true }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
+    err.mockRestore();
   });
 });

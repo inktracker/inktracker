@@ -40,6 +40,15 @@ import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { claimSupplierOrder, finishSupplierOrder } from "../_shared/supplierIdempotency.js";
 
 Deno.serve(async (req) => {
+  // M7 context for the top-level catch: when WE own the idempotency claim and
+  // an error is thrown BEFORE the supplier call starts, the claim must be
+  // released as 'failed' (the old catch skipped recordOutcome entirely, so a
+  // pre-placement throw locked the PO in_flight; audit 2026-10-02). An error
+  // AFTER the supplier call started is ambiguous — the order may have been
+  // placed — so the claim is left in_flight for the stale-TTL reclaim instead
+  // of allowing an instant (possibly duplicate) retry.
+  let idemCtx: { admin: any; shopOwner: string; key: string } | null = null;
+  let supplierCallStarted = false;
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
@@ -129,6 +138,7 @@ Deno.serve(async (req) => {
       let claim;
       try {
         claim = await claimSupplierOrder(admin, { shopOwner, key: idempotencyKey, supplier: "AS Colour" });
+        idemCtx = { admin, shopOwner, key: idempotencyKey };
       } catch (e) {
         console.error("[acPlaceOrder] idempotency claim failed:", (e as Error).message);
         return Response.json(
@@ -155,6 +165,7 @@ Deno.serve(async (req) => {
     // non-PII summary for debugging supplier rejections.
     console.error("[acPlaceOrder] POST /v1/orders:", Array.isArray((orderPayload as any)?.lines) ? (orderPayload as any).lines.length : 0, "line(s)");
 
+    supplierCallStarted = true;
     const res = await fetch(`${AC_BASE}/orders`, {
       method: "POST",
       headers: {
@@ -184,6 +195,10 @@ Deno.serve(async (req) => {
     return Response.json({ success: true, order: data }, { headers: CORS });
   } catch (err) {
     console.error("acPlaceOrder error:", err);
+    if (idemCtx && !supplierCallStarted) {
+      // Pre-placement failure — release the claim so the PO can be retried.
+      await finishSupplierOrder(idemCtx.admin, { shopOwner: idemCtx.shopOwner, key: idemCtx.key, success: false, response: { error: (err as Error).message } });
+    }
     return Response.json({ error: (err as Error).message }, { status: 500, headers: CORS });
   }
 });

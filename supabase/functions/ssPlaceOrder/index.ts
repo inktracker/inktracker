@@ -22,6 +22,15 @@ function ssHeaders(auth: string) {
 }
 
 Deno.serve(async (req) => {
+  // M7 context for the top-level catch: when WE own the idempotency claim and
+  // an error is thrown BEFORE the supplier call starts, the claim must be
+  // released as 'failed' (the old catch skipped recordOutcome entirely, so a
+  // pre-placement throw locked the PO in_flight; audit 2026-10-02). An error
+  // AFTER the supplier call started is ambiguous — the order may have been
+  // placed — so the claim is left in_flight for the stale-TTL reclaim instead
+  // of allowing an instant (possibly duplicate) retry.
+  let idemCtx: { admin: any; shopOwner: string; key: string } | null = null;
+  let supplierCallStarted = false;
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
@@ -104,6 +113,7 @@ Deno.serve(async (req) => {
       let claim;
       try {
         claim = await claimSupplierOrder(admin, { shopOwner, key: idemKey, supplier: "S&S Activewear" });
+        idemCtx = { admin, shopOwner, key: idemKey };
       } catch (e) {
         console.error("[ssPlaceOrder] idempotency claim failed:", e instanceof Error ? e.message : String(e));
         return Response.json({ error: "Couldn't verify this order isn't a duplicate. Please try again." }, { status: 503, headers: CORS });
@@ -254,6 +264,7 @@ Deno.serve(async (req) => {
     // address, phone, email) that would sit in plaintext in function logs.
     console.log("S&S order: placing", Array.isArray(ssOrder?.Lines) ? ssOrder.Lines.length : 0, "line(s), PO", ssOrder?.PONumber ?? "(none)");
 
+    supplierCallStarted = true;
     const res = await fetch(`${SS_BASE}/orders/`, {
       method: "POST",
       headers: ssHeaders(auth),
@@ -282,6 +293,10 @@ Deno.serve(async (req) => {
     return Response.json({ success: true, order: responseData }, { headers: CORS });
   } catch (err) {
     console.error("ssPlaceOrder error:", err);
+    if (idemCtx && !supplierCallStarted) {
+      // Pre-placement failure — release the claim so the PO can be retried.
+      await finishSupplierOrder(idemCtx.admin, { shopOwner: idemCtx.shopOwner, key: idemCtx.key, success: false, response: { error: err instanceof Error ? err.message : String(err) } });
+    }
     return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500, headers: CORS });
   }
 });
