@@ -16,17 +16,18 @@ import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SITE } from "./content/comparisons.mjs";
-import { esc, sliderRow, chartModel, chartCell, CALC_CSS, QTY_TIERS, stitchModel, stitchCell, STITCH_QTY_TIERS, STITCH_TIERS, stalePriceModel } from "./content/calc.mjs";
+import { esc, sliderRow, chartModel, chartCell, CALC_CSS, QTY_TIERS, stitchModel, stitchCell, STITCH_QTY_TIERS, STITCH_TIERS, stalePriceModel, marginModel } from "./content/calc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dirname, "..", "public");
 // Sitemap <lastmod> — honest "last reviewed" marker, synced with the other
 // content generators. Bump on a real content update.
-const CONTENT_LASTMOD = "2026-09-11";
+const CONTENT_LASTMOD = "2026-09-29";
 
 const m2 = (n) => "$" + (Math.round(n * 100) / 100).toFixed(2);
 const m0 = (n) => "$" + Math.round(n).toLocaleString("en-US");
 const ct = (n) => Math.round(n).toLocaleString("en-US");
+const p1 = (n) => (Math.round(n * 10) / 10).toFixed(1) + "%";
 const ldJson = (o) => `<script type="application/ld+json">\n${JSON.stringify(o, null, 2)}\n</script>`;
 
 // Trial links carry per-surface ref params so signups from the hub vs the
@@ -154,7 +155,16 @@ const TOOLS = Object.freeze([
     metaTitle: "Stale Blank Price Calculator — What Old Garment Costs Give Away",
     metaDesc: "Free calculator for print shops: enter today's blank cost, how old your price chart is, and your order size to see how much quoting from outdated garment costs gives away per order and per year.",
   },
-  // Future: setup-fee calculator, job margin calculator, etc.
+  {
+    slug: "job-margin-calculator",
+    tag: "Pricing",
+    title: "Job Margin Calculator",
+    hubDesc: "You already priced the job. Enter what you charged and what it actually cost to see your real margin, your markup, and the price you'd need to hit your target. Free, no signup.",
+    render: renderMargin,
+    metaTitle: "Free Job Margin Calculator — Check Your Real Profit Per Piece",
+    metaDesc: "Free profit margin calculator for screen printing and embroidery shops: enter what you charged and what the job cost — blanks, print or thread, labor, setup — to see your real margin, markup, and the price you'd need to hit your target margin.",
+  },
+  // Future: setup-fee calculator, etc.
 ]);
 
 // ── The calculator tool (Part A chart + Part B full-price breakdown) ─────────
@@ -433,6 +443,122 @@ update();
   </div>
 
   <p>Related: <a href="${SITE.baseUrl}/features/live-supplier-pricing">how live supplier pricing works in InkTracker</a>, <a href="${SITE.baseUrl}/blog/how-to-price-a-screen-printing-job">how to price a screen printing job</a>, and the <a href="${SITE.baseUrl}/tools">free tools hub</a>.</p>
+</main>
+${siteFooter}
+${script}`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${esc(tool.metaTitle)}</title>
+  <meta name="description" content="${esc(tool.metaDesc)}" />
+  <link rel="canonical" href="${esc(canonical)}" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${esc(tool.metaTitle)}" />
+  <meta property="og:description" content="${esc(tool.metaDesc)}" />
+  <meta property="og:url" content="${esc(canonical)}" />
+  <meta property="og:image" content="${SITE.logo}" />
+  <meta name="twitter:card" content="summary" />
+  ${FONTS}
+  <style>${CSS}</style>
+  ${ldJson(webApp)}
+  ${ldJson(breadcrumb)}
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+
+// ── The job margin calculator (checks a job you already priced) ─────────────
+function renderMargin(tool) {
+  const canonical = `${SITE.baseUrl}/tools/${tool.slug}`;
+  const TRIAL_MARGIN = `${SITE.baseUrl}/?ref=margin-calc`;
+
+  // Static-first defaults: $14/piece charged, 72-piece run, $7.50/piece all-in
+  // cost, $75 one-time (3 screens), 40% target — a realistic close-but-under
+  // example so the "price to hit target" line has something to say.
+  const S = { price: 14, qty: 72, costPerPiece: 7.5, oneTime: 75, targetMargin: 40 };
+  const M0 = marginModel(S);
+
+  const controls =
+    sliderRow("price", "Price charged", "what you're billing, per piece", 'min="1" max="60" step="0.25" value="14"', m2(S.price)) +
+    sliderRow("qty", "Quantity", "pieces in the run", 'min="6" max="1000" step="1" value="72"', ct(S.qty)) +
+    sliderRow("costPerPiece", "Cost per piece", "blank, print/thread, and labor — all in", 'min="0" max="40" step="0.25" value="7.5"', m2(S.costPerPiece)) +
+    sliderRow("oneTime", "One-time costs", "setup fees, screens, or digitizing for this job", 'min="0" max="500" step="5" value="75"', m2(S.oneTime)) +
+    sliderRow("targetMargin", "Target margin", "the margin you're aiming to keep", 'min="10" max="80" step="1" value="40"', S.targetMargin + "%");
+
+  const stats = `<div class="calc-out">
+    <div class="calc-stat"><div class="k">Margin</div><div class="v" data-out="marginPct">${p1(M0.marginPct)}</div></div>
+    <div class="calc-stat"><div class="k">Markup</div><div class="v" data-out="markupPct">${p1(M0.markupPct)}</div></div>
+    <div class="calc-stat"><div class="k">Profit, this job</div><div class="v" data-out="profit">${m2(M0.profit)}</div></div>
+  </div>
+  <p class="calc-note" data-out="story">That's <b data-out="perProfit">${m2(M0.perPieceProfit)}</b> profit per piece, on a cost of <b data-out="perCost">${m2(M0.perPieceCost)}</b> per piece all in. To hit a <span data-out="tmPct">${S.targetMargin}</span>% margin at that cost, you'd need to charge <b data-out="targetPrice">${m2(M0.targetPrice)}</b> per piece instead of <b data-out="curPrice">${m2(S.price)}</b>.</p>`;
+
+  const script = `<script>(function(){
+var root=document.getElementById("calc-margin");if(!root)return;
+${marginModel.toString()}
+function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}
+function p1(n){return (Math.round(n*10)/10).toFixed(1)+"%";}
+function ct(n){return Math.round(n).toLocaleString("en-US");}
+var S={price:14,qty:72,costPerPiece:7.5,oneTime:75,targetMargin:40};
+function put(k,v){var el=root.querySelector('[data-out="'+k+'"]');if(el)el.textContent=v;}
+function update(){var M=marginModel(S);
+put("marginPct",p1(M.marginPct));put("markupPct",p1(M.markupPct));put("profit",m2(M.profit));
+put("perProfit",m2(M.perPieceProfit));put("perCost",m2(M.perPieceCost));
+put("tmPct",Math.round(S.targetMargin));put("targetPrice",m2(M.targetPrice));put("curPrice",m2(S.price));}
+root.querySelectorAll("input[data-in]").forEach(function(inp){
+inp.addEventListener("input",function(){
+var k=inp.getAttribute("data-in");var v=parseFloat(inp.value);S[k]=v;
+var out=root.querySelector('[data-val="'+k+'"]');
+if(out){out.textContent=(k==="price"||k==="costPerPiece"||k==="oneTime")?m2(v):k==="targetMargin"?(Math.round(v)+"%"):ct(v);}
+update();});});
+update();
+})();</script>`;
+
+  const webApp = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: tool.title,
+    url: canonical,
+    description: tool.metaDesc,
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Web",
+    inLanguage: "en-US",
+    isPartOf: { "@type": "WebSite", name: SITE.name, url: SITE.baseUrl },
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    publisher: { "@type": "Organization", name: SITE.name, url: SITE.baseUrl, logo: { "@type": "ImageObject", url: SITE.logo } },
+  };
+  const breadcrumb = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "InkTracker", item: `${SITE.baseUrl}/` },
+      { "@type": "ListItem", position: 2, name: "Free Tools", item: `${SITE.baseUrl}/tools` },
+      { "@type": "ListItem", position: 3, name: tool.title, item: canonical },
+    ],
+  };
+
+  const body = `${siteHeader}
+<main class="wrap">
+  <nav class="crumbs"><a href="${SITE.baseUrl}/">Home</a> › <a href="${SITE.baseUrl}/tools">Free Tools</a> › Job Margin Calculator</nav>
+  <h1>What's your real margin on this job?</h1>
+  <p class="lede">You already picked the price — gut feeling, a competitor's invoice, or what you charged last time. Enter what you're billing and what the job actually costs, all in, and see the margin you're actually running. No signup.</p>
+
+  <h2>Your numbers</h2>
+  <div class="calc" id="calc-margin">${controls}${stats}</div>
+  <p class="calc-note">Margin is profit divided by what the customer pays; markup is profit divided by what the job cost you — the same number reads very differently either way, which is why "50% margin" and "50% markup" aren't the same price. One-time costs (setup, screens, digitizing) get spread across the whole run, so they matter a lot more on a short run than a long one.</p>
+
+  <div class="soft-cta">
+    <h3>See it while you're quoting, not after</h3>
+    <p>InkTracker puts your cost and margin right on the quote line — including wholesale, broker, and subcontracted work — so a money-losing job never sneaks through. Start a 14-day free trial.</p>
+    <a class="cta" href="${TRIAL_MARGIN}">Start your free trial</a>
+  </div>
+
+  <p>More on the numbers: <a href="${SITE.baseUrl}/features/know-your-margin">how InkTracker shows margin on every quote</a>, <a href="${SITE.baseUrl}/blog/how-to-price-a-screen-printing-job">how to price a screen printing job</a>, and <a href="${SITE.baseUrl}/blog/build-a-screen-printing-price-chart">how to build a price chart</a>. More free tools on the <a href="${SITE.baseUrl}/tools">tools hub</a>.</p>
 </main>
 ${siteFooter}
 ${script}`;
