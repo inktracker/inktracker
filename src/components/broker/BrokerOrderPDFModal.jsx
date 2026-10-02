@@ -3,6 +3,7 @@ import { fmtDate, fmtMoney, getQty, activeSizeNames, calcLinkedLinePrice, buildL
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { resolveGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { isFlatDiscount } from "@/lib/pricing/discountType";
+import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import { StatusChip } from "../shared/chips";
@@ -139,6 +140,15 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
                   <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
                 </div>
               )}
+              {/* Setup + one-off fees — itemized so the breakdown foots to
+                  Total, matching OrderLineItems / the quote + invoice PDFs
+                  (this was one of the two un-fixed copies; audit 2026-10-02). */}
+              {(parseFloat(order.setup_total) || 0) > 0 && (
+                <div className="flex justify-between text-sm text-slate-500"><span>Setup &amp; Screen Fees</span><span>{fmtMoney(Number(order.setup_total))}</span></div>
+              )}
+              {normalizeAdditionalCharges(order.additional_charges).map((c, i) => (
+                <div key={i} className="flex justify-between text-sm text-slate-500"><span>{c.label || "Additional fee"}</span><span>{fmtMoney(c.amount)}</span></div>
+              ))}
               <div className="flex justify-between text-sm text-slate-500"><span>Tax ({order.tax_rate}%)</span><span>{fmtMoney(totals.tax)}</span></div>
               <div className="flex justify-between items-baseline border-t border-slate-200 pt-2">
                 <span className="text-base font-bold text-slate-900">Total</span>
