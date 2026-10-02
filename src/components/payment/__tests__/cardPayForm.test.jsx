@@ -73,4 +73,15 @@ describe("CardPayForm", { timeout: 20000 }, () => {
     expect(onCheckout).toHaveBeenCalled();
     expect(screen.queryByText("Continue")).toBeNull();
   });
+  it("card details expired while the page sat open: back to card entry", async () => {
+    base44.functions.invoke.mockImplementation((_fn, body) => Promise.resolve({ data: body.action === "cardQuote"
+      ? { payable: true, invoiceCents: 56872, surchargeCents: 1700, totalCents: 58572, funding: "credit" }
+      : { payable: false, reason: "card_unreadable", message: "That card couldn't be read. Please enter it again." } }));
+    render(<CardPayForm {...props} onPaid={() => {}} />);
+    await waitFor(() => expect(screen.getByText("Continue").closest("button").disabled).toBe(false));
+    fireEvent.click(screen.getByText("Continue"));
+    fireEvent.click(await screen.findByText("Pay $585.72"));
+    await screen.findByText("That card couldn't be read. Please enter it again.");
+    expect(screen.queryByText("Pay $585.72")).toBeNull();
+  });
 });

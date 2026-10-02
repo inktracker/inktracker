@@ -770,3 +770,13 @@ Deno.test("just paid: a second payment for the same document is refused for 10 m
   assertEquals(card2.reason, "in_flight");
   getImpl = null; postImpl = null;
 });
+
+Deno.test("card: a retired preview API version falls back to a plain charge, never a failed payment", async () => {
+  let n = 0;
+  cardSetup("credit", () => (n++ === 0
+    ? Promise.reject(Object.assign(new Error("Stripe POST /v1/payment_intents → 400: Invalid Stripe API version: 2026-03-25.preview"), { status: 400 }))
+    : Promise.resolve({ id: "pi_3", status: "succeeded", amount: 56872 })));
+  const j = await (await call(withQuote(FEES_ON, { total: 568.72 }), "", { action: "cardPay", ...cardReq({ expectTotalCents: 58572 }) }, PK_ENV)).json();
+  assertEquals([j.state, j.amountCents], ["paid", 56872]);
+  getImpl = null; postImpl = null;
+});

@@ -138,6 +138,9 @@ export default function CardPayForm({ docType, id, token, cardForm, invoiceCents
         return;
       } else {
         setMessage(d.message || "Card payment isn't available right now. Please try again in a moment.");
+        // The card details expired (the page sat open for hours): enter
+        // them again rather than pressing a Pay button that can't work.
+        if (d.reason === "card_unreadable") { setStep("enter"); setQuote(null); }
       }
     } catch {
       setMessage("We couldn't confirm the payment. Please don't pay again yet: refresh this page in a minute to check.");
