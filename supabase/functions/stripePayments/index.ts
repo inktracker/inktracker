@@ -50,6 +50,7 @@ import { accountStatusFields, readStripeList } from "../_shared/stripeWebhookAda
 import { choosePayTarget, NOT_PAYABLE } from "../_shared/payinPlan.js";
 import { normalizePayMethod, customerFeeSettings, customerFeeCents, customerFeeNote, normalizeBankFeePct, cardFormKeyOk, effectiveCustomerFees, surchargeBannedState, acceptedMethods } from "../_shared/paymentsPricing.js";
 import { getShopQb, qbListAccounts, qbGetInvoice, type QbConn } from "../_shared/qbShopClient.ts";
+import { insertShopNotification } from "../_shared/notifications.js";
 import { stripeApi, StripeError, STRIPE_SURCHARGE_API_VERSION, type StripeApi } from "../_shared/stripeApi.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -100,12 +101,16 @@ async function loadAccount(admin: Any, shopOwner: string, live: boolean) {
     .maybeSingle();
   if (error) throw new Error(`Couldn't read payment settings: ${error.message}`);
   if (data && typeof data.stripe_livemode === "boolean" && data.stripe_livemode !== live) {
-    return { ...data, merchant_id: null, merchant_status: null, merchant_application_status: null, enabled: false, modeMismatch: true };
+    return { ...data, merchant_id: null, merchant_status: null, merchant_application_status: null, enabled: false, customer_fees_enabled: false, modeMismatch: true };
   }
   return data ?? null;
 }
 
 const OAUTH_STATE_TTL_MS = 30 * 60 * 1000;
+
+// Reset whenever a shop's Stripe account changes (new account, reconnect, or
+// test → live): passing fees on must be confirmed again for the new account.
+const FEES_OFF = { customer_fees_enabled: false, customer_fees_ack_at: null };
 
 // Customer-facing reasons, in plain words. Never a raw error.
 const CUSTOMER_REASON: Record<string, string> = {
@@ -488,6 +493,17 @@ async function cardPay(body: Any, deps: Deps) {
     // never more than the customer agreed to — and tell us.
     if (price.surchargeCents > 0 && e?.status === 400 && /surcharge/i.test(String(e?.message))) {
       console.error(`[stripePayments] surcharge refused for ${account.merchant_id}; charging without it: ${String(e?.message).slice(0, 300)}`);
+      // Never silent: if Stripe stops taking surcharges, every credit card
+      // would quietly go through at the plain price. The shop hears about it
+      // (and the 6am health check counts these notices).
+      await insertShopNotification(deps.admin, {
+        shopOwner: doc.shop_owner,
+        eventType: "surcharge_refused",
+        severity: "warning",
+        title: `Credit card surcharge not applied: ${docType === "invoice" ? doc.invoice_id : doc.quote_id}`,
+        body: `Stripe didn't accept the $${(price.surchargeCents / 100).toFixed(2)} surcharge on this card, so your customer was charged the plain amount and you paid the card fee. If this keeps happening, contact InkTracker support.`,
+        metadata: { processor: "stripe", merchant_id: account.merchant_id, reason: String(e?.message ?? "").slice(0, 300) },
+      });
       built = build(0);
       try {
         pi = await deps.stripe.post("/v1/payment_intents", built.params, { account: account.merchant_id, idempotencyKey: built.idempotencyKey });
@@ -655,7 +671,10 @@ export async function handle(req: Request, deps: Deps) {
       if (!accountId) throw new Error("Stripe returned no account id");
       const patch = {
         shop_owner: shopOwner,
-        ...(startOver ? { enabled: false, enabled_at: null, onboarded_at: null } : {}),
+        // A new Stripe account (or test → live) starts with fees OFF: card
+        // surcharging needs the owner's confirmation (incl. notice to Stripe)
+        // for THIS account, not one given for the sandbox.
+        ...(startOver ? { enabled: false, enabled_at: null, onboarded_at: null, ...FEES_OFF } : {}),
         merchant_id: accountId,
         merchant_application_id: null,
         stripe_livemode: live,
@@ -727,6 +746,7 @@ export async function handle(req: Request, deps: Deps) {
       stripe_livemode: live,
       enabled: false,
       enabled_at: null,
+      ...FEES_OFF,
       ...fields,
       ...(fields.merchant_status === "active" ? { onboarded_at: new Date().toISOString() } : {}),
       updated_at: new Date().toISOString(),

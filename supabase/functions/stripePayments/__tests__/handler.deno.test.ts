@@ -699,3 +699,31 @@ Deno.test("accepted methods: owner chooses; at least one stays on; customers can
   const cq = await (await call(fake, "", { action: "cardQuote", id: QUOTE_ID, token: "tok", confirmationToken: "ctoken_1" })).json();
   assertEquals(cq.reason, "card_not_accepted");
 });
+
+Deno.test("a new Stripe connection (or test → live) turns passing fees OFF until the owner confirms again", async () => {
+  // Fees were on for the sandbox account; the shop now connects its live one.
+  const fake = db({ merchant_id: "acct_test", merchant_status: "active", stripe_livemode: false, enabled: true, customer_fees_enabled: true, customer_fees_ack_at: "2026-10-01T00:00:00Z", oauth_state: "s9", oauth_state_at: new Date().toISOString() });
+  const env = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_live", STRIPE_CONNECT_PUBLISHABLE_KEY: "pk_live_x" };
+  // Under the live key the sandbox account reads as not set up, fees off.
+  const before = await (await call(fake, "own-auth", { action: "status" }, env)).json();
+  assertEquals(before.customerFees.enabled, false);
+  await call(fake, "own-auth", { action: "finishConnect", code: "ac_good", state: "s9" }, env);
+  const row = fake.tables.processor_accounts[0];
+  assertEquals([row.merchant_id, row.stripe_livemode, row.customer_fees_enabled, row.customer_fees_ack_at], ["acct_existing", true, false, null]);
+});
+
+Deno.test("card: a refused surcharge is never silent — the shop gets a notice", async () => {
+  cardSetup("credit", () => (postN++ === 0
+    ? Promise.reject(Object.assign(new Error("Stripe POST /v1/payment_intents → 400: surcharge is not available"), { status: 400 }))
+    : Promise.resolve({ id: "pi_2", status: "succeeded", amount: 56872 })));
+  postN = 0;
+  const fake = withQuote(FEES_ON, { total: 568.72 });
+  fake.tables.notifications = [];
+  await call(fake, "", { action: "cardPay", ...cardReq({ expectTotalCents: 58572 }) }, PK_ENV);
+  const n = (fake.tables.notifications as Any[]).find((x) => x.event_type === "surcharge_refused");
+  assert(n, "notice sent");
+  assertEquals(n.shop_owner, OWNER);
+  assert(String(n.body).includes("$17.00"));
+  getImpl = null; postImpl = null;
+});
+let postN = 0;
