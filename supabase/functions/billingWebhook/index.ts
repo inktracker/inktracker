@@ -45,17 +45,28 @@ const PRICE_TO_TIER: Record<string, string> = {
 // lives in profile_secrets (moved off `profiles` in the secrets migration),
 // so we must look it up there — NOT with `.from("profiles").eq("stripe_customer_id")`,
 // which silently matched zero rows and left every subscriber stuck on "trial".
-async function profileIdForCustomer(supabase: any, customerId: string): Promise<string | null> {
+// THROWS on lookup failure or an unlinked customer. These lookups gate ACCESS
+// state (tier/status/grace clock); the old null-return let the caller log and
+// fall through to a 200, committing the webhook claim — Stripe never retried,
+// and a paying customer stayed on "trial" forever (audit 2026-10-02). A throw
+// releases the claim (two-phase reservation, see the handler's catch) so
+// Stripe's at-least-once retry re-runs the event — which also heals the race
+// where checkout.session.completed arrives before billing/index.ts persisted
+// stripe_customer_id. A permanently unlinked customer surfaces as webhook
+// failures in the Stripe dashboard instead of a silent drop.
+async function profileIdForCustomer(supabase: any, customerId: string): Promise<string> {
   const { data, error } = await supabase
     .from("profile_secrets")
     .select("profile_id")
     .eq("stripe_customer_id", customerId)
     .maybeSingle();
   if (error) {
-    console.error(`[billingWebhook] profile_secrets lookup failed for ${customerId}:`, error.message);
-    return null;
+    throw new Error(`profile_secrets lookup failed for ${customerId}: ${error.message}`);
   }
-  return data?.profile_id ?? null;
+  if (!data?.profile_id) {
+    throw new Error(`no profile linked to stripe_customer_id ${customerId} — releasing claim for retry`);
+  }
+  return data.profile_id;
 }
 
 // BILL-03: mark a subscription past_due and START its grace clock — but only on
@@ -64,41 +75,39 @@ async function profileIdForCustomer(supabase: any, customerId: string): Promise<
 // so it never elapsed. COALESCE keeps the first stamp.
 async function markPastDue(customerId: string) {
   const supabase = adminClient();
-  const profileId = await profileIdForCustomer(supabase, customerId);
-  if (!profileId) {
-    console.error(`[billingWebhook] no profile linked to ${customerId} — cannot mark past_due`);
-    return;
-  }
-  const { data: prof } = await supabase
+  const profileId = await profileIdForCustomer(supabase, customerId); // throws when unlinked
+  // The COALESCE read must not fail silently: a failed read looked like "no
+  // stamp yet" and re-stamped past_due_since on every dunning retry — exactly
+  // the grace-clock reset this function exists to prevent. Throw → claim
+  // released → Stripe retries.
+  const { data: prof, error: readErr } = await supabase
     .from("profiles").select("past_due_since").eq("id", profileId).maybeSingle();
+  if (readErr) throw new Error(`markPastDue read failed: ${readErr.message}`);
   const updates: Record<string, any> = { subscription_status: "past_due" };
   if (!prof?.past_due_since) updates.past_due_since = new Date().toISOString();
   const { error } = await supabase.from("profiles").update(updates).eq("id", profileId);
-  if (error) console.error("[billingWebhook] markPastDue update failed:", error.message);
+  if (error) throw new Error(`markPastDue update failed: ${error.message}`);
 }
 
 // Apply an update to the right tables: subscription_tier/status/trial_ends_at
 // → profiles; stripe_subscription_id/stripe_customer_id → profile_secrets.
 async function updateProfileByCustomer(customerId: string, updates: Record<string, any>) {
   const supabase = adminClient();
-  const profileId = await profileIdForCustomer(supabase, customerId);
-  if (!profileId) {
-    console.error(`[billingWebhook] no profile linked to stripe_customer_id ${customerId} — cannot apply ${JSON.stringify(updates)}`);
-    return;
-  }
+  const profileId = await profileIdForCustomer(supabase, customerId); // throws when unlinked
 
   const { profileUpdates, secretUpdates } = partitionSecretUpdates(updates);
 
+  // ACCESS-GATE writes (tier/status/trial/grace + sub pointer): throw on
+  // failure so the webhook claim is released and Stripe retries. The old
+  // console-swallow returned 200 with nothing written — the customer was
+  // charged while the app never unlocked (audit 2026-10-02). Display-only
+  // paths (captureCancellationState, win-back/trial emails) stay best-effort.
   if (Object.keys(profileUpdates).length > 0) {
     const { error } = await supabase.from("profiles").update(profileUpdates).eq("id", profileId);
-    if (error) console.error("[billingWebhook] profiles update failed:", error.message);
+    if (error) throw new Error(`profiles update failed: ${error.message}`);
   }
   if (Object.keys(secretUpdates).length > 0) {
-    try {
-      await updateProfileSecrets(supabase, profileId, secretUpdates);
-    } catch (e: any) {
-      console.error("[billingWebhook] profile_secrets update failed:", e?.message || e);
-    }
+    await updateProfileSecrets(supabase, profileId, secretUpdates); // throws on failure
   }
 }
 
