@@ -148,7 +148,7 @@ async function loadPublicDoc(admin: Any, body: Any) {
   if (!UUID_RE.test(id)) return null;
   const table = docType === "invoice" ? "invoices" : "quotes";
   const cols = docType === "invoice"
-    ? "id, invoice_id, shop_owner, status, total, qb_total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, public_token, customer_name, paid, qb_tax_hold"
+    ? "id, invoice_id, shop_owner, status, total, qb_total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, public_token, customer_name, paid, qb_tax_hold, qb_payment_link"
     // company + job_title: the test-mode TEST/DEMO check must see the same
     // fields qbSync sees, or the two disagree on which way the customer pays.
     : "id, quote_id, shop_owner, status, total, qb_total, tax, qb_invoice_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id, broker_email, public_token, customer_name, customer_email, company, job_title, paid, qb_tax_hold";
@@ -188,7 +188,16 @@ async function payRail(body: Any, deps: Deps) {
     keyMode: stripeKeyMode(deps.env("STRIPE_CONNECT_SECRET_KEY")) ?? (deps.stripe.live ? "live" : "test"),
     doc,
   });
-  if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
+  if (rail !== RAIL.PROCESSOR) {
+    // The shop takes payment through QuickBooks (again). A customer who came
+    // here from an older InkTracker pay link gets the invoice's QuickBooks
+    // pay link instead of a dead end. Only Intuit links are handed out.
+    const link = docType === "invoice" ? String(doc.qb_payment_link ?? "") : "";
+    const qbPayLink = /^https:\/\/([a-z0-9-]+\.)*(intuit\.com|quickbooks\.com)\//i.test(link) ? link : null;
+    if (docType !== "invoice") return json({ rail: "qb" });
+    const { display } = await loadDisplay(deps.admin, doc, docType);
+    return json({ rail: "qb", qbPayLink, display, paid: Boolean(doc.paid) });
+  }
   const { display } = await loadDisplay(deps.admin, doc, docType);
   const account = await loadAccount(deps.admin, doc.shop_owner, deps.stripe.live);
   return json({ rail: "processor", display, paid: Boolean(doc.paid), pricing: methodPrices(doc, account, deps, display.shopName) });

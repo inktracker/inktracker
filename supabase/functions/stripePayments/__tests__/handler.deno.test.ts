@@ -780,3 +780,14 @@ Deno.test("card: a retired preview API version falls back to a plain charge, nev
   assertEquals([j.state, j.amountCents], ["paid", 56872]);
   getImpl = null; postImpl = null;
 });
+
+Deno.test("invoice pay page after the shop went back to QuickBooks: hands out the QuickBooks link, nothing else", async () => {
+  const fake = db({ ...ACTIVE, enabled: false });
+  fake.tables.invoices = [{ id: QUOTE_ID, invoice_id: "INV-1", shop_owner: OWNER, public_token: "tok", total: 100, qb_payment_link: "https://connect.intuit.com/t/scs-v1-abc", customer_name: "Tahoe Gift Co" }];
+  const j = await (await call(fake, "", { action: "payRail", docType: "invoice", id: QUOTE_ID, token: "tok" })).json();
+  assertEquals([j.rail, j.qbPayLink], ["qb", "https://connect.intuit.com/t/scs-v1-abc"]);
+  fake.tables.invoices[0].qb_payment_link = "https://evil.example.com/pay";
+  assertEquals((await (await call(fake, "", { action: "payRail", docType: "invoice", id: QUOTE_ID, token: "tok" })).json()).qbPayLink, null);
+  // Wrong token: nothing at all.
+  assertEquals((await call(fake, "", { action: "payRail", docType: "invoice", id: QUOTE_ID, token: "nope" })).status, 404);
+});
