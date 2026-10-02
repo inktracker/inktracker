@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 import { assertEmailDelivered } from "@/lib/email";
 import { base44, supabase } from "@/api/supabaseClient";
 import ModalBackdrop from "../shared/ModalBackdrop";
@@ -997,7 +998,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
 
                 {parseFloat(quote?.discount) > 0 && (() => {
                   const dv = parseFloat(quote.discount);
-                  const isFlat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
+                  const isFlat = isFlatDiscount(quote.discount, quote.discount_type);
                   return (
                     <div className="flex justify-between text-sm text-emerald-600">
                       <span>

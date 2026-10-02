@@ -22,6 +22,7 @@ import ModalBackdrop from "../shared/ModalBackdrop";
 import BrokerLineItemEditor from "./BrokerLineItemEditor";
 import JobFeesSection from "@/components/quotes/JobFeesSection";
 import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 import { isRushManuallyOverridden, nextRushRateForDueDateChange } from "@/lib/pricing/rushOverride";
 import { Eye } from "lucide-react";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
@@ -353,7 +354,7 @@ export default function BrokerQuoteEditor({
       });
 
       const discVal = parseFloat(q.discount) || 0;
-      const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
+      const isFlat = isFlatDiscount(q.discount, q.discount_type);
 
       // Broker-side totals (what shop charges broker).
       const brokerLineSub = stampedItems.reduce((s, li) => s + (li._lineTotal || 0), 0);

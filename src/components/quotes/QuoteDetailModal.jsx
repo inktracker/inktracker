@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 import { base44, supabase } from "@/api/supabaseClient";
 import { openSignedArtwork, uploadFile } from "@/lib/uploadFile";
 import {
@@ -999,7 +1000,7 @@ export default function QuoteDetailModal({
 
                   {parseFloat(quote.discount) > 0 && (() => {
                     const dv = parseFloat(quote.discount);
-                    const flat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
+                    const flat = isFlatDiscount(quote.discount, quote.discount_type);
                     return (
                       <div className="flex justify-between text-sm text-emerald-600">
                         <span>

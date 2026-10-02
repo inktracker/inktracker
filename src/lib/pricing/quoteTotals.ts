@@ -13,6 +13,7 @@
 // the strict money type-gate and circular-import-free.
 
 import { overrideRushFee } from "./linePrice";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 import type {
   LinePricingConfig,
   Quote,
@@ -59,7 +60,7 @@ export function computeQuoteTotals(
 
   const sub = subtotal + rushTotal;
   const discVal = parseFloat(String(quote.discount)) || 0;
-  const isFlat = quote.discount_type === "flat" || (discVal > 100 && quote.discount_type !== "percent");
+  const isFlat = isFlatDiscount(quote.discount, quote.discount_type);
   // Clamp both ways: flat can't push below $0; percent is bounded 0..100 so a
   // discount:150 can't yield a negative subtotal flowing into tax/total/QB.
   const pct = Math.min(Math.max(discVal, 0), 100);

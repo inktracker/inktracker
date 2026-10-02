@@ -1,4 +1,5 @@
 import { todayInShopTz } from "@/lib/shopTimezone";
+import { isFlatDiscount } from "@/lib/pricing/discountType";
 import {
   adminMarkup as adminMarkupCore,
   brokerMarkupShare as brokerMarkupShareCore,
@@ -1161,7 +1162,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP, configOve
     : 0;
 
   const discVal = parseFloat(quote.discount) || 0;
-  const isFlat = quote.discount_type === "flat" || (discVal > 100 && quote.discount_type !== "percent");
+  const isFlat = isFlatDiscount(quote.discount, quote.discount_type);
 
   // Apply the shop's QB item-name mapping (if any) to every line. No-op when
   // the shop hasn't configured one — so this is fully non-breaking.
