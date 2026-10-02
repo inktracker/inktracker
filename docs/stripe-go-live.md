@@ -14,10 +14,12 @@ signing secret or password ever goes through chat.
   - [x] Credit card: surcharge charged and shown (Q-2026-37KF, 2026-10-02)
   - [x] Debit card: no surcharge (Q-2026-400F, 2026-10-02)
   - [ ] Bank transfer, with the fee as its own line on Stripe's page
-  - [ ] QuickBooks chain: one test payment booked on purpose
-    (`STRIPE_TEST_BOOKS_TO_QB=true` for one payment, then unset). The quote
-    should become a paid order and you should get the paid notice. Delete
-    that QuickBooks payment afterwards.
+  - [ ] QuickBooks chain: one test payment booked on purpose. Set
+    `STRIPE_TEST_BOOKS_TO_QB=pi_3ULz8BEk7szqij6u0Kz4RYUw` (the $848.53
+    payment on Q-2026-37KF / QB invoice 3821). Only the payment named there
+    can be booked; the "true" value would book every test payment. The quote
+    should become a paid order and you should get the paid notice. Then unset
+    the flag and delete that QuickBooks payment.
 - [ ] **Card surcharge notice**, only if Biota will surcharge credit cards.
   From Biota's own Stripe account, tell Stripe support you'll surcharge
   credit cards at 2.99%, starting 30+ days later (Visa rule). Bank fees
@@ -78,9 +80,10 @@ The sandbox account doesn't exist under the live key, so Biota sets up again.
   transfer) is turned on under payment methods.
 - [ ] Check the QuickBooks accounts: the payout bank account and the fees
   expense account.
-- [ ] Choose what to accept (Cards / Bank transfer). Turn on **Pass fees to
-  customers** only after the 30-day notice; the bank fee alone can start
-  earlier.
+- [ ] Choose what to accept (Cards / Bank transfer). Connecting the live
+  account switches **Pass fees to customers** OFF, so the sandbox
+  confirmation never carries over. Turn it back on only after the 30-day
+  notice to Stripe.
 - [ ] **Turn on InkTracker payments.** Every Biota quote and invoice now
   goes to the Stripe pay page, not just TEST ones.
 
@@ -96,6 +99,11 @@ The sandbox account doesn't exist under the live key, so Biota sets up again.
   - fees and any customer-paid fee appear on their own lines.
 - [ ] Refund it from Stripe. The refund notice should arrive in InkTracker.
 - [ ] Then real customers. Watch the 6am health check for the first weeks.
+  Its "Stripe payments" line flags:
+  - payments not booked in QuickBooks;
+  - payouts without a deposit;
+  - credit cards where Stripe refused the surcharge (the shop also gets a
+    notice each time).
 
 ## Afterwards
 
