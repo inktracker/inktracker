@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
+  paymentsOpenFor,
   RAIL,
   resolvePaymentRail,
   applyRailToInvoiceBody,
@@ -178,5 +179,20 @@ describe("Stripe test mode and live switch-over", () => {
     expect(resolvePaymentRail({ envEnabled: true, account: { ...on, stripe_livemode: false }, keyMode: "live" })).toBe(RAIL.QB);
     expect(resolvePaymentRail({ envEnabled: true, account: { ...on, stripe_livemode: true }, keyMode: "live" })).toBe(RAIL.PROCESSOR);
     expect(resolvePaymentRail({ envEnabled: true, account: { ...on, stripe_livemode: true }, keyMode: "test" })).toBe(RAIL.QB);
+  });
+});
+
+describe("paymentsOpenFor — pilot list", () => {
+  it("only shops named on purpose; unset list = nobody", () => {
+    expect(paymentsOpenFor("true", "joe@biotamfg.co", "joe@biotamfg.co")).toBe(true);
+    expect(paymentsOpenFor("true", " JOE@biotamfg.co , x@y.com", "joe@BiotaMfg.co")).toBe(true);
+    expect(paymentsOpenFor("true", "joe@biotamfg.co", "other@shop.com")).toBe(false);
+    expect(paymentsOpenFor("true", "", "joe@biotamfg.co")).toBe(false);
+    expect(paymentsOpenFor("true", undefined, "joe@biotamfg.co")).toBe(false);
+    expect(paymentsOpenFor("true", "*", "anyone@shop.com")).toBe(true);
+  });
+  it("the platform switch still wins", () => {
+    expect(paymentsOpenFor("false", "*", "joe@biotamfg.co")).toBe(false);
+    expect(paymentsOpenFor(undefined, "joe@biotamfg.co", "joe@biotamfg.co")).toBe(false);
   });
 });

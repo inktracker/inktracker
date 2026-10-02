@@ -99,7 +99,7 @@ import {
   RAIL,
   PROCESSOR_LINK_REASON,
   applyRailToInvoiceBody,
-  flagOn,
+  paymentsOpenFor,
   loadPaymentRailState,
   stripeKeyMode,
   restoreQbOnlinePayFields,
@@ -3874,7 +3874,7 @@ Deno.serve(async (req) => {
         // Payment rail from the AUTHENTICATED shop, never the request body.
         // Brokers invoice in their own QuickBooks — always the QB rail.
         const railState = await loadPaymentRailState(adminClient, shopOwnerEmail, {
-          envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
+          envEnabled: paymentsOpenFor(Deno.env.get("STRIPE_PAYMENTS_ENABLED"), Deno.env.get("STRIPE_PAYMENTS_SHOPS"), shopOwnerEmail),
           broker: Boolean(params?.billBroker || params?.brokerClientInvoice),
           // Stripe test mode: only TEST/DEMO documents leave QuickBooks.
           keyMode: stripeKeyMode(Deno.env.get("STRIPE_CONNECT_SECRET_KEY")),
@@ -3952,7 +3952,7 @@ Deno.serve(async (req) => {
         const depQuote = params?.quote ?? {};
         const depShop = depQuote?.shop_owner || shopOwnerEmail;
         const depRailState = await loadPaymentRailState(depAdmin, shopOwnerEmail, {
-          envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
+          envEnabled: paymentsOpenFor(Deno.env.get("STRIPE_PAYMENTS_ENABLED"), Deno.env.get("STRIPE_PAYMENTS_SHOPS"), shopOwnerEmail),
           keyMode: stripeKeyMode(Deno.env.get("STRIPE_CONNECT_SECRET_KEY")),
           doc: depQuote,
         });

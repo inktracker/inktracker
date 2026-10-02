@@ -80,7 +80,7 @@ let liveInvoice: Record<string, unknown> | null = null;
 let qbConnected = true;
 
 // Live key by default; test-mode behaviour is exercised explicitly.
-function call(fake: unknown, authId: string, body: Record<string, unknown>, env: Record<string, string> = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_test123" }, calls: StripeCall[] = [], live = true) {
+function call(fake: unknown, authId: string, body: Record<string, unknown>, env: Record<string, string> = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: OWNER, STRIPE_CONNECT_CLIENT_ID: "ca_test123" }, calls: StripeCall[] = [], live = true) {
   const req = new Request("http://x/stripePayments", {
     method: "POST",
     headers: authId ? { Authorization: "Bearer t" } : {},
@@ -429,7 +429,7 @@ Deno.test("going live: a test-mode account reads as not set up (no false 'discon
 
 Deno.test("connect an existing Stripe account: one-time state, linked to THIS shop, not switched on yet", async () => {
   const fake = db(null);
-  const env = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_test123" };
+  const env = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: OWNER, STRIPE_CONNECT_CLIENT_ID: "ca_test123" };
   assertEquals((await call(fake, "mgr-auth", { action: "connectExisting" }, env)).status, 403);
   const start = await (await call(fake, "own-auth", { action: "connectExisting" }, env)).json();
   const url = new URL(start.url);
@@ -454,7 +454,7 @@ Deno.test("connect an existing Stripe account: one-time state, linked to THIS sh
 });
 
 Deno.test("connect existing: expired state, a Stripe account another shop uses, and no client id are refused", async () => {
-  const env = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_test123" };
+  const env = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: OWNER, STRIPE_CONNECT_CLIENT_ID: "ca_test123" };
   const stale = db({ merchant_id: null, oauth_state: "s1", oauth_state_at: new Date(Date.now() - 31 * 60 * 1000).toISOString() });
   assertEquals((await call(stale, "own-auth", { action: "finishConnect", code: "ac_good", state: "s1" }, env)).status, 400);
 
@@ -464,10 +464,10 @@ Deno.test("connect existing: expired state, a Stripe account another shop uses, 
   assertEquals(r.status, 409);
   assert((await r.json()).error.includes("another InkTracker shop"));
 
-  assertEquals((await call(db(null), "own-auth", { action: "connectExisting" }, { STRIPE_PAYMENTS_ENABLED: "true" })).status, 400);
+  assertEquals((await call(db(null), "own-auth", { action: "connectExisting" }, { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: OWNER })).status, 400);
   const st = await (await call(db(null), "own-auth", { action: "status" }, env)).json();
   assertEquals(st.canConnectExisting, true);
-  assertEquals((await (await call(db(null), "own-auth", { action: "status" }, { STRIPE_PAYMENTS_ENABLED: "true" })).json()).canConnectExisting, false);
+  assertEquals((await (await call(db(null), "own-auth", { action: "status" }, { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: OWNER })).json()).canConnectExisting, false);
   assertEquals((await (await call(db(ACTIVE), "own-auth", { action: "status" }, env)).json()).canConnectExisting, false);
 });
 
@@ -506,14 +506,14 @@ Deno.test("test mode: TEST/DEMO in the JOB TITLE counts on the pay page too (sam
 
 Deno.test("sign-up needs the platform client id (so the account can always be disconnected later)", async () => {
   const calls: StripeCall[] = [];
-  const r = await call(db(null), "own-auth", { action: "startOnboarding" }, { STRIPE_PAYMENTS_ENABLED: "true" }, calls);
+  const r = await call(db(null), "own-auth", { action: "startOnboarding" }, { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: OWNER }, calls);
   assertEquals(r.status, 400);
   assertEquals(calls.length, 0);
 });
 
 // ── Fees the customer pays ──────────────────────────────────────────────
 const FEES_ON = { ...ACTIVE, enabled: true, customer_fees_enabled: true, bank_fee_pct: 1 };
-const PK_ENV = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_test123", STRIPE_CONNECT_PUBLISHABLE_KEY: "pk_live_abc" };
+const PK_ENV = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: OWNER, STRIPE_CONNECT_CLIENT_ID: "ca_test123", STRIPE_CONNECT_PUBLISHABLE_KEY: "pk_live_abc" };
 
 Deno.test("customer fees: owner only; turning on needs the owner's okay; bank fee 0–1%", async () => {
   const fake = db({ ...ACTIVE, enabled: true });
@@ -703,7 +703,7 @@ Deno.test("accepted methods: owner chooses; at least one stays on; customers can
 Deno.test("a new Stripe connection (or test → live) turns passing fees OFF until the owner confirms again", async () => {
   // Fees were on for the sandbox account; the shop now connects its live one.
   const fake = db({ merchant_id: "acct_test", merchant_status: "active", stripe_livemode: false, enabled: true, customer_fees_enabled: true, customer_fees_ack_at: "2026-10-01T00:00:00Z", oauth_state: "s9", oauth_state_at: new Date().toISOString() });
-  const env = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_live", STRIPE_CONNECT_PUBLISHABLE_KEY: "pk_live_x" };
+  const env = { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: OWNER, STRIPE_CONNECT_CLIENT_ID: "ca_live", STRIPE_CONNECT_PUBLISHABLE_KEY: "pk_live_x" };
   // Under the live key the sandbox account reads as not set up, fees off.
   const before = await (await call(fake, "own-auth", { action: "status" }, env)).json();
   assertEquals(before.customerFees.enabled, false);
@@ -727,3 +727,46 @@ Deno.test("card: a refused surcharge is never silent — the shop gets a notice"
   getImpl = null; postImpl = null;
 });
 let postN = 0;
+
+// ── Round 2 fixes ───────────────────────────────────────────────────────
+Deno.test("pilot list: payments stay hidden from shops not on it", async () => {
+  const fake = db({ ...ACTIVE, enabled: true });
+  const off = await (await call(fake, "own-auth", { action: "status" }, { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: "someone@else.com" })).json();
+  assertEquals([off.platformEnabled, off.rail], [false, "qb"]);
+  const unset = await (await call(fake, "own-auth", { action: "status" }, { STRIPE_PAYMENTS_ENABLED: "true" })).json();
+  assertEquals(unset.platformEnabled, false);
+  assertEquals((await call(db(null), "own-auth", { action: "startOnboarding" }, { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_CONNECT_CLIENT_ID: "ca_x" })).status, 400);
+  const all = await (await call(fake, "own-auth", { action: "status" }, { STRIPE_PAYMENTS_ENABLED: "true", STRIPE_PAYMENTS_SHOPS: "*" })).json();
+  assertEquals(all.platformEnabled, true);
+  // The customer's pay page for a shop off the list stays on QuickBooks.
+  const q = withQuote({ ...ACTIVE, enabled: true });
+  assertEquals((await (await call(q, "", { action: "payRail", id: QUOTE_ID, token: "tok" }, { STRIPE_PAYMENTS_ENABLED: "true" })).json()).rail, "qb");
+});
+
+Deno.test("card: a made-up card token never reaches QuickBooks", async () => {
+  getImpl = (path) => path.startsWith("/v1/confirmation_tokens/") ? Promise.reject(Object.assign(new Error("404 No such confirmationtoken"), { status: 404 })) : undefined;
+  let qbCalls = 0;
+  const fake = withQuote(FEES_ON, { total: 568.72 });
+  const req = new Request("http://x/stripePayments", { method: "POST", body: JSON.stringify({ action: "cardQuote", ...cardReq() }) });
+  const r = await (await handle(req, {
+    admin: fake, getUser: () => Promise.resolve(null), env: (k) => (PK_ENV as Record<string, string>)[k],
+    stripe: fakeStripe([], true),
+    qb: { connect: () => { qbCalls++; return Promise.resolve({ token: "t", realmId: "r" }); }, listAccounts: () => Promise.resolve([]), getInvoice: () => { qbCalls++; return Promise.resolve(null); } },
+  })).json();
+  assertEquals(r.reason, "card_unreadable");
+  assertEquals(qbCalls, 0);
+  getImpl = null;
+});
+
+Deno.test("just paid: a second payment for the same document is refused for 10 minutes", async () => {
+  cardSetup("credit");
+  const fake = withQuote(FEES_ON, { total: 568.72 });
+  const paid = await (await call(fake, "", { action: "cardPay", ...cardReq({ expectTotalCents: 58572 }) }, PK_ENV)).json();
+  assertEquals(paid.state, "paid");
+  // Before Stripe's webhook has written the payment record:
+  const again = await (await call(fake, "", { action: "payinSession", id: QUOTE_ID, token: "tok", method: "ach" }, PK_ENV)).json();
+  assertEquals([again.payable, again.reason], [false, "in_flight"]);
+  const card2 = await (await call(fake, "", { action: "cardQuote", ...cardReq() }, PK_ENV)).json();
+  assertEquals(card2.reason, "in_flight");
+  getImpl = null; postImpl = null;
+});

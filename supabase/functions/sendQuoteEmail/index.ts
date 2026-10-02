@@ -7,7 +7,7 @@ import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { escapeHtml, sanitizeEmailBody, asBareEmail } from "../_shared/emailSanitize.js";
 import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
-import { flagOn, loadPaymentRail, RAIL, stripeKeyMode } from "../_shared/paymentRail.js";
+import { paymentsOpenFor, loadPaymentRail, RAIL, stripeKeyMode } from "../_shared/paymentRail.js";
 import { customerFeeNote, effectiveCustomerFees, cardFormKeyOk, acceptedMethods } from "../_shared/paymentsPricing.js";
 import {
   renderEmailLayout,
@@ -291,7 +291,7 @@ Deno.serve(async (req) => {
         if (doc && !doc.broker_id && !doc.broker_email) {
           const keyMode = stripeKeyMode(Deno.env.get("STRIPE_CONNECT_SECRET_KEY"));
           const rail = await loadPaymentRail(admin, doc.shop_owner, {
-            envEnabled: flagOn(Deno.env.get("STRIPE_PAYMENTS_ENABLED")),
+            envEnabled: paymentsOpenFor(Deno.env.get("STRIPE_PAYMENTS_ENABLED"), Deno.env.get("STRIPE_PAYMENTS_SHOPS"), doc.shop_owner),
             keyMode,
             doc,
           });
