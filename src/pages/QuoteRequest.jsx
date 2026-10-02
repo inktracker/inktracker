@@ -29,6 +29,11 @@ export default function QuoteRequest() {
   // True when the shop's config didn't load — the wizard still works on platform
   // defaults, but we tell the visitor so a wrong-looking price isn't silent (FE-08).
   const [shopLoadFailed, setShopLoadFailed] = useState(false);
+  // Set when the request SAVED but a notification email didn't send — shown as
+  // an honest banner above the wizard's confirmation screen so the customer
+  // knows to follow up instead of waiting for an email that never comes
+  // (sendQuoteEmail can answer 200 + {sent:false}; audit 2026-10-02).
+  const [emailNotice, setEmailNotice] = useState("");
 
   // reCAPTCHA v3 — the wizard is the highest-volume anonymous write surface, so
   // its submission is gated server-side (wizardSubmit edge function). We obtain
@@ -140,6 +145,9 @@ export default function QuoteRequest() {
       });
       if (ownerErr) console.error("[QuoteRequest] owner email error:", ownerErr);
       if (ownerRes?.error) console.error("[QuoteRequest] owner email failed:", ownerRes.error);
+      if (ownerErr || ownerRes?.error || ownerRes?.sent === false) {
+        setEmailNotice("Your request was saved, but we couldn't notify the shop by email — if you don't hear back within a business day, contact them directly to confirm they received it.");
+      }
 
       // Confirm to the customer
       if (quote.customer_email) {
@@ -154,9 +162,13 @@ export default function QuoteRequest() {
           },
         });
         if (custErr) console.error("[QuoteRequest] customer email error:", custErr);
+        if (custErr) {
+          setEmailNotice((prev) => prev || "Your request was saved, but the confirmation email couldn't be sent — you won't get an email copy. The shop will still see your request.");
+        }
       }
     } catch (err) {
       console.error("[QuoteRequest] notification email failed:", err?.message);
+      setEmailNotice("Your request was saved, but the confirmation email couldn't be sent — if you don't hear back within a business day, contact the shop directly.");
     }
   }
 
@@ -173,6 +185,11 @@ export default function QuoteRequest() {
               <div role="alert" className="mb-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
                 We couldn't load this shop's latest pricing, so the estimate below may be approximate.
                 You can still submit your request — the shop will confirm the final quote.
+              </div>
+            )}
+            {emailNotice && (
+              <div role="alert" className="mb-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+                {emailNotice}
               </div>
             )}
             <OrderWizard

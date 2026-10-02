@@ -366,6 +366,14 @@ export default function PurchaseOrders() {
         }
       } catch (autoMarkErr) {
         console.warn("[PO submit] goods auto-mark failed for order", oid, autoMarkErr);
+        // Still best-effort (the supplier order went through), but TELL the
+        // operator which order's Floor panel stayed un-ticked — a silent miss
+        // read as "not ordered" and invited a duplicate re-order (audit
+        // 2026-10-02).
+        notify.error(
+          `Order ${oid}: couldn't mark its goods as ordered`,
+          "The supplier order was placed. Tick the Order Goods checklist on that order manually so it isn't re-ordered."
+        );
       }
     }
   }
@@ -505,6 +513,13 @@ export default function PurchaseOrders() {
       if (order) await base44.entities.Order.update(oid, applyCheckInToOrder(order, po.items, { computeShortfall: true }));
     } catch (e) {
       console.warn("[PO check-in] reconcile failed for order", oid, e);
+      // The PO line shows the checked-in count but the order's floor panel and
+      // _shortfall never updated — the receiving door's version of the silent
+      // shortfall loss (audit 2026-10-02). Tell the operator to reconcile by hand.
+      notify.error(
+        `Order ${oid}: goods checked in on the PO, but the order didn't update`,
+        "Update that order's received counts/shortfall manually, or re-enter the check-in."
+      );
     }
   }
 

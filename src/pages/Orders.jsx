@@ -180,7 +180,7 @@ export default function Orders() {
     try {
       const updated = await changeOrderStatus({
         order, newStatus: nextStatus, user, base44,
-        onAutoPo: (res) => { const msg = autoPoToast(res, order.order_id); if (msg) notify.success(msg); },
+        onAutoPo: (res) => { const t = autoPoToast(res, order.order_id); if (t) notify[t.level](t.title, t.description); },
       });
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       // Modal lifecycle: keep open through the pipeline stages so the
@@ -217,13 +217,9 @@ export default function Orders() {
     if (billingGate("complete orders")) return;
     try {
       await assertArtGateFresh(order, "Completed", base44);
+      // Billing failures are surfaced inside runOrderCompletion itself (one
+      // notify for every completion path — explicit, stage arrow, and bulk).
       const updated = await runOrderCompletion({ order, user, base44 });
-      if (updated?._brokerBillingError) {
-        notify.error(
-          "Order completed, but auto-billing the broker failed",
-          updated._brokerBillingError + " — bill them from the order later, or check your QuickBooks connection."
-        );
-      }
       setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
       // Keep the modal open on the just-completed order so its action bar can
       // reveal Create Invoice → Send. Only updates if this order is the one
@@ -280,7 +276,17 @@ export default function Orders() {
 
     // Restore the originating quote: regular orders return to Quotes as
     // "Approved"; broker orders go back to the broker (+ ShopActionFeed ping).
-    revertQuoteOnOrderDelete(order);
+    // Awaited + surfaced: the confirm promised "nothing is lost", so a failed
+    // restore (quote stranded invisible at "Converted to Order") must be told
+    // to the operator, with the quote id to rescue.
+    const reverted = await revertQuoteOnOrderDelete(order);
+    if (reverted && !reverted.ok) {
+      notify.error(
+        "Order deleted, but its quote couldn't be restored",
+        (reverted.quoteId ? `Quote ${reverted.quoteId}: ` : "") + (reverted.error || "Unknown error") +
+          " — it may be hidden as \"Converted to Order\"; retry the restore from the Quotes page or contact support."
+      );
+    }
   }
 
   async function handleTogglePaid(order) {

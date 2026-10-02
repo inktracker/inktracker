@@ -402,6 +402,13 @@ export default function QuoteDetailModal({
     setSaving(true);
     try {
       await fn(...args);
+    } catch (err) {
+      // Without this catch, a handler without its own try/catch (approve,
+      // decline, delete, toggle-paid) rejected out of an un-awaited onClick —
+      // an unhandled rejection the operator experienced as a DEAD CLICK, on
+      // actions that include deposit_paid money state (audit 2026-10-02).
+      // handleConvert was hardened against exactly this; cover its siblings.
+      notify.error("That action didn't go through", err);
     } finally {
       setSaving(false);
     }

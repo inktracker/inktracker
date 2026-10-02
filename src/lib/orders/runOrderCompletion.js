@@ -21,6 +21,7 @@ import { shopScope } from "@/lib/shopScope";
 import { billBrokerForOrder } from "./billBrokerForOrder";
 import { getShopPricingConfig } from "@/components/shared/pricing";
 import { supabase } from "@/api/supabaseClient";
+import { notify } from "@/lib/notify";
 
 // Takes the whole `user` object (not an email) and derives the tenant
 // key itself: when a manager or employee completes an order, the
@@ -171,6 +172,18 @@ export async function runOrderCompletion({ order, user, base44 }) {
     shopEmail: shopOwner,
   });
 
-  // Transient (non-persisted) signal for the UI; absent on success.
+  // Surface the billing failure HERE, not at the call sites: the first fix
+  // notified only on the explicit Complete button, while most orders finish
+  // via the stage arrow (changeOrderStatus → this) or bulk-set — those paths
+  // dropped the flag and the broker silently went un-billed (audit,
+  // 2026-10-02). Notifying inside the one completion path covers every
+  // caller by construction. Still fail-open: the completion itself stands.
+  if (brokerBillingError) {
+    notify.error(
+      "Order completed, but auto-billing the broker failed",
+      brokerBillingError + " — bill them from the order later, or check your QuickBooks connection."
+    );
+  }
+  // Transient (non-persisted) signal kept for callers/tests; absent on success.
   return brokerBillingError ? { ...updated, _brokerBillingError: brokerBillingError } : updated;
 }

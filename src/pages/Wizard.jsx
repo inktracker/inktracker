@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { notify } from "@/lib/notify";
 import { base44, supabase } from "@/api/supabaseClient";
 import OrderWizard from "../components/wizard/OrderWizard";
 import EmbedSnippets from "../components/wizard/EmbedSnippets";
@@ -38,7 +39,11 @@ export default function Wizard() {
         .join("\n");
 
       const displayShop = shopName || "Your Shop";
-      await supabase.functions.invoke("sendQuoteEmail", {
+      // Check delivery (src/lib/email.js contract): sendQuoteEmail can answer
+      // 200 + {sent:false}, which the old fire-and-forget never saw — staff
+      // believed the customer got a confirmation that never went (audit
+      // 2026-10-02). The quote row is saved regardless.
+      const ownerSend = await supabase.functions.invoke("sendQuoteEmail", {
         body: {
           customerEmails: [shopOwner],
           customerName: quote.customer_name || "Customer",
@@ -49,8 +54,12 @@ export default function Wizard() {
         },
       });
 
+      if (ownerSend?.error || ownerSend?.data?.error || ownerSend?.data?.sent === false) {
+        notify.info("Quote saved — the notification email to the shop inbox didn't send", "The request is in your Quotes list.");
+      }
+
       if (quote.customer_email) {
-        await supabase.functions.invoke("sendQuoteEmail", {
+        const custSend = await supabase.functions.invoke("sendQuoteEmail", {
           body: {
             customerEmails: [quote.customer_email],
             customerName: quote.customer_name || "Customer",
@@ -60,9 +69,16 @@ export default function Wizard() {
             body: `Hi ${quote.customer_name || "there"},\n\nThank you for your order request! We've received it and will follow up within 1 business day with a finalized quote.\n\nItems requested:\n${linesSummary}\n\nIf you have any questions, just reply to this email.`,
           },
         });
+        if (custSend?.error || custSend?.data?.error || custSend?.data?.sent === false) {
+          notify.error(
+            `Quote saved, but the confirmation email to ${quote.customer_email} didn't send`,
+            "Follow up with the customer directly."
+          );
+        }
       }
     } catch (err) {
       console.error("[Wizard] email notification failed:", err?.message);
+      notify.error("Quote saved, but the notification emails failed", err?.message || err);
     }
   }
 

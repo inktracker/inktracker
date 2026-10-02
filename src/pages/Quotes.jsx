@@ -443,12 +443,27 @@ export default function Quotes() {
           if (decideUpFrontBill({ isBrokerOrder: true, masterEnabled, billUpFront })) {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.access_token) {
-              await billBrokerForOrder({ base44, order: createdOrder, session });
+              // Fail-open (conversion stands) but surfaced: the {ok:false}
+              // result used to be discarded, so a failed up-front bill left
+              // the broker un-billed with no signal — "picked up at
+              // completion" only holds when completion auto-billing is also
+              // on (audit 2026-10-02).
+              const res = await billBrokerForOrder({ base44, order: createdOrder, session });
+              if (res && res.ok === false && res.error) {
+                notify.error(
+                  "Order created, but the up-front broker bill failed",
+                  String(res.error) + " — bill the broker from the order, or it will retry at completion if auto-billing is on."
+                );
+              }
             }
           }
         }
       } catch (err) {
         console.error("[Quotes.convert] up-front broker billing failed (non-fatal):", err?.message || err);
+        notify.error(
+          "Order created, but the up-front broker bill failed",
+          (err?.message || String(err)) + " — bill the broker from the order, or it will retry at completion if auto-billing is on."
+        );
       }
 
       // Broker pricing reference rows (legacy "commissions" table) are

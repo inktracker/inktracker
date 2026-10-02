@@ -413,7 +413,7 @@ export default function ShopFloor() {
         // The floor finishes PRODUCTION; invoicing stays with the office
         // (order shows "Needs invoicing" until they click Create Invoice).
         completionMode: "floor",
-        onAutoPo: (res) => { const msg = autoPoToast(res, order.order_id); if (msg) notify.success(msg); },
+        onAutoPo: (res) => { const t = autoPoToast(res, order.order_id); if (t) notify[t.level](t.title, t.description); },
       });
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       if (newStatus === "Completed") {

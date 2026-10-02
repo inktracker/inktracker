@@ -770,11 +770,19 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       const paymentLink = quotePaymentUrl(quote.id, publicToken);
       // Clear stale qb_payment_link if user switched from QB → Stripe.
       // Contract pinned by shouldClearQbPaymentLink tests C1–C5.
+      // HARD STOP on failure: if the stale link survives, the payment page's
+      // resolveCheckoutTarget still routes the customer to the OLD QB invoice
+      // at the old amount while the operator believes they switched to Stripe
+      // (audit 2026-10-02). Blocking the send on a transient write failure is
+      // the money-safe direction — the operator just clicks Send again.
       if (shouldClearQbPaymentLink(paymentProvider, quote.qb_payment_link, qbPaymentLink)) {
         try {
           await base44.entities.Quote.update(quote.id, { qb_payment_link: null });
         } catch (clearErr) {
           console.warn("[SendQuoteModal] could not clear stale qb_payment_link:", clearErr);
+          throw new Error(
+            "Couldn't clear the old QuickBooks pay link — sending now would route the customer to the old invoice. Try Send again."
+          );
         }
       }
       // QB invoice creation (when "QB" is picked) happens BEFORE Send via
