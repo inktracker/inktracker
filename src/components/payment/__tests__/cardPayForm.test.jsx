@@ -34,7 +34,7 @@ describe("CardPayForm", { timeout: 20000 }, () => {
     await waitFor(() => expect(screen.getByText("Continue").closest("button").disabled).toBe(false));
     expect(window.Stripe).toHaveBeenCalledWith("pk_test_x", { stripeAccount: "acct_1" });
     fireEvent.click(screen.getByText("Continue"));
-    await screen.findByText("Credit card fee (2.99%)");
+    await screen.findByText("Credit card surcharge (2.99%)");
     expect(screen.getByText("$17.00")).toBeTruthy();
     fireEvent.click(screen.getByText("Pay $585.72"));
     await waitFor(() => expect(onPaid).toHaveBeenCalledWith("pi_9"));

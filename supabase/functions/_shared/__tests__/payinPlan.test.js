@@ -5,6 +5,7 @@ import {
   customerFeeNote,
   normalizeBankFeePct,
   maxCustomerFeeCents,
+  surchargeBannedState,
   PLATFORM_PRICING,
   STRIPE_COST,
   platformFeeCents,
@@ -247,7 +248,19 @@ describe("fees the customer pays", () => {
     expect(maxCustomerFeeCents(10000)).toBe(300);
   });
   it("the note says what each way of paying costs", () => {
-    expect(customerFeeNote(on)).toBe("Credit card payments include a 2.99% processing fee (no fee on debit cards). Bank transfer payments include a 1% fee. The exact amount is shown before you pay.");
+    expect(customerFeeNote(on)).toBe("We add a 2.99% surcharge to credit card payments. Debit cards have no surcharge. Bank transfer payments include a 1% fee. The exact amount is shown before you pay.");
+    expect(customerFeeNote(on, { shopName: "Biota Mfg" })).toMatch(/^Biota Mfg adds a 2\.99% surcharge to credit card payments\./);
     expect(customerFeeNote({ ...on, bankPct: 0 })).toContain("Bank transfer has no fee.");
+  });
+});
+
+describe("states that ban card surcharges", () => {
+  it("abbreviation or full name; others allowed", () => {
+    expect(surchargeBannedState("CT")).toBe("Connecticut");
+    expect(surchargeBannedState("massachusetts")).toBe("Massachusetts");
+    expect(surchargeBannedState(" ok ")).toBe("Oklahoma");
+    expect(surchargeBannedState("NV")).toBeNull();
+    expect(surchargeBannedState("")).toBeNull();
+    expect(surchargeBannedState(null)).toBeNull();
   });
 });

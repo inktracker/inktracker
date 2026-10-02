@@ -308,3 +308,11 @@ describe("fee the customer paid, on the ledger", () => {
     expect(r.ledger.customer_fee_cents).toBe(1700);
   });
 });
+
+describe("refund of a surcharged card payment", () => {
+  it("the shop's refund notice carries the surcharge share", () => {
+    const md = { ...ev().metadata, customer_fee_cents: "1700" };
+    const r = plan({ event: ev({ kind: "partially_refunded", method: "card", amountCents: 58572, reversalCents: 28436, metadata: md }), ledger: { status: "succeeded", method: "card", quote_id: "q", qb_invoice_id: "1", qb_payment_id: "9" } });
+    expect(r.notify.body).toContain("that's $8.50");
+  });
+});

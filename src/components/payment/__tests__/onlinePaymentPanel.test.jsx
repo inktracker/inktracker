@@ -17,18 +17,18 @@ describe("OnlinePaymentPanel prices", { timeout: 20000 }, () => {
     render(<OnlinePaymentPanel docType="quote" id="q" token="t"
       pricing={{ fees: FEES, invoiceCents: 56872, creditFeeCents: 1700, bankFeeCents: 569, cardForm: { publishableKey: "pk_test_x", accountId: "acct_1" } }} />);
     expect(screen.getByText("$585.72")).toBeTruthy();
-    expect(screen.getByText("Credit card: includes 2.99% fee ($17.00). Debit card: no fee, $568.72.")).toBeTruthy();
+    expect(screen.getByText("Credit card: includes 2.99% surcharge ($17.00). Debit card: no surcharge, $568.72.")).toBeTruthy();
     expect(screen.getByText("$574.41")).toBeTruthy();
     expect(screen.getByText(/Includes 1% fee \(\$5\.69\)/)).toBeTruthy();
   });
   it("deposits / balances: just the percentages", () => {
     render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={{ fees: FEES, cardForm: { publishableKey: "pk_test_x", accountId: "acct_1" } }} />);
-    expect(screen.getByText("Credit card: includes 2.99% fee. Debit card: no fee.")).toBeTruthy();
+    expect(screen.getByText("Credit card: includes 2.99% surcharge. Debit card: no surcharge.")).toBeTruthy();
     expect(screen.getByText(/Includes 1% fee\. Clears/)).toBeTruthy();
   });
   it("fees off: no fee promised anywhere", () => {
     render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={null} />);
-    expect(screen.queryByText(/fee/i)).toBeNull();
+    expect(screen.queryByText(/fee|surcharge/i)).toBeNull();
   });
   it("card opens InkTracker's card form when the shop passes the card fee on", () => {
     render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={{ fees: FEES, cardForm: { publishableKey: "pk_test_x", accountId: "acct_1" } }} />);

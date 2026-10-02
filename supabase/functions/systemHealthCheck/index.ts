@@ -18,6 +18,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { timingSafeEqual } from "../_shared/qbWebhookSignature.js";
 import { extractConnectionStatus } from "../_shared/connectionLogic.js";
+import { stripePaymentsHealth, MONEY_IN_STATUSES, STUCK_PAYMENT_HOURS, STUCK_PAYOUT_DAYS } from "../_shared/paymentsHealth.js";
 import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 import {
@@ -260,6 +261,33 @@ async function probeDataIntegrity(admin: any): Promise<Probe> {
   );
 }
 
+// InkTracker payments (Stripe Connect): secrets in place, and every LIVE
+// payment / payout booked in QuickBooks (decision: _shared/paymentsHealth.js).
+async function probeStripePayments(admin: any): Promise<Probe> {
+  const t0 = Date.now();
+  const enabled = /^(1|true|yes|on)$/i.test(String(Deno.env.get("STRIPE_PAYMENTS_ENABLED") ?? "").trim());
+  const key = Deno.env.get("STRIPE_CONNECT_SECRET_KEY") ?? "";
+  const base = { enabled, hasSecretKey: Boolean(key), hasWebhookSecret: Boolean(Deno.env.get("STRIPE_CONNECT_WEBHOOK_SECRET")), liveKey: /^(sk|rk)_live_/.test(key) };
+  if (!enabled) return P("Stripe payments", "secondary", true, stripePaymentsHealth(base).detail, null);
+  const paymentsBefore = new Date(Date.now() - STUCK_PAYMENT_HOURS * 3600 * 1000).toISOString();
+  const payoutsBefore = new Date(Date.now() - STUCK_PAYOUT_DAYS * 24 * 3600 * 1000).toISOString();
+  const moneyIn = `status.in.(${MONEY_IN_STATUSES.join(",")}),and(status.eq.processing,method.eq.card)`;
+  const [stuck, unmatched, payouts] = await Promise.all([
+    admin.from("processor_payments").select("id", { count: "exact", head: true })
+      .eq("livemode", true).is("qb_payment_id", null).not("qb_invoice_id", "is", null)
+      .or(moneyIn).lt("created_at", paymentsBefore),
+    admin.from("processor_payments").select("id", { count: "exact", head: true })
+      .eq("livemode", true).is("qb_payment_id", null).is("qb_invoice_id", null).or(moneyIn),
+    admin.from("processor_payouts").select("id", { count: "exact", head: true })
+      .eq("livemode", true).eq("status", "paid").is("qb_deposit_id", null).lt("created_at", payoutsBefore),
+  ]);
+  const latencyMs = Date.now() - t0;
+  const err = stuck.error || unmatched.error || payouts.error;
+  if (err) return P("Stripe payments", "secondary", false, `ledger read failed: ${err.message}`, latencyMs);
+  const r = stripePaymentsHealth({ ...base, stuckPayments: stuck.count ?? 0, unmatched: unmatched.count ?? 0, stuckPayouts: payouts.count ?? 0 });
+  return P("Stripe payments", "secondary", r.ok, r.detail, latencyMs);
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST" && req.method !== "GET") {
     return new Response("method not allowed", { status: 405 });
@@ -279,7 +307,7 @@ Deno.serve(async (req) => {
 
   // Run independent probes in parallel; each carries its own deadline.
   const [
-    site, supaAuth, db, qb, stripe, resend, ss, ac, qbTokens, reconcile, emailFail, integrity,
+    site, supaAuth, db, qb, stripe, resend, ss, ac, qbTokens, reconcile, emailFail, integrity, stripePayments,
   ] = await Promise.all([
     probeSite(),
     probeSupabaseAuth(anonKey),
@@ -293,10 +321,11 @@ Deno.serve(async (req) => {
     probeReconcileRan(admin),
     probeEmailFailures(admin),
     probeDataIntegrity(admin),
+    probeStripePayments(admin),
   ]);
 
   const probes: Probe[] = [
-    site, supaAuth, db, qb, stripe, resend, ss, ac, qbTokens, reconcile.probe, emailFail, integrity,
+    site, supaAuth, db, qb, stripe, resend, ss, ac, qbTokens, reconcile.probe, emailFail, integrity, stripePayments,
   ];
 
   // ── safe auto-fix: re-fire a reconcile that didn't run ──

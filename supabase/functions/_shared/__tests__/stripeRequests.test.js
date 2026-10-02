@@ -142,6 +142,13 @@ describe("customer-paid fees at checkout", () => {
     expect(platformFeeCents).toBe(Math.max(0, Math.round(57441 * 0.01) - (460 + 150)));
     expect(idempotencyKey).toMatch(/:57441:ach:/);
   });
+  it("Link is hidden: the customer already chose card or bank", () => {
+    for (const method of ["card", "ach"]) {
+      const { params } = buildCheckoutSession({ doc, docType: "quote", target, method, payPageUrl: "https://x/p", nowMs: 0 });
+      expect(params.wallet_options).toEqual({ link: { display: "never" } });
+      expect(formEncode(params)).toContain("wallet_options%5Blink%5D%5Bdisplay%5D=never");
+    }
+  });
   it("no fee → one line, no metadata", () => {
     const { params } = buildCheckoutSession({ doc, docType: "quote", target: { kind: "full", qbInvoiceId: "1", amountCents: 1000 }, method: "card", payPageUrl: "https://x/p", nowMs: 0 });
     expect(params.line_items).toHaveLength(1);

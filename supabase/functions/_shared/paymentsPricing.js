@@ -178,11 +178,33 @@ const pctLabel = (p) => `${Math.round(Number(p) * 100) / 100}%`;
 
 /**
  * The note on quotes, invoices and emails, or "" when the shop charges no
- * fees. Plain words; the pay page shows the exact amount before paying.
+ * fees. Visa's wording: a SURCHARGE, assessed by the merchant, on credit
+ * cards only, with its percentage. The pay page shows the exact amount.
+ * @param {{enabled:boolean, cardPct:number, bankPct:number}} settings
+ * @param {{shopName?:string|null}} [opts]
  */
-export function customerFeeNote(settings) {
+export function customerFeeNote(settings, { shopName = null } = {}) {
   if (!settings?.enabled) return "";
-  const card = settings.cardPct > 0 ? `Credit card payments include a ${pctLabel(settings.cardPct)} processing fee (no fee on debit cards).` : "";
+  const who = String(shopName ?? "").trim() || "We";
+  const card = settings.cardPct > 0
+    ? `${who} ${who === "We" ? "add" : "adds"} a ${pctLabel(settings.cardPct)} surcharge to credit card payments. Debit cards have no surcharge.`
+    : "";
   const bank = settings.bankPct > 0 ? `Bank transfer payments include a ${pctLabel(settings.bankPct)} fee.` : "Bank transfer has no fee.";
   return `${card} ${bank} The exact amount is shown before you pay.`.trim();
+}
+
+// States where card surcharges are banned (Visa's U.S. surcharge Q&A,
+// version 02152024). Others (CO, MN, NJ, NY) have extra rules the owner
+// confirms when turning fees on.
+export const SURCHARGE_BANNED_STATES = Object.freeze({ CT: "Connecticut", ME: "Maine", MA: "Massachusetts", OK: "Oklahoma", PR: "Puerto Rico" });
+export const SURCHARGE_RULES_STATES = Object.freeze({ CO: "Colorado", MN: "Minnesota", NJ: "New Jersey", NY: "New York" });
+
+/** "CT" / "Connecticut" / "conn." → the banned state's name, else null. */
+export function surchargeBannedState(state) {
+  const raw = String(state ?? "").trim();
+  if (!raw) return null;
+  const up = raw.toUpperCase().replace(/\./g, "");
+  if (SURCHARGE_BANNED_STATES[up]) return SURCHARGE_BANNED_STATES[up];
+  const hit = Object.values(SURCHARGE_BANNED_STATES).find((n) => n.toUpperCase() === up);
+  return hit ?? null;
 }

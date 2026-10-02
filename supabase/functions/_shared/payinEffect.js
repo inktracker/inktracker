@@ -208,6 +208,9 @@ export function planPayinEffect({ event, account, quote, ledger, platformFeeCent
     const r = planReversal({
       kind: kind === PAYIN_EVENT.RETURNED ? "ach_return" : kind === PAYIN_EVENT.CHARGED_BACK ? "chargeback_lost" : "refund",
       amountCents: Number.isInteger(Number(event.reversalCents)) && Number(event.reversalCents) > 0 ? Number(event.reversalCents) : amt,
+      // Card surcharge on this payment (refunds must return its share).
+      surchargeCents: event.method === "card" ? customerFee(md, amt) : 0,
+      paymentCents: amt,
       payinId: event.payinId,
       quoteNumber: label,
       booked: Boolean(ledger?.qb_payment_id),

@@ -164,6 +164,24 @@ discount, #997, before any shop used it.)
   `pk_live_…`, matching the secret key's mode). Without it the card fee is off
   everywhere (notes say so too) and cards use Checkout at the plain price.
 
+Visa's rules (U.S. Merchant Surcharge Q&A, 02152024): call it a surcharge
+charged by the merchant (notes name the shop), credit only, notify the
+acquirer (Stripe) 30+ days before starting (the owner's acknowledgement says
+so), cap = the lower of the card's merchant discount rate or 3%. Banned in CT,
+ME, MA, OK and Puerto Rico: `setCustomerFees` refuses for a shop whose profile
+state is one of those (`surchargeBannedState`); CO, MN, NJ and NY have extra
+rules, named in the acknowledgement. Refunds: the shop's refund notice says
+how much of the surcharge goes back (all of it on a full refund, the matching
+share on a partial one) — refunds happen in the shop's Stripe dashboard.
+
+Checkout hides Link (`wallet_options.link.display=never`): the customer
+already chose card or bank. Apple/Google Pay stay (they're cards). If an
+account rejects the parameter, the session is retried without it.
+
+The daily health check has a "Stripe payments" line: secrets present, no live
+payment unbooked after 24h, none unmatched, no paid payout without a deposit
+after 6 days (`_shared/paymentsHealth.js`).
+
 Shown: quote/invoice emails and PDFs (a note under the total), the quote pay
 page (note under the button), the card/bank buttons (exact totals for a plain
 full payment, the % otherwise), the card confirm step, and Stripe's receipt.
