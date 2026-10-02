@@ -30,6 +30,12 @@ describe("OnlinePaymentPanel prices", { timeout: 20000 }, () => {
     render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={null} />);
     expect(screen.queryByText(/fee|surcharge/i)).toBeNull();
   });
+  it("only the ways the shop takes are offered", () => {
+    render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={{ accepts: { card: false, ach: true } }} />);
+    expect(screen.queryByText("Pay by card")).toBeNull();
+    expect(screen.getByText("Pay by bank transfer")).toBeTruthy();
+    expect(screen.getByText("Pay online")).toBeTruthy();
+  });
   it("card opens InkTracker's card form when the shop passes the card fee on", () => {
     render(<OnlinePaymentPanel docType="quote" id="q" token="t" pricing={{ fees: FEES, cardForm: { publishableKey: "pk_test_x", accountId: "acct_1" } }} />);
     fireEvent.click(screen.getByText("Pay by card"));

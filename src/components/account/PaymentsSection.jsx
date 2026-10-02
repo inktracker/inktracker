@@ -276,6 +276,25 @@ export default function PaymentsSection() {
                         : "When this is on, quote and invoice emails link to InkTracker's payment page (Stripe checkout) instead of QuickBooks."}
                     </div>
                     {state.canToggle && (
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <span className="font-semibold text-slate-700">Accept</span>
+                        {[["card", "Cards"], ["ach", "Bank transfer"]].map(([k, label]) => {
+                          const accepts = { card: state.acceptedMethods?.card !== false, ach: state.acceptedMethods?.ach !== false };
+                          const onlyOne = accepts[k] && !accepts[k === "card" ? "ach" : "card"];
+                          return (
+                            <label key={k} className="flex items-center gap-1.5" title={onlyOne ? "Keep at least one way to pay" : undefined}>
+                              <input type="checkbox" checked={accepts[k]} disabled={!!busy || onlyOne}
+                                onChange={(e) => {
+                                  const next = { ...accepts, [k]: e.target.checked };
+                                  run("setAcceptedMethods", { card: next.card, bank: next.ach }, (d) => { apply(d); notify.success(`${label} ${e.target.checked ? "on" : "off"}`); });
+                                }} />
+                              {label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {state.canToggle && (
                       <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2 max-w-md">
                         <label className="flex items-center gap-2 font-semibold text-slate-700">
                           <input type="checkbox" checked={feesOn} disabled={Boolean(state.surchargeBannedIn) && !state.customerFees?.enabled}
@@ -286,8 +305,11 @@ export default function PaymentsSection() {
                           <div className="pl-6">Card surcharges aren&rsquo;t allowed in {state.surchargeBannedIn}.</div>
                         ) : (
                           <div className="grid grid-cols-[auto,1fr] items-center gap-x-4 gap-y-1.5 pl-6">
+                            {state.acceptedMethods?.card !== false && (<>
                             <span className="text-slate-700">Credit card</span>
                             <span>{state.cardSurchargeReady === false ? "not available yet" : `customer pays +${state.pricing?.card || "2.99%"}`}</span>
+                            </>)}
+                            {state.acceptedMethods?.ach !== false && (<>
                             <span className="text-slate-700">Bank transfer</span>
                             <span className="flex items-center gap-1">
                               customer pays +
@@ -297,8 +319,11 @@ export default function PaymentsSection() {
                                 value={bankFeePct} onChange={(e) => setBankFeePct(e.target.value)} />
                               %
                             </span>
+                            </>)}
+                            {state.acceptedMethods?.card !== false && (<>
                             <span className="text-slate-700">Debit card</span>
                             <span>you pay the fee (card rules don&rsquo;t allow passing it on)</span>
+                            </>)}
                           </div>
                         )}
                         {feesOn && !state.customerFees?.enabled && (

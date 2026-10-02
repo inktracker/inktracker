@@ -8,7 +8,7 @@ import { escapeHtml, sanitizeEmailBody, asBareEmail } from "../_shared/emailSani
 import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 import { flagOn, loadPaymentRail, RAIL, stripeKeyMode } from "../_shared/paymentRail.js";
-import { customerFeeNote, effectiveCustomerFees, cardFormKeyOk } from "../_shared/paymentsPricing.js";
+import { customerFeeNote, effectiveCustomerFees, cardFormKeyOk, acceptedMethods } from "../_shared/paymentsPricing.js";
 import {
   renderEmailLayout,
   renderEmailButton,
@@ -296,9 +296,9 @@ Deno.serve(async (req) => {
             doc,
           });
           if (rail === RAIL.PROCESSOR) {
-            const { data: acct } = await admin.from("processor_accounts").select("customer_fees_enabled, bank_fee_pct").eq("shop_owner", doc.shop_owner).maybeSingle();
+            const { data: acct } = await admin.from("processor_accounts").select("customer_fees_enabled, bank_fee_pct, accept_card, accept_bank").eq("shop_owner", doc.shop_owner).maybeSingle();
             const fees = effectiveCustomerFees(acct, { cardFormReady: cardFormKeyOk(Deno.env.get("STRIPE_CONNECT_PUBLISHABLE_KEY"), keyMode === "live") });
-            const note = customerFeeNote(fees, { shopName });
+            const note = customerFeeNote(fees, { shopName, accepts: acceptedMethods(acct) });
             if (note) feeNoteHtml = `<p style="color:${EMAIL_INK};font-size:13px;line-height:1.6;margin:-8px 0 20px;">${escapeHtml(note)}</p>`;
           }
         }

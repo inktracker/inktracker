@@ -681,3 +681,21 @@ Deno.test("checkout: an account that refuses wallet_options still gets a checkou
   assertEquals(sent[1].params.wallet_options, undefined);
   postImpl = null;
 });
+
+Deno.test("accepted methods: owner chooses; at least one stays on; customers can't use a turned-off way", async () => {
+  const fake = withQuote({ ...ACTIVE, enabled: true }, { total: 568.72, qb_total: 568.72 });
+  assertEquals((await call(fake, "mgr-auth", { action: "setAcceptedMethods", card: false, bank: true })).status, 403);
+  assertEquals((await call(fake, "own-auth", { action: "setAcceptedMethods", card: false, bank: false })).status, 400);
+  const j = await (await call(fake, "own-auth", { action: "setAcceptedMethods", card: false, bank: true })).json();
+  assertEquals(j.acceptedMethods, { card: false, ach: true });
+  // The pay page is told; a card checkout is refused without calling Stripe.
+  const rail = await (await call(fake, "", { action: "payRail", id: QUOTE_ID, token: "tok" })).json();
+  assertEquals(rail.pricing.accepts, { card: false, ach: true });
+  liveInvoice = { Id: "3815", TotalAmt: 568.72, Balance: 568.72, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  const calls: StripeCall[] = [];
+  const r = await (await call(fake, "", { action: "payinSession", id: QUOTE_ID, token: "tok", method: "card" }, undefined, calls)).json();
+  assertEquals([r.payable, r.reason], [false, "card_not_accepted"]);
+  assertEquals(calls.length, 0);
+  const cq = await (await call(fake, "", { action: "cardQuote", id: QUOTE_ID, token: "tok", confirmationToken: "ctoken_1" })).json();
+  assertEquals(cq.reason, "card_not_accepted");
+});

@@ -1033,7 +1033,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                     <span className="block font-semibold text-slate-800">{onlinePay ? "Stripe (through InkTracker)" : "QuickBooks (optional)"}</span>
                     <span className="block text-xs text-slate-500 mt-0.5">
                       {onlinePay && qbConnected
-                        ? `Customers pay by card or bank on Stripe's checkout.${payStatus?.customerFees?.enabled ? " Credit card and bank payers pay the fee; on debit cards you pay it." : ""} The invoice still goes in QuickBooks for your books.`
+                        ? `Customers pay ${payStatus?.acceptedMethods?.card === false ? "by bank transfer" : payStatus?.acceptedMethods?.ach === false ? "by card" : "by card or bank"} through Stripe.${payStatus?.customerFees?.enabled ? " Fees are passed on where card rules allow (not on debit cards)." : ""} The invoice still goes in QuickBooks for your books.`
                         : qbConnected
                         ? "Create a QB invoice below to add a pay-now link. Skip for a quote-only email."
                         : "Connect QuickBooks in Account → Integrations to add a pay-now link. You can still send quotes without it."}

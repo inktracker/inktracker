@@ -48,7 +48,7 @@ import {
 import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession, buildCardPaymentIntent, buildConnectOAuthUrl } from "../_shared/stripeRequests.js";
 import { accountStatusFields, readStripeList } from "../_shared/stripeWebhookAdapter.js";
 import { choosePayTarget, NOT_PAYABLE } from "../_shared/payinPlan.js";
-import { normalizePayMethod, customerFeeSettings, customerFeeCents, customerFeeNote, normalizeBankFeePct, cardFormKeyOk, effectiveCustomerFees, surchargeBannedState } from "../_shared/paymentsPricing.js";
+import { normalizePayMethod, customerFeeSettings, customerFeeCents, customerFeeNote, normalizeBankFeePct, cardFormKeyOk, effectiveCustomerFees, surchargeBannedState, acceptedMethods } from "../_shared/paymentsPricing.js";
 import { getShopQb, qbListAccounts, qbGetInvoice, type QbConn } from "../_shared/qbShopClient.ts";
 import { stripeApi, StripeError, STRIPE_SURCHARGE_API_VERSION, type StripeApi } from "../_shared/stripeApi.ts";
 
@@ -95,7 +95,7 @@ export type Deps = {
 async function loadAccount(admin: Any, shopOwner: string, live: boolean) {
   const { data, error } = await admin
     .from("processor_accounts")
-    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, processor_used_at, plan_lapsed_at, qb_bank_account_id, qb_fee_account_id, stripe_livemode, oauth_state, oauth_state_at, customer_fees_enabled, customer_fees_ack_at, bank_fee_pct")
+    .select("shop_owner, merchant_id, merchant_status, merchant_application_id, merchant_application_status, enabled, processor_used_at, plan_lapsed_at, qb_bank_account_id, qb_fee_account_id, stripe_livemode, oauth_state, oauth_state_at, customer_fees_enabled, customer_fees_ack_at, bank_fee_pct, accept_card, accept_bank")
     .eq("shop_owner", shopOwner)
     .maybeSingle();
   if (error) throw new Error(`Couldn't read payment settings: ${error.message}`);
@@ -119,6 +119,8 @@ const CUSTOMER_REASON: Record<string, string> = {
   tax_hold: "The shop is updating the sales tax on this invoice. Please check back soon or contact the shop.",
   no_bank: "Bank payment isn't available for this shop right now. Please pay by card, or contact the shop.",
   card_form_off: "Card payment isn't available right now. Please refresh the page and try again.",
+  card_not_accepted: "This shop takes bank transfer only. Please pay by bank transfer.",
+  bank_not_accepted: "This shop takes card payments only. Please pay by card.",
 };
 
 /** Load a quote/invoice for the public pay page, token-checked. */
@@ -199,6 +201,7 @@ const appUrl = (deps: Deps) => (deps.env("PUBLIC_APP_URL") ?? "https://www.inktr
  * account id makes Stripe.js work on the shop's own account.
  */
 function cardFormConfig(account: Any, deps: Deps) {
+  if (!acceptedMethods(account).card) return null;
   const fees = customerFeeSettings(account);
   if (!fees.enabled || !(fees.cardPct > 0) || !account?.merchant_id) return null;
   const pk = deps.env("STRIPE_CONNECT_PUBLISHABLE_KEY") ?? "";
@@ -220,7 +223,8 @@ function methodPrices(doc: Any, account: Any, deps: Deps, displayShopName: strin
   const cardForm = cardFormConfig(account, deps);
   // No card form → no card surcharge (Checkout can't tell credit from debit).
   const fees = effectiveCustomerFees(account, { cardFormReady: Boolean(cardForm) });
-  const base = { fees, note: customerFeeNote(fees, { shopName: displayShopName }), cardForm, shopName: displayShopName };
+  const accepts = acceptedMethods(account);
+  const base = { fees, accepts, note: customerFeeNote(fees, { shopName: displayShopName, accepts }), cardForm, shopName: displayShopName };
   const plain = !doc.deposit_paid && !(Number(doc.deposit_amount) > 0) && !(Number(doc.deposit_pct) > 0);
   const totalCents = Math.round(Number(doc.qb_total ?? doc.total) * 100);
   if (!plain || !Number.isInteger(totalCents) || totalCents <= 0) return base;
@@ -330,6 +334,11 @@ async function payinSession(body: Any, deps: Deps) {
   const ready = await preparePay(body, deps, { throttleMethod: method });
   if (ready instanceof Response) return ready;
   const { doc, docType, account, display } = ready;
+  // The shop chose which ways it takes payment.
+  if (!acceptedMethods(account)[method]) {
+    const reason = method === "ach" ? "bank_not_accepted" : "card_not_accepted";
+    return json({ rail: "processor", payable: false, reason, message: CUSTOMER_REASON[reason], display });
+  }
   const live = await liveTarget(deps, ready);
   if ("error" in live) return live.error;
   const { target, attempt } = live;
@@ -427,6 +436,7 @@ async function cardQuote(body: Any, deps: Deps) {
   if (!CTOKEN_RE.test(confirmationToken)) return json({ error: "Not found" }, 404);
   const ready = await preparePay(body, deps);
   if (ready instanceof Response) return ready;
+  if (!acceptedMethods(ready.account).card) return json({ rail: "processor", payable: false, reason: "card_not_accepted", message: CUSTOMER_REASON.card_not_accepted, display: ready.display });
   if (!cardFormConfig(ready.account, deps)) return json({ rail: "processor", payable: false, reason: "card_form_off", message: CUSTOMER_REASON.card_form_off, display: ready.display });
   const live = await liveTarget(deps, ready);
   if ("error" in live) return live.error;
@@ -446,6 +456,7 @@ async function cardPay(body: Any, deps: Deps) {
   const ready = await preparePay(body, deps);
   if (ready instanceof Response) return ready;
   const { doc, docType, account } = ready;
+  if (!acceptedMethods(account).card) return json({ rail: "processor", payable: false, reason: "card_not_accepted", message: CUSTOMER_REASON.card_not_accepted, display: ready.display });
   if (!cardFormConfig(account, deps)) return json({ rail: "processor", payable: false, reason: "card_form_off", message: CUSTOMER_REASON.card_form_off, display: ready.display });
   const live = await liveTarget(deps, ready);
   if ("error" in live) return live.error;
@@ -578,7 +589,8 @@ export async function handle(req: Request, deps: Deps) {
       // Card surcharges need InkTracker's card form (publishable key set).
       cardSurchargeReady: Boolean(cardFormConfig({ ...acct, customer_fees_enabled: true }, deps)),
       // The note quotes, invoices and emails carry (empty when fees are off).
-      customerFeeNote: customerFeeNote(effectiveCustomerFees(acct, { cardFormReady: Boolean(cardFormConfig(acct, deps)) }), { shopName: shop.shop_name }),
+      customerFeeNote: customerFeeNote(effectiveCustomerFees(acct, { cardFormReady: Boolean(cardFormConfig(acct, deps)) }), { shopName: shop.shop_name, accepts: acceptedMethods(acct) }),
+      acceptedMethods: acceptedMethods(acct),
       // Card surcharges are banned in some states: the owner can't turn them on there.
       surchargeBannedIn: surchargeBannedState(shop.state),
     });
@@ -759,6 +771,19 @@ export async function handle(req: Request, deps: Deps) {
       qb_fee_account_id: v.feeAccountId,
       updated_at: new Date().toISOString(),
     }, { onConflict: "shop_owner" });
+    if (error) return json({ error: `Couldn't save: ${error.message}` }, 500);
+    return status();
+  }
+
+  if (action === "setAcceptedMethods") {
+    if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can change how customers pay." }, 403);
+    if (!account) return json({ error: "Set up payments first." }, 400);
+    const card = body.card === true;
+    const bank = body.bank === true;
+    if (!card && !bank) return json({ error: "Keep at least one way to pay turned on." }, 400);
+    const { error } = await admin.from("processor_accounts")
+      .update({ accept_card: card, accept_bank: bank, updated_at: new Date().toISOString() })
+      .eq("shop_owner", shopOwner);
     if (error) return json({ error: `Couldn't save: ${error.message}` }, 500);
     return status();
   }

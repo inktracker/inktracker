@@ -100,6 +100,9 @@ export default function OnlinePaymentPanel({ docType, id, token, kind = null, am
     setBusy("");
   }
 
+  // The shop chose which ways it takes payment (both unless told otherwise).
+  const acceptCard = pricing?.accepts?.card !== false;
+  const acceptBank = pricing?.accepts?.ach !== false;
   const cardPct = Number(pricing?.fees?.cardPct) || 0;
   const bankPct = Number(pricing?.fees?.bankPct) || 0;
 
@@ -128,13 +131,13 @@ export default function OnlinePaymentPanel({ docType, id, token, kind = null, am
     <div className="space-y-3">
       <div className="flex items-baseline justify-between gap-3">
         <div className="text-sm font-semibold text-slate-800">
-          {kind === "deposit" ? "Pay your deposit" : kind === "balance" ? "Pay the balance" : "How would you like to pay?"}
+          {kind === "deposit" ? "Pay your deposit" : kind === "balance" ? "Pay the balance" : acceptCard && acceptBank ? "How would you like to pay?" : "Pay online"}
         </div>
         {Number.isInteger(amountCents) && amountCents > 0 && (
           <div className="text-lg font-bold text-slate-900 tabular-nums">{fmt(amountCents)}</div>
         )}
       </div>
-      <button type="button" className={choice} disabled={!!busy} onClick={() => pay("card")}>
+      {acceptCard && <button type="button" className={choice} disabled={!!busy} onClick={() => pay("card")}>
         {busy === "card" ? <Loader2 className="w-5 h-5 animate-spin text-teal-600" /> : <CreditCard className="w-5 h-5 text-teal-600" />}
         <span className="flex-1">
           <span className="flex items-baseline justify-between gap-2">
@@ -143,8 +146,8 @@ export default function OnlinePaymentPanel({ docType, id, token, kind = null, am
           </span>
           <span className="block text-xs text-slate-500">{cardSub}</span>
         </span>
-      </button>
-      <button type="button" className={choice} disabled={!!busy} onClick={() => pay("ach")}>
+      </button>}
+      {acceptBank && <button type="button" className={choice} disabled={!!busy} onClick={() => pay("ach")}>
         {busy === "ach" ? <Loader2 className="w-5 h-5 animate-spin text-teal-600" /> : <Landmark className="w-5 h-5 text-teal-600" />}
         <span className="flex-1">
           <span className="flex items-baseline justify-between gap-2">
@@ -153,7 +156,7 @@ export default function OnlinePaymentPanel({ docType, id, token, kind = null, am
           </span>
           <span className="block text-xs text-slate-500">{bankSub}</span>
         </span>
-      </button>
+      </button>}
       {notice && (
         <div className="flex items-start gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-slate-500" /> {notice}

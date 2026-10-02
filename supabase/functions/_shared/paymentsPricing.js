@@ -176,21 +176,27 @@ export function maxCustomerFeeCents(invoiceCents) {
 
 const pctLabel = (p) => `${Math.round(Number(p) * 100) / 100}%`;
 
+/** Which ways this shop takes payment (both unless the owner turned one off). */
+export function acceptedMethods(account) {
+  return { card: account?.accept_card !== false, ach: account?.accept_bank !== false };
+}
+
 /**
  * The note on quotes, invoices and emails, or "" when the shop charges no
  * fees. Visa's wording: a SURCHARGE, assessed by the merchant, on credit
  * cards only, with its percentage. The pay page shows the exact amount.
  * @param {{enabled:boolean, cardPct:number, bankPct:number}} settings
- * @param {{shopName?:string|null}} [opts]
+ * @param {{shopName?:string|null, accepts?:{card:boolean, ach:boolean}}} [opts]
  */
-export function customerFeeNote(settings, { shopName = null } = {}) {
+export function customerFeeNote(settings, { shopName = null, accepts = { card: true, ach: true } } = {}) {
   if (!settings?.enabled) return "";
   const who = String(shopName ?? "").trim() || "We";
-  const card = settings.cardPct > 0
+  const card = accepts.card && settings.cardPct > 0
     ? `${who} ${who === "We" ? "add" : "adds"} a ${pctLabel(settings.cardPct)} surcharge to credit card payments. Debit cards have no surcharge.`
     : "";
-  const bank = settings.bankPct > 0 ? `Bank transfer payments include a ${pctLabel(settings.bankPct)} fee.` : "Bank transfer has no fee.";
-  return `${card} ${bank} The exact amount is shown before you pay.`.trim();
+  const bank = !accepts.ach ? "" : settings.bankPct > 0 ? `Bank transfer payments include a ${pctLabel(settings.bankPct)} fee.` : "Bank transfer has no fee.";
+  if (!card && !(accepts.ach && settings.bankPct > 0)) return "";
+  return [card, bank, "The exact amount is shown before you pay."].filter(Boolean).join(" ");
 }
 
 // States where card surcharges are banned (Visa's U.S. surcharge Q&A,
