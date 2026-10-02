@@ -142,14 +142,23 @@ export async function runOrderCompletion({ order, user, base44 }) {
   // Off by default, so existing shops are unaffected. Fail-open by contract:
   // billBrokerForOrder never throws, and a QB hiccup must never undo a job
   // that just completed — the shop can retry from the order later.
+  // Capture the billing outcome so the caller can surface it. Fail-open (a QB
+  // hiccup never undoes the completion) but NOT silent: the result used to be
+  // discarded, so an auto-bill that failed (QB disconnected, token expired,
+  // monthly invoice cap) left the broker un-billed with no signal anywhere —
+  // the order just showed Completed (Joe, 2026-10-02). Attached to the returned
+  // order as a transient field (never persisted); UI callers notify on it.
+  let brokerBillingError = null;
   if (updated?.broker_id && getShopPricingConfig()?.brokerBillingEnabled === true) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
-        await billBrokerForOrder({ base44, order: updated, session });
+        const res = await billBrokerForOrder({ base44, order: updated, session });
+        if (res && res.ok === false && res.error) brokerBillingError = String(res.error);
       }
     } catch (err) {
-      console.error("[runOrderCompletion] broker billing failed (non-fatal):", err?.message || err);
+      brokerBillingError = err?.message || String(err);
+      console.error("[runOrderCompletion] broker billing failed (non-fatal):", brokerBillingError);
     }
   }
 
@@ -162,5 +171,6 @@ export async function runOrderCompletion({ order, user, base44 }) {
     shopEmail: shopOwner,
   });
 
-  return updated;
+  // Transient (non-persisted) signal for the UI; absent on success.
+  return brokerBillingError ? { ...updated, _brokerBillingError: brokerBillingError } : updated;
 }

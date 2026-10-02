@@ -538,6 +538,17 @@ export default function BrokerLineItemEditor({
     try {
       const result = await lookupStyle(typedStyleNumber);
       const matches = getResultCandidates(result);
+      // getResultCandidates returns a SYNTHETIC "Unknown brand / Untitled"
+      // candidate with all-empty fields for a no-match lookup. Applying it would
+      // stamp a phantom $0 garment with a blank brand (Joe, 2026-10-02 — Ethan's
+      // "it doesn't work"). Mirror the shop editor: surface "Style not found"
+      // and leave the line untouched, instead of auto-applying junk.
+      const hasRealMatch = matches.some(
+        (m) => cleanText(m.styleNumber) || cleanText(m.brandName) || cleanText(m.resolvedTitle) || cleanText(m.title)
+      );
+      if (!hasRealMatch) {
+        throw new Error("Style not found on S&S, AS Colour, or SanMar.");
+      }
       const preferred = preferredSupplier(getShopPricingConfig());
       const options = orderBySupplierPreference(buildBrandOptions(matches, typedStyleNumber), preferred);
 
@@ -581,7 +592,7 @@ export default function BrokerLineItemEditor({
       setSsColors([]);
       setSsInventory({});
       setSsPriceMap({});
-      setSsError("Style not found on S&S or AS Colour");
+      setSsError(e?.message || "Style not found on S&S, AS Colour, or SanMar.");
     } finally {
       setSsLoading(false);
     }
