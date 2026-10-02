@@ -208,3 +208,17 @@ export function surchargeBannedState(state) {
   const hit = Object.values(SURCHARGE_BANNED_STATES).find((n) => n.toUpperCase() === up);
   return hit ?? null;
 }
+
+/**
+ * "$823.90 + $24.63 credit card surcharge = $848.53 charged." for shop
+ * notices, so a total that's higher than the quote explains itself. "" when
+ * the customer paid no fee.
+ */
+export function paidBreakdown(amountCents, feeCents, method) {
+  const amt = Number(amountCents);
+  const fee = Number(feeCents);
+  if (!Number.isInteger(amt) || !Number.isInteger(fee) || fee <= 0 || fee >= amt) return "";
+  const m = (c) => `$${(c / 100).toFixed(2)}`;
+  const what = normalizePayMethod(method) === "ach" ? "bank fee" : "credit card surcharge";
+  return `${m(amt - fee)} invoice + ${m(fee)} ${what} = ${m(amt)} charged.`;
+}

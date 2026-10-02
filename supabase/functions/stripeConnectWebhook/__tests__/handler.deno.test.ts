@@ -709,3 +709,12 @@ Deno.test("customer-paid fee: QuickBooks gets the invoice amount, not the fee", 
   assertEquals(body.Line, [{ Amount: 1643, LinkedTxn: [{ TxnId: "3815", TxnType: "Invoice" }] }]);
   assert(String(body.PrivateNote).includes("customer also paid a $16.43 processing fee"));
 });
+
+Deno.test("test-mode notice explains a surcharged total: invoice + surcharge = charged", async () => {
+  const { db, deps } = setup({ balance: 823.9 });
+  const md = { ...MD, customer_fee_cents: "2463" };
+  await handle(await request(evt("payment_intent.succeeded", pi({ amount: 84853, metadata: md, livemode: false }))), deps);
+  const n = db.tables.notifications.find((x: Any) => x.event_type === "payment_test_received");
+  assert(n, "test notice sent");
+  assert(String(n.body).startsWith("$823.90 invoice + $24.63 credit card surcharge = $848.53 charged."), String(n.body));
+});
