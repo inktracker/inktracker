@@ -3,6 +3,7 @@ import { base44 } from "@/api/supabaseClient";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
 import OnlinePaymentPanel, { PaidNotice, readPaidReturn } from "@/components/payment/OnlinePaymentPanel";
+import { isQBPaymentLink } from "@/lib/payment/resolveCheckoutTarget";
 
 // Customer pay page for an INVOICE (order-then-invoice flow) on shops that
 // take payment through InkTracker. Opened from the "Pay Invoice" button in
@@ -43,8 +44,12 @@ export default function InvoicePayment() {
   if (loading) return <CenteredCardSkeleton />;
 
   const d = info?.display || {};
+  // The shop went back to QuickBooks payments: send the customer there.
+  const qbPayLink = info?.rail === "qb" && isQBPaymentLink(info?.qbPayLink) ? info.qbPayLink : null;
   const blocked = error
-    || (info?.rail === "qb" ? "Online payment on this page isn't available for this invoice. Please use the pay link in your latest invoice email, or contact the shop." : null);
+    || (info?.rail === "qb" && !qbPayLink && !info?.paid
+      ? `${d.shopName || "The shop"} now takes payment through QuickBooks. Please contact ${d.shopName || "the shop"} for a new pay link.`
+      : null);
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">
@@ -64,6 +69,10 @@ export default function InvoicePayment() {
           <div className="flex items-start gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-slate-500" /> {blocked}
           </div>
+        ) : qbPayLink && !info?.paid ? (
+          <a href={qbPayLink} className="block w-full text-center rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-3">
+            Pay this invoice
+          </a>
         ) : info?.paid ? (
           <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
             <CheckCircle2 className="w-4 h-4" /> This invoice is paid. Thank you!
