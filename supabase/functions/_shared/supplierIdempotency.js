@@ -27,12 +27,34 @@
  *   in_flight = another request is actively placing this order right now.
  *   reclaim  = the prior attempt failed (or row vanished); safe to retry.
  */
-export function decideIdempotencyAction(existing) {
+export function decideIdempotencyAction(existing, { nowMs, staleMs = STALE_IN_FLIGHT_MS } = {}) {
   const status = existing?.status;
   if (status === "succeeded") return "replay";
-  if (status === "in_flight") return "in_flight";
+  if (status === "in_flight") {
+    // STALE in_flight → reclaimable. A crash/timeout between claiming and
+    // finishSupplierOrder used to leave the row in_flight FOREVER: every
+    // retry answered 409 and the PO could never be submitted again (audit
+    // 2026-10-02 M7). An edge invocation can't outlive minutes, so an
+    // in_flight older than STALE_IN_FLIGHT_MS is a dead attempt, not a live
+    // one. Reclaim is still guarded (status+age CAS in claimSupplierOrder),
+    // and the retry is operator-driven — if the dead attempt might have
+    // reached the supplier, the operator re-submits 10+ minutes later and
+    // the supplier order history is the place to verify. Permanent lockout
+    // was the worse failure. No updated_at on the row → can't tell age →
+    // conservative in_flight.
+    const updatedMs = Date.parse(existing?.updated_at ?? "");
+    if (Number.isFinite(updatedMs) && Number.isFinite(nowMs ?? Date.now())) {
+      const age = (nowMs ?? Date.now()) - updatedMs;
+      if (age > staleMs) return "reclaim_stale";
+    }
+    return "in_flight";
+  }
   return "reclaim"; // 'failed', unknown, or null → retryable
 }
+
+/** An in_flight claim older than this is a dead attempt (edge fns live seconds,
+ * the supplier POST timeout is 30s). 10 minutes leaves a wide safety margin. */
+export const STALE_IN_FLIGHT_MS = 10 * 60 * 1000;
 
 const TABLE = "supplier_order_idempotency";
 
@@ -67,7 +89,7 @@ export async function claimSupplierOrder(admin, { shopOwner, key, supplier }) {
   // Conflict: someone got there first. Inspect their row.
   const { data: existing, error: selErr } = await admin
     .from(TABLE)
-    .select("status, response, supplier_order_id")
+    .select("status, response, supplier_order_id, updated_at")
     .eq("shop_owner", shopOwner)
     .eq("idempotency_key", key)
     .maybeSingle();
@@ -83,6 +105,25 @@ export async function claimSupplierOrder(admin, { shopOwner, key, supplier }) {
     };
   }
   if (action === "in_flight") {
+    return { owned: false, inFlight: true };
+  }
+
+  if (action === "reclaim_stale") {
+    // Dead in_flight attempt (see decideIdempotencyAction). CAS on status AND
+    // age so a genuinely live request (which would have touched updated_at
+    // recently) can never be stolen.
+    const cutoffIso = new Date(Date.now() - STALE_IN_FLIGHT_MS).toISOString();
+    const { data: reclaimedStale, error: rsErr } = await admin
+      .from(TABLE)
+      .update({ status: "in_flight", supplier: supplier ?? null })
+      .eq("shop_owner", shopOwner)
+      .eq("idempotency_key", key)
+      .eq("status", "in_flight")
+      .lt("updated_at", cutoffIso)
+      .select("id")
+      .maybeSingle();
+    if (rsErr) throw rsErr; // fail closed
+    if (reclaimedStale) return { owned: true, reclaimedStale: true };
     return { owned: false, inFlight: true };
   }
 
@@ -113,11 +154,27 @@ export async function finishSupplierOrder(admin, { shopOwner, key, success, resp
   const patch = success
     ? { status: "succeeded", response: response ?? null, supplier_order_id: supplierOrderId ?? null }
     : { status: "failed", response: response ?? null };
-  // Best-effort: the order already happened (or didn't); never throw out of
-  // the success path just because the bookkeeping write hiccupped.
-  try {
-    await admin.from(TABLE).update(patch).eq("shop_owner", shopOwner).eq("idempotency_key", key);
-  } catch (_e) {
-    // swallow — surfaced via logs by the caller if needed
+  // Never throws (the order already happened or didn't), but NOT silent and
+  // NOT single-shot: the old version neither read supabase-js's {error} (which
+  // doesn't throw) nor retried, so a hiccupped outcome write left the row
+  // in_flight — a successful REAL-MONEY order whose row then 409'd every
+  // retry, with nothing in the logs (audit 2026-10-02 M7). Retry 3×, then log
+  // CRITICAL with the supplier order id so the operator can reconcile.
+  // Returns true when the outcome was recorded.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const { error } = await admin.from(TABLE).update(patch).eq("shop_owner", shopOwner).eq("idempotency_key", key);
+      if (!error) return true;
+      console.error(`[supplierIdempotency] finish write attempt ${attempt + 1} failed:`, error.message);
+    } catch (e) {
+      console.error(`[supplierIdempotency] finish write attempt ${attempt + 1} threw:`, e?.message || e);
+    }
+    await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
   }
+  console.error(
+    `[supplierIdempotency] CRITICAL: could not record ${patch.status} for key ${key} (shop ${shopOwner}` +
+    `${supplierOrderId ? `, supplier order ${supplierOrderId}` : ""}) — the claim stays in_flight and becomes ` +
+    `stale-reclaimable after ${Math.round(STALE_IN_FLIGHT_MS / 60000)} minutes; verify against the supplier's order history.`
+  );
+  return false;
 }
