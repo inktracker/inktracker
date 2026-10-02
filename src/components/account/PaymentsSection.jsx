@@ -278,12 +278,16 @@ export default function PaymentsSection() {
                     {state.canToggle && (
                       <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2 max-w-xl">
                         <label className="flex items-center gap-2 font-semibold text-slate-700">
-                          <input type="checkbox" checked={feesOn} onChange={(e) => { setFeesOn(e.target.checked); setFeesAck(false); }} />
+                          <input type="checkbox" checked={feesOn} disabled={Boolean(state.surchargeBannedIn) && !state.customerFees?.enabled}
+                            onChange={(e) => { setFeesOn(e.target.checked); setFeesAck(false); }} />
                           Customers pay the processing fee
                         </label>
                         <div>
-                          Quotes and invoices show your price with a note about the fee. On the pay page the customer sees the exact fee before paying: {state.pricing?.card || "2.99%"} on credit cards (none on debit cards, by card network rules) and your bank fee below. QuickBooks still records the invoice amount; the fees customers pay are booked on the payout deposit.
+                          Quotes and invoices show your price with a note about the fee. On the pay page the customer sees the exact amount before paying: a {state.pricing?.card || "2.99%"} surcharge on credit cards (none on debit cards, by card network rules) and your bank fee below. QuickBooks still records the invoice amount; what customers pay on top is booked on the payout deposit.
                         </div>
+                        {state.surchargeBannedIn && (
+                          <div className="text-slate-700">Card surcharges aren&rsquo;t allowed in {state.surchargeBannedIn}, so this isn&rsquo;t available for your shop.</div>
+                        )}
                         {feesOn && (
                           <label className="flex items-center gap-2 flex-wrap" htmlFor="payments-bank-fee">
                             <span className="text-slate-700">Bank transfer fee</span>
@@ -297,7 +301,7 @@ export default function PaymentsSection() {
                           <label className="flex items-start gap-2">
                             <input type="checkbox" className="mt-0.5" checked={feesAck} onChange={(e) => setFeesAck(e.target.checked)} />
                             <span>
-                              Card surcharges are allowed where my business operates, and I've given any notice the card networks require (Visa asks merchants to tell their processor before they start). A few states ban or cap surcharges; check yours if you're not sure.
+                              I&rsquo;ve told Stripe I&rsquo;ll be surcharging at least 30 days before turning this on (Visa requires it), and surcharging is allowed where my business operates. Colorado, Minnesota, New Jersey and New York have extra rules; check yours if you sell there.
                             </span>
                           </label>
                         )}

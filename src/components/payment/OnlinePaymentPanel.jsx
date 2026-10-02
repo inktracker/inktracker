@@ -109,7 +109,7 @@ export default function OnlinePaymentPanel({ docType, id, token, kind = null, am
   if (cardOpen && pricing?.cardForm) {
     return (
       <CardPayForm docType={docType} id={id} token={token} cardForm={pricing.cardForm}
-        invoiceCents={pricing.invoiceCents ?? null} feePct={cardPct}
+        invoiceCents={pricing.invoiceCents ?? null} feePct={cardPct} shopName={pricing.shopName ?? null}
         onPaid={(piId) => setPaidCard(piId)} onBack={() => setCardOpen(false)} />
     );
   }
@@ -117,7 +117,7 @@ export default function OnlinePaymentPanel({ docType, id, token, kind = null, am
   const exact = Number.isInteger(pricing?.invoiceCents);
   const cardLine = exact ? fmt(pricing.invoiceCents + (cardPct > 0 ? pricing.creditFeeCents || 0 : 0)) : null;
   const cardSub = cardPct > 0
-    ? `Credit card: includes ${cardPct}% fee${exact ? ` (${fmt(pricing.creditFeeCents)})` : ""}. Debit card: no fee${exact ? `, ${fmt(pricing.invoiceCents)}` : ""}.`
+    ? `Credit card: includes ${cardPct}% surcharge${exact ? ` (${fmt(pricing.creditFeeCents)})` : ""}. Debit card: no surcharge${exact ? `, ${fmt(pricing.invoiceCents)}` : ""}.`
     : "Credit or debit card";
   const bankLine = exact ? fmt(pricing.invoiceCents + (pricing.bankFeeCents || 0)) : null;
   const bankSub = bankPct > 0

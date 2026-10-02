@@ -3,7 +3,7 @@ import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
 
 // Card payment on InkTracker's own pay page, for shops that pass the card
-// processing fee on. Stripe's card form (Payment Element, on the shop's own
+// card surcharge on. Stripe's card form (Payment Element, on the shop's own
 // Stripe account) collects the card — the number goes straight to Stripe —
 // and InkTracker asks Stripe whether it's a credit or debit card before
 // anything is charged. US card rules: the surcharge is for credit cards only,
@@ -36,11 +36,12 @@ function loadStripeJs() {
  * @param {object} props
  * @param {{publishableKey:string, accountId:string}} props.cardForm  from payRail
  * @param {number|null} props.invoiceCents  for the card form's display only
- * @param {number} props.feePct             the shop's credit-card fee (2.99)
+ * @param {number} props.feePct             the shop's credit-card surcharge (2.99)
+ * @param {string|null} [props.shopName]   who charges it (Visa: the merchant)
  * @param {(paymentIntentId:string) => void} props.onPaid
  * @param {() => void} props.onBack         back to card / bank choice
  */
-export default function CardPayForm({ docType, id, token, cardForm, invoiceCents = null, feePct, onPaid, onBack }) {
+export default function CardPayForm({ docType, id, token, cardForm, invoiceCents = null, feePct, shopName = null, onPaid, onBack }) {
   const mountRef = useRef(null);
   const stripeRef = useRef(null);
   const elementsRef = useRef(null);
@@ -156,7 +157,7 @@ export default function CardPayForm({ docType, id, token, cardForm, invoiceCents
           <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading card form…</div>
         )}
         <div className="mt-3 text-xs text-slate-500">
-          Credit cards include a {feePct}% processing fee. Debit cards have no fee. You'll see the total before you pay.
+          {shopName || "The shop"} adds a {feePct}% surcharge to credit cards. Debit cards have no surcharge. You'll see the total before you pay.
         </div>
         <button type="button" className={`${primary} mt-4`} disabled={!ready || busy} onClick={review}>
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Continue
@@ -168,7 +169,7 @@ export default function CardPayForm({ docType, id, token, cardForm, invoiceCents
           <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm">
             <div className="flex justify-between px-4 py-2.5"><span className="text-slate-600">Amount due</span><span className="tabular-nums">{fmt(quote.invoiceCents)}</span></div>
             <div className="flex justify-between px-4 py-2.5">
-              <span className="text-slate-600">{credit ? `Credit card fee (${feePct}%)` : "Card fee"}</span>
+              <span className="text-slate-600">{credit ? `Credit card surcharge (${feePct}%)` : "Surcharge"}</span>
               <span className="tabular-nums">{credit ? fmt(quote.surchargeCents) : "None (debit card)"}</span>
             </div>
             <div className="flex justify-between px-4 py-2.5 font-bold text-slate-900"><span>Total</span><span className="tabular-nums">{fmt(quote.totalCents)}</span></div>

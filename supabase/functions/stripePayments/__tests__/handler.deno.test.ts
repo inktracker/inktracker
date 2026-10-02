@@ -529,6 +529,14 @@ Deno.test("customer fees: owner only; turning on needs the owner's okay; bank fe
   assert(row.customer_fees_ack_at);
   // Without the publishable key the card form can't run: not ready.
   assertEquals((await (await call(fake, "own-auth", { action: "status" })).json()).cardSurchargeReady, false);
+  // A shop in a state that bans card surcharges can't turn it on.
+  fake.tables.profiles[0].state = "CT";
+  fake.tables.processor_accounts[0].customer_fees_enabled = false;
+  const ct = await call(fake, "own-auth", { action: "setCustomerFees", enabled: true, acknowledged: true });
+  assertEquals(ct.status, 400);
+  assert(String((await ct.json()).error).includes("Connecticut"));
+  assertEquals((await (await call(fake, "own-auth", { action: "status" })).json()).surchargeBannedIn, "Connecticut");
+  fake.tables.profiles[0].state = "NV";
   // Turning off needs no okay.
   assertEquals((await (await call(fake, "own-auth", { action: "setCustomerFees", enabled: false })).json()).customerFees.enabled, false);
 });
@@ -655,4 +663,21 @@ Deno.test("paidStatus: a card PaymentIntent must belong to THIS document", async
   const other = await (await call(withQuote(FEES_ON), "", { action: "paidStatus", id: QUOTE_ID, token: "tok", paymentIntentId: "pi_other" })).json();
   assertEquals(other.confirmed, false);
   getImpl = null;
+});
+
+Deno.test("checkout: an account that refuses wallet_options still gets a checkout (without it)", async () => {
+  liveInvoice = { Id: "3815", TotalAmt: 568.72, Balance: 568.72, TxnTaxDetail: { TotalTax: 0 }, Line: [] };
+  let n = 0;
+  postImpl = (path, params) => {
+    if (path !== "/v1/checkout/sessions") return Promise.resolve({});
+    if (n++ === 0) return Promise.reject(Object.assign(new Error("Stripe POST /v1/checkout/sessions → 400: Received unknown parameter: wallet_options"), { status: 400 }));
+    return Promise.resolve(params.wallet_options ? {} : { id: "cs_2", url: "https://checkout.stripe.com/c/pay/cs_2" });
+  };
+  const calls: StripeCall[] = [];
+  const j = await (await call(withQuote({ ...ACTIVE, enabled: true }, { total: 568.72 }), "", { action: "payinSession", id: QUOTE_ID, token: "tok", method: "card" }, undefined, calls)).json();
+  assertEquals(j.checkoutUrl, "https://checkout.stripe.com/c/pay/cs_2");
+  const sent = calls.filter((c) => c.path === "/v1/checkout/sessions");
+  assertEquals(sent.length, 2);
+  assertEquals(sent[1].params.wallet_options, undefined);
+  postImpl = null;
 });

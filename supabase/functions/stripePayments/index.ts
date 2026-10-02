@@ -48,7 +48,7 @@ import {
 import { isPayingShop, buildAccountCreate, buildAccountLink, buildCheckoutSession, buildCardPaymentIntent, buildConnectOAuthUrl } from "../_shared/stripeRequests.js";
 import { accountStatusFields, readStripeList } from "../_shared/stripeWebhookAdapter.js";
 import { choosePayTarget, NOT_PAYABLE } from "../_shared/payinPlan.js";
-import { normalizePayMethod, customerFeeSettings, customerFeeCents, customerFeeNote, normalizeBankFeePct, cardFormKeyOk, effectiveCustomerFees } from "../_shared/paymentsPricing.js";
+import { normalizePayMethod, customerFeeSettings, customerFeeCents, customerFeeNote, normalizeBankFeePct, cardFormKeyOk, effectiveCustomerFees, surchargeBannedState } from "../_shared/paymentsPricing.js";
 import { getShopQb, qbListAccounts, qbGetInvoice, type QbConn } from "../_shared/qbShopClient.ts";
 import { stripeApi, StripeError, STRIPE_SURCHARGE_API_VERSION, type StripeApi } from "../_shared/stripeApi.ts";
 
@@ -171,7 +171,7 @@ async function payRail(body: Any, deps: Deps) {
   if (rail !== RAIL.PROCESSOR) return json({ rail: "qb" });
   const { display } = await loadDisplay(deps.admin, doc, docType);
   const account = await loadAccount(deps.admin, doc.shop_owner, deps.stripe.live);
-  return json({ rail: "processor", display, paid: Boolean(doc.paid), pricing: methodPrices(doc, account, deps) });
+  return json({ rail: "processor", display, paid: Boolean(doc.paid), pricing: methodPrices(doc, account, deps, display.shopName) });
 }
 
 /**
@@ -216,11 +216,11 @@ function cardFormConfig(account: Any, deps: Deps) {
  * the page says so. Exact amounts only for a plain full payment: deposits and
  * balances are worked out when the customer pays.
  */
-function methodPrices(doc: Any, account: Any, deps: Deps) {
+function methodPrices(doc: Any, account: Any, deps: Deps, displayShopName: string | null = null) {
   const cardForm = cardFormConfig(account, deps);
   // No card form → no card surcharge (Checkout can't tell credit from debit).
   const fees = effectiveCustomerFees(account, { cardFormReady: Boolean(cardForm) });
-  const base = { fees, note: customerFeeNote(fees), cardForm };
+  const base = { fees, note: customerFeeNote(fees, { shopName: displayShopName }), cardForm, shopName: displayShopName };
   const plain = !doc.deposit_paid && !(Number(doc.deposit_amount) > 0) && !(Number(doc.deposit_pct) > 0);
   const totalCents = Math.round(Number(doc.qb_total ?? doc.total) * 100);
   if (!plain || !Number.isInteger(totalCents) || totalCents <= 0) return base;
@@ -357,9 +357,15 @@ async function payinSession(body: Any, deps: Deps) {
     if (method === "ach" && e?.status === 400 && /us_bank_account|payment method type/i.test(String(e?.message))) {
       return json({ rail: "processor", payable: false, reason: "no_bank", message: CUSTOMER_REASON.no_bank, display });
     }
-    // A key reused with different params (e.g. the shop changed the
-    // customer's email mid-window) → once more under a fresh key.
-    if (e?.status === 400 && /idempotent|idempotency/i.test(String(e?.message))) {
+    // An account / API version that doesn't know wallet_options: once more
+    // without it (Link showing beats no checkout at all).
+    if (e?.status === 400 && /wallet_options/i.test(String(e?.message))) {
+      const { wallet_options: _drop, ...rest } = built.params as Any;
+      console.error("[stripePayments] wallet_options refused; checkout shows Link:", String(e?.message).slice(0, 200));
+      session = await deps.stripe.post("/v1/checkout/sessions", rest, { account: account.merchant_id, idempotencyKey: `${built.idempotencyKey}:nolink` });
+    } else if (e?.status === 400 && /idempotent|idempotency/i.test(String(e?.message))) {
+      // A key reused with different params (e.g. the shop changed the
+      // customer's email mid-window) → once more under a fresh key.
       session = await deps.stripe.post("/v1/checkout/sessions", built.params, { account: account.merchant_id, idempotencyKey: `${built.idempotencyKey}:r${Date.now()}` });
     } else {
       throw err;
@@ -572,7 +578,9 @@ export async function handle(req: Request, deps: Deps) {
       // Card surcharges need InkTracker's card form (publishable key set).
       cardSurchargeReady: Boolean(cardFormConfig({ ...acct, customer_fees_enabled: true }, deps)),
       // The note quotes, invoices and emails carry (empty when fees are off).
-      customerFeeNote: customerFeeNote(effectiveCustomerFees(acct, { cardFormReady: Boolean(cardFormConfig(acct, deps)) })),
+      customerFeeNote: customerFeeNote(effectiveCustomerFees(acct, { cardFormReady: Boolean(cardFormConfig(acct, deps)) }), { shopName: shop.shop_name }),
+      // Card surcharges are banned in some states: the owner can't turn them on there.
+      surchargeBannedIn: surchargeBannedState(shop.state),
     });
   };
 
@@ -759,6 +767,8 @@ export async function handle(req: Request, deps: Deps) {
     if (!canTogglePayments(viewer)) return json({ error: "Only the shop owner can change processing fees." }, 403);
     if (!account) return json({ error: "Set up payments first." }, 400);
     const want = body.enabled === true;
+    const banned = surchargeBannedState(shop.state);
+    if (want && banned) return json({ error: `Card surcharges aren't allowed in ${banned}, so this can't be turned on for your shop.` }, 400);
     const bankPct = normalizeBankFeePct(body.bankFeePct ?? account.bank_fee_pct);
     if (bankPct === null) return json({ error: "Enter a bank fee from 0% to 1%." }, 400);
     // Card surcharges are the shop's legal call (some states ban or cap

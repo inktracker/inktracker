@@ -161,3 +161,19 @@ describe("findBookedPayment", () => {
     expect(findBookedPayment([{ Id: "5", PaymentRefNum: "" }], "")).toBeNull();
   });
 });
+
+describe("planReversal — card surcharge goes back with a refund", () => {
+  it("full refund: says the surcharge went back too", () => {
+    const r = planReversal({ kind: "refund", amountCents: 58572, payinId: "p", quoteNumber: "Q-1", surchargeCents: 1700, paymentCents: 58572 });
+    expect(r.notify.body).toContain("The $17.00 card surcharge was refunded with it");
+  });
+  it("partial refund: the matching share of the surcharge, in dollars", () => {
+    // $284.36 of a $568.72 order refunded → half the $17.00 surcharge.
+    const r = planReversal({ kind: "refund", amountCents: 28436, payinId: "p", quoteNumber: "Q-1", surchargeCents: 1700, paymentCents: 58572 });
+    expect(r.notify.body).toContain("for $284.36 of the $568.72 order that's $8.50");
+  });
+  it("no surcharge: no extra words", () => {
+    const r = planReversal({ kind: "refund", amountCents: 5000, payinId: "p", quoteNumber: "Q-1" });
+    expect(r.notify.body).not.toContain("surcharge");
+  });
+});

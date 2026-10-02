@@ -110,10 +110,15 @@ export function buildCheckoutSession({ doc, docType, target, method, feeCents = 
     line_items: [
       line(`${what}${shopName ? ` · ${String(shopName).slice(0, 60)}` : ""}`, target.amountCents),
       // Its own line on Stripe's page and receipt.
-      ...(fee ? [line(method === "ach" ? "Bank payment fee" : "Card processing fee", fee)] : []),
+      ...(fee ? [line(method === "ach" ? "Bank payment fee" : "Credit card surcharge", fee)] : []),
     ],
     payment_method_types: [method === "ach" ? "us_bank_account" : "card"],
     ...(method === "ach" ? { payment_method_options: { us_bank_account: { verification_method: "automatic" } } } : {}),
+    // The customer already chose card or bank on our page. Link would add
+    // its own bank option ("$5 back") and pay-later offers to a card page,
+    // i.e. a different way to pay at a different price. Apple Pay / Google
+    // Pay stay: they're cards.
+    wallet_options: { link: { display: "never" } },
     payment_intent_data: {
       ...(appFee > 0 ? { application_fee_amount: appFee } : {}),
       description: what,

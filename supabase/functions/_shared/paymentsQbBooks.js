@@ -184,8 +184,21 @@ export function buildQbDepositBody(a) {
  * money movement shows up as a signed line on the next payout's Deposit so
  * the bank still matches. Returns the ledger + notification plan.
  */
-export function planReversal({ kind, amountCents, payinId, quoteNumber, booked = true }) {
+export function planReversal({ kind, amountCents, payinId, quoteNumber, booked = true, surchargeCents = 0, paymentCents = 0 }) {
   const amt = Number(amountCents);
+  // A card surcharge goes back with a refund (card rules): all of it on a
+  // full refund, the same share of it on a partial one.
+  const fee = Number.isInteger(Number(surchargeCents)) && Number(surchargeCents) > 0 ? Number(surchargeCents) : 0;
+  const invoice = Number(paymentCents) - fee;
+  let surchargeNote = "";
+  if (kind === "refund" && fee > 0 && invoice > 0) {
+    if (amt >= Number(paymentCents)) {
+      surchargeNote = ` The $${dollars(fee).toFixed(2)} card surcharge was refunded with it, as card rules require.`;
+    } else {
+      const share = Math.round(fee * Math.min(amt, invoice) / invoice);
+      surchargeNote = ` This payment included a $${dollars(fee).toFixed(2)} card surcharge. Card rules say a partial refund returns the same share of it: for $${dollars(Math.min(amt, invoice)).toFixed(2)} of the $${dollars(invoice).toFixed(2)} order that's $${dollars(share).toFixed(2)}. If this refund didn't include it, refund that much more from your Stripe dashboard.`;
+    }
+  }
   const label = {
     refund: "Refund issued",
     ach_return: "Bank payment returned",
@@ -201,7 +214,7 @@ export function planReversal({ kind, amountCents, payinId, quoteNumber, booked =
       severity: kind === "refund" ? "info" : "alert",
       title: `${label}: $${dollars(amt).toFixed(2)} on ${quoteNumber || "a payment"}`,
       body: kind === "refund"
-        ? `The refund is on its way back to your customer. In QuickBooks, record a refund receipt against this invoice so your books match — it will come out of your next payout.`
+        ? `The refund is on its way back to your customer. In QuickBooks, record a refund receipt against this invoice so your books match — it will come out of your next payout.${surchargeNote}`
         : !booked
           ? `Your customer's bank returned the payment before it cleared, so it was never recorded in QuickBooks and the invoice is still open. Ask the customer to pay another way. The bank's return fee comes out of your next payout.`
           : `Your customer's payment was reversed, so this invoice is effectively unpaid. It will come out of your next payout. Follow up with the customer and re-open the invoice in QuickBooks.`,

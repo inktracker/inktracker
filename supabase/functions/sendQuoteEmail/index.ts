@@ -298,7 +298,7 @@ Deno.serve(async (req) => {
           if (rail === RAIL.PROCESSOR) {
             const { data: acct } = await admin.from("processor_accounts").select("customer_fees_enabled, bank_fee_pct").eq("shop_owner", doc.shop_owner).maybeSingle();
             const fees = effectiveCustomerFees(acct, { cardFormReady: cardFormKeyOk(Deno.env.get("STRIPE_CONNECT_PUBLISHABLE_KEY"), keyMode === "live") });
-            const note = customerFeeNote(fees);
+            const note = customerFeeNote(fees, { shopName });
             if (note) feeNoteHtml = `<p style="color:${EMAIL_INK};font-size:13px;line-height:1.6;margin:-8px 0 20px;">${escapeHtml(note)}</p>`;
           }
         }
