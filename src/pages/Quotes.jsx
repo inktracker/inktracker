@@ -38,6 +38,7 @@ import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { getShopPricingConfig } from "@/components/shared/pricing";
 import { billBrokerForOrder } from "@/lib/orders/billBrokerForOrder";
 import { decideUpFrontBill, isBrokerBillUpFront } from "@/lib/broker/brokerBillTiming";
+import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 
 
 // A saved quote is a snapshot — read what was stamped at save time. We
@@ -50,7 +51,11 @@ function getQuoteTotalsForDisplay(q) {
       subtotal:  Number(q.subtotal ?? q.total),
       tax:       Number(q.tax || 0),
       total:     Number(q.total),
-      afterDisc: Number(q.total) - Number(q.tax || 0),
+      // savedAfterDiscount, NOT total − tax: that fork dropped setup +
+      // additional charges, so a $60-setup quote showed a discount $60 off
+      // from what the PDF / detail modal / payment page print (audit
+      // 2026-10-02; displayed discount = sub − afterDisc).
+      afterDisc: savedAfterDiscount(q),
     };
   }
   return calcQuoteTotals(q, isBrokerQuote(q) ? BROKER_MARKUP : undefined);

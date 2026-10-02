@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
 import { createBrokerClientInvoice } from "@/lib/broker/createBrokerClientInvoice";
+import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import { brokerInvoiceSendNotice } from "@/lib/broker/brokerSendInvoiceNotice";
 import { uploadFile } from "@/lib/uploadFile";
 import CollapsibleSection from "@/components/shared/CollapsibleSection";
@@ -142,7 +143,10 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
   const brokerTotals = (Number.isFinite(quote.total) && Number.isFinite(quote.subtotal))
     ? {
         sub:       Number(quote.subtotal),
-        afterDisc: Number(quote.total) - Number(quote.tax || 0),
+        // savedAfterDiscount, not total − tax — the fork dropped setup +
+        // additional charges, so this drawer showed a different discount than
+        // the editor/PDF for the same quote (audit 2026-10-02).
+        afterDisc: savedAfterDiscount(quote),
         tax:       Number(quote.tax || 0),
         total:     Number(quote.total),
         // depositAmountFor, NOT an inline total×pct: the snapshot
@@ -161,7 +165,8 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
   const clientTotals = Number(quote.client_total) > 0
     ? {
         sub:       Number(quote.client_subtotal),
-        afterDisc: Number(quote.client_total) - Number(quote.client_tax || 0),
+        // Client side: same saved-fields derivation on the client totals.
+        afterDisc: savedAfterDiscount({ ...quote, total: quote.client_total, tax: quote.client_tax }),
         tax:       Number(quote.client_tax || 0),
         total:     Number(quote.client_total),
         // Same contract as the broker side, with the CLIENT total as the

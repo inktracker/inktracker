@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { Mail, Loader2, CheckCircle2, X, AlertCircle } from "lucide-react";
-import { fmtMoney, buildQBInvoicePayload } from "../shared/pricing";
+import { fmtMoney, buildQBInvoicePayload, getShopPricingConfig } from "../shared/pricing";
 import { buildFallbackInvoiceLines } from "@/lib/invoices/fallbackInvoiceLines";
 import { isFlatDiscount } from "@/lib/pricing/discountType";
 import { exportInvoiceToPDF } from "../shared/pdfExport";
@@ -182,6 +182,16 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
           accessToken: session.access_token,
           quote: quoteShape,
           invoicePayload,
+          // Same request envelope as createInvoiceInQB / InvoiceDetailModal —
+          // this caller alone omitted all three (audit 2026-10-02):
+          //  - taxMode/taxAmount: without them a "self"-tax shop's re-push let
+          //    QB AST rewrite the live invoice's tax, changing the customer's
+          //    total and tripping the very tax hold this modal then reports;
+          //  - noEmail: without it QB's /send fallback could email the
+          //    customer a second copy alongside the Resend email.
+          taxMode: getShopPricingConfig()?.qbTaxMode === "self" ? "self" : "qb",
+          taxAmount: Number(invoice.tax) || 0,
+          noEmail: true,
           customer: {
             id: invoice.customer_id,
             name: invoice.customer_name,

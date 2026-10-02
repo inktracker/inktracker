@@ -546,11 +546,22 @@ export function isRevisionDocNumber(docNumber) {
 /**
  * Returns true when the QB Invoice object represents a fully-paid
  * invoice. Accepts the raw Invoice payload (TotalAmt + Balance fields).
+ *
+ * Guard against null/undefined/non-finite Balance — Number(null) is 0, which
+ * made a SPARSE QB response (no Balance field) falsely read as fully paid:
+ * reconcile/refresh/link/pull then wrote paid:true on an invoice the customer
+ * still owed, and the pay link was permanently suppressed ("paid invoices are
+ * receipts"). The webhook-side copy (qbWebhookLogic.isInvoiceFullyPaid) had
+ * this guard all along while claiming the two matched — they now actually do;
+ * lockstep pinned by _shared/__tests__/qbInvoicePaid.test.js (audit 2026-10-02).
+ * Conservative on every edge: missing/non-finite Balance or TotalAmt → NOT paid.
  */
 export function isQbInvoicePaid(invoice) {
   if (!invoice) return false;
+  if (invoice.Balance === null || invoice.Balance === undefined) return false;
+  const balance = Number(invoice.Balance);
   const total = Number(invoice.TotalAmt ?? 0);
-  const balance = Number(invoice.Balance ?? 0);
+  if (!Number.isFinite(balance) || !Number.isFinite(total)) return false;
   return total > 0 && balance === 0;
 }
 
